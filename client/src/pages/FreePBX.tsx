@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
-  Phone, Wifi, WifiOff, RefreshCw, Server, Shield, Loader2,
-  CheckCircle2, XCircle, Plus, Trash2, Copy, Terminal, Download,
-  Activity, Clock, Zap
+  Wifi, WifiOff, RefreshCw, Server, Loader2,
+  CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
+  Activity, Zap
 } from "lucide-react";
 
 export default function FreePBX() {
@@ -21,20 +21,22 @@ export default function FreePBX() {
       else toast.error(data.message);
       amiStatus.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
 
   // PBX Agent management
   const agents = trpc.freepbx.listAgents.useQuery();
   const queueStats = trpc.freepbx.queueStats.useQuery(undefined, { refetchInterval: 5000 });
   const registerAgent = trpc.freepbx.registerAgent.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       toast.success("PBX Agent registered! Copy the API key below.");
       setNewAgentKey(data.apiKey);
+      setAgentName("");
+      setMaxCalls("5");
       agents.refetch();
       amiStatus.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
   const deleteAgent = trpc.freepbx.deleteAgent.useMutation({
     onSuccess: () => {
@@ -42,12 +44,13 @@ export default function FreePBX() {
       agents.refetch();
       amiStatus.refetch();
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
 
   const [agentName, setAgentName] = useState("");
   const [maxCalls, setMaxCalls] = useState("5");
   const [newAgentKey, setNewAgentKey] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const handleRegister = () => {
     if (!agentName.trim()) {
@@ -60,10 +63,30 @@ export default function FreePBX() {
     });
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
-  };
+  const copyToClipboard = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      toast.success("API key copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {
+      // Fallback for older browsers / insecure contexts
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        setCopied(true);
+        toast.success("API key copied to clipboard");
+        setTimeout(() => setCopied(false), 2000);
+      } catch {
+        toast.error("Failed to copy — please select and copy manually");
+      }
+      document.body.removeChild(textarea);
+    });
+  }, []);
 
   return (
     <DashboardLayout>
@@ -187,6 +210,7 @@ export default function FreePBX() {
                   placeholder="e.g., pbx-server-1"
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                 />
               </div>
               <div className="w-24 space-y-1">
@@ -209,22 +233,35 @@ export default function FreePBX() {
               </Button>
             </div>
 
-            {/* Show new API key */}
+            {/* Show new API key with prominent copy button */}
             {newAgentKey && (
               <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900">
                 <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
                   API Key Generated — Copy it now (it won't be shown again):
                 </p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 p-2 bg-white dark:bg-black rounded text-xs font-mono break-all">
+                  <code className="flex-1 p-2.5 bg-white dark:bg-black rounded text-xs font-mono break-all select-all border border-green-200 dark:border-green-800">
                     {newAgentKey}
                   </code>
-                  <Button size="sm" variant="outline" onClick={() => copyToClipboard(newAgentKey)}>
-                    <Copy className="h-3 w-3" />
+                  <Button
+                    size="sm"
+                    variant={copied ? "default" : "outline"}
+                    className={`shrink-0 min-w-[100px] transition-all ${
+                      copied
+                        ? "bg-green-600 hover:bg-green-600 text-white border-green-600"
+                        : "hover:bg-green-50 dark:hover:bg-green-950 border-green-300 dark:border-green-700"
+                    }`}
+                    onClick={() => copyToClipboard(newAgentKey)}
+                  >
+                    {copied ? (
+                      <><Check className="h-4 w-4 mr-1.5" />Copied!</>
+                    ) : (
+                      <><Copy className="h-4 w-4 mr-1.5" />Copy Key</>
+                    )}
                   </Button>
                 </div>
                 <p className="text-xs text-green-700 dark:text-green-300 mt-2">
-                  Use this key as <code>PBX_AGENT_API_KEY</code> when installing the PBX agent on your FreePBX server.
+                  Use this key as <code className="bg-green-100 dark:bg-green-900 px-1 rounded">PBX_AGENT_API_KEY</code> when installing the PBX agent on your FreePBX server.
                 </p>
               </div>
             )}

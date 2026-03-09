@@ -91,3 +91,4 @@
 - [x] PBX Agent management UI - register/delete agents, view status, copy API key
 - [x] tRPC endpoints for agent registration, deletion, listing, and queue stats
 - [x] FreePBX Integration page redesigned with agent management and installation guide
+- [x] Improved one-click copy-to-clipboard button for PBX agent API key with visual feedback
