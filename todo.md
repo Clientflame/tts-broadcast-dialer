@@ -103,3 +103,4 @@
 - [x] Fix: Unable to create campaign - Personalized TTS toggle requires message text input
 - [x] Fix: Campaign calls failing - personalized TTS used storageGet() presigned URLs that expired before PBX agent downloaded
 - [x] Fix: Test campaign stuck in running state - added server startup recovery for stale campaigns
+- [x] Fix: Campaign should auto-stop when all leads have been dialed and results reported (removed 'answered' from active count, added call_queue check)

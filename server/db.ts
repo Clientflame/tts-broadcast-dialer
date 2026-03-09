@@ -298,7 +298,8 @@ export async function getPendingCallLogs(campaignId: number) {
 export async function getActiveCallCount(campaignId: number) {
   const db = await getDb();
   if (!db) return 0;
-  const result = await db.select({ cnt: count() }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), inArray(callLogs.status, ["dialing", "ringing", "answered"])));
+  // Note: "answered" is a terminal status (call completed successfully), not an active call
+  const result = await db.select({ cnt: count() }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), inArray(callLogs.status, ["dialing", "ringing"])));
   return result[0]?.cnt ?? 0;
 }
 
@@ -317,7 +318,8 @@ export async function getCampaignStats(campaignId: number) {
     noAnswer: stats["no-answer"] || 0,
     failed: stats["failed"] || 0,
     pending: stats["pending"] || 0,
-    active: (stats["dialing"] || 0) + (stats["ringing"] || 0) + (stats["answered"] || 0),
+    // Note: "answered" is a terminal status, not active
+    active: (stats["dialing"] || 0) + (stats["ringing"] || 0),
   };
 }
 

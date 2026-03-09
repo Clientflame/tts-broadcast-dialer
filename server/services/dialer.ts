@@ -205,10 +205,30 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
   // Get pending calls
   const pendingCalls = await db.getPendingCallLogs(campaignId);
   if (pendingCalls.length === 0) {
-    // Check if all calls are done
+    // No more pending call_logs — check if all in-flight calls are also done
     const stats = await db.getCampaignStats(campaignId);
-    if (stats.active === 0) {
+    // Also check the call_queue for any pending/claimed items
+    const dbInst = await db.getDb();
+    let queuePending = 0;
+    let queueClaimed = 0;
+    if (dbInst) {
+      const { callQueue: cq } = await import("../../drizzle/schema");
+      const { eq, and, count: countFn } = await import("drizzle-orm");
+      const qRows = await dbInst.select({ status: cq.status, cnt: countFn() })
+        .from(cq)
+        .where(eq(cq.campaignId, campaignId))
+        .groupBy(cq.status);
+      for (const r of qRows) {
+        if (r.status === "pending") queuePending = r.cnt;
+        if (r.status === "claimed") queueClaimed = r.cnt;
+      }
+    }
+
+    if (stats.active === 0 && queuePending === 0 && queueClaimed === 0) {
+      console.log(`[Dialer] Campaign ${campaignId} all leads exhausted — completing (pending=${stats.pending}, active=${stats.active}, queue_pending=${queuePending}, queue_claimed=${queueClaimed})`);
       await completeCampaign(campaignId, userId);
+    } else {
+      console.log(`[Dialer] Campaign ${campaignId} waiting for in-flight calls (active=${stats.active}, queue_pending=${queuePending}, queue_claimed=${queueClaimed})`);
     }
     return;
   }
