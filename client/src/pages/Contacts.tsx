@@ -41,6 +41,7 @@ export default function Contacts() {
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
+  const [selectedLists, setSelectedLists] = useState<Set<number>>(new Set());
   const [contactForm, setContactForm] = useState({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "", state: "", databaseName: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,6 +65,34 @@ export default function Contacts() {
     onSuccess: () => { utils.contactLists.list.invalidate(); setSelectedListId(null); toast.success("List deleted"); },
     onError: (e) => toast.error(e.message),
   });
+
+  const bulkDeleteLists = trpc.contactLists.bulkDelete.useMutation({
+    onSuccess: (data) => {
+      utils.contactLists.list.invalidate();
+      if (selectedListId && selectedLists.has(selectedListId)) setSelectedListId(null);
+      setSelectedLists(new Set());
+      toast.success(`Deleted ${data.deleted} contact list${data.deleted !== 1 ? "s" : ""}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const toggleListSelect = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedLists(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllLists = () => {
+    if (!lists.data) return;
+    if (selectedLists.size === lists.data.length) {
+      setSelectedLists(new Set());
+    } else {
+      setSelectedLists(new Set(lists.data.map(l => l.id)));
+    }
+  };
 
   const createContact = trpc.contacts.create.useMutation({
     onSuccess: () => { utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setAddContactOpen(false); resetContactForm(); toast.success("Contact added"); },
@@ -223,19 +252,49 @@ export default function Contacts() {
 
         <div className="grid gap-4 md:grid-cols-4">
           <div className="md:col-span-1 space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Contact Lists</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-muted-foreground">Contact Lists</h3>
+              {lists.data && lists.data.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <Checkbox
+                    checked={selectedLists.size === lists.data.length && lists.data.length > 0}
+                    onCheckedChange={toggleAllLists}
+                    className="h-3.5 w-3.5"
+                  />
+                  {selectedLists.size > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-destructive hover:text-destructive"
+                      onClick={() => { if (confirm(`Delete ${selectedLists.size} list(s) and all their contacts?`)) bulkDeleteLists.mutate({ ids: Array.from(selectedLists) }); }}
+                      disabled={bulkDeleteLists.isPending}
+                    >
+                      <Trash2 className="h-3 w-3 mr-0.5" />{selectedLists.size}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
             {lists.data?.length === 0 && <p className="text-sm text-muted-foreground p-4 text-center">No lists yet. Create one to get started.</p>}
             {lists.data?.map(list => (
               <Card
                 key={list.id}
-                className={`cursor-pointer transition-colors hover:bg-accent/50 ${selectedListId === list.id ? "border-primary bg-accent/30" : ""}`}
+                className={`cursor-pointer transition-colors hover:bg-accent/50 ${selectedListId === list.id ? "border-primary bg-accent/30" : ""} ${selectedLists.has(list.id) ? "ring-1 ring-destructive/50" : ""}`}
                 onClick={() => { setSelectedListId(list.id); setSelectedContacts([]); setSearchQuery(""); }}
               >
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">{list.name}</p>
-                      <p className="text-xs text-muted-foreground">{list.contactCount} contacts</p>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={selectedLists.has(list.id)}
+                        onCheckedChange={() => {}}
+                        onClick={(e) => toggleListSelect(list.id, e)}
+                        className="h-3.5 w-3.5"
+                      />
+                      <div>
+                        <p className="font-medium text-sm">{list.name}</p>
+                        <p className="text-xs text-muted-foreground">{list.contactCount} contacts</p>
+                      </div>
                     </div>
                     <Users className="h-4 w-4 text-muted-foreground" />
                   </div>

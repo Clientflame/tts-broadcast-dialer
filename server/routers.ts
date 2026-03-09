@@ -203,6 +203,17 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.delete", resource: "contactList", resourceId: input.id });
       return { success: true };
     }),
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      let deleted = 0;
+      for (const id of input.ids) {
+        try {
+          await db.deleteContactList(id, ctx.user.id);
+          deleted++;
+        } catch (_) { /* skip lists that don't exist or aren't owned */ }
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.bulkDelete", resource: "contactList", details: { deleted, ids: input.ids } });
+      return { deleted };
+    }),
   }),
 
   contacts: router({
