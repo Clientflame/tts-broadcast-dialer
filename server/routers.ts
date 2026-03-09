@@ -316,6 +316,9 @@ export const appRouter = router({
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
+      usePersonalizedTTS: z.number().min(0).max(1).optional(),
+      ttsSpeed: z.string().max(10).optional(),
+      useDidRotation: z.number().min(0).max(1).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -343,8 +346,11 @@ export const appRouter = router({
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
       timezone: z.string().max(64).optional(),
-      timeWindowStart: z.string().max(5).optional(),
+          timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
+      usePersonalizedTTS: z.number().min(0).max(1).optional(),
+      ttsSpeed: z.string().max(10).optional(),
+      useDidRotation: z.number().min(0).max(1).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id, ctx.user.id);

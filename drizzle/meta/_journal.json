@@ -43,6 +43,13 @@
       "when": 1773028877401,
       "tag": "0005_lethal_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1773031008948,
+      "tag": "0006_supreme_gorgon",
+      "breakpoints": true
     }
   ]
 }

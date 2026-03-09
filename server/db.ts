@@ -923,3 +923,11 @@ export async function clearResetToken(userId: number) {
   if (!db) return;
   await db.update(localAuth).set({ resetToken: null, resetTokenExpiry: null }).where(eq(localAuth.userId, userId));
 }
+
+// Get a single contact by ID
+export async function getContact(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.userId, userId))).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}

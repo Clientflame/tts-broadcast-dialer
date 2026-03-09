@@ -141,6 +141,10 @@ export const campaigns = mysqlTable("campaigns", {
   targetStates: json("targetStates").$type<string[]>(),
   targetAreaCodes: json("targetAreaCodes").$type<string[]>(),
   useGeoCallerIds: int("useGeoCallerIds").default(0).notNull(),
+  // Dynamic TTS personalization
+  usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
+  ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
+  useDidRotation: int("useDidRotation").default(0).notNull(),
   status: mysqlEnum("status", [
     "draft",
     "scheduled",

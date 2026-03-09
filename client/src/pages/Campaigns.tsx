@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,10 @@ export default function Campaigns() {
     ivrEnabled: false, ivrOptions: [] as { digit: string; action: string; label: string }[],
     abTestGroup: "", abTestVariant: "",
     targetStates: [] as string[], useGeoCallerIds: false,
+    usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
+    useDidRotation: false,
   });
+  const messageRef = useRef<HTMLTextAreaElement>(null);
 
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -100,7 +103,48 @@ export default function Campaigns() {
     timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
     ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
     targetStates: [], useGeoCallerIds: false,
+    usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
+    useDidRotation: false,
   });
+
+  const MERGE_FIELDS = [
+    { key: "first_name", label: "First Name", example: "John" },
+    { key: "last_name", label: "Last Name", example: "Smith" },
+    { key: "full_name", label: "Full Name", example: "John Smith" },
+    { key: "caller_id", label: "Caller ID", example: "(407) 555-1177" },
+    { key: "company", label: "Company", example: "Acme Corp" },
+    { key: "state", label: "State", example: "FL" },
+    { key: "database_name", label: "Database", example: "Spring 2026" },
+    { key: "phone", label: "Phone", example: "4075551177" },
+  ];
+
+  const insertMergeField = (fieldKey: string) => {
+    const textarea = messageRef.current;
+    if (!textarea) {
+      setForm(p => ({ ...p, messageText: p.messageText + `{{${fieldKey}}}` }));
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = form.messageText;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+    const newText = `${before}{{${fieldKey}}}${after}`;
+    setForm(p => ({ ...p, messageText: newText }));
+    setTimeout(() => {
+      const newPos = start + `{{${fieldKey}}}`.length;
+      textarea.setSelectionRange(newPos, newPos);
+      textarea.focus();
+    }, 0);
+  };
+
+  const getMessagePreview = () => {
+    let preview = form.messageText;
+    MERGE_FIELDS.forEach(f => {
+      preview = preview.replace(new RegExp(`\\{\\{${f.key}\\}\\}`, "g"), f.example);
+    });
+    return preview;
+  };
 
   const loadTemplate = (templateId: number) => {
     const t = templates.data?.find(t => t.id === templateId);
@@ -333,28 +377,105 @@ export default function Campaigns() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Audio File</Label>
-                    <Select value={form.audioFileId ? String(form.audioFileId) : ""} onValueChange={v => setForm(p => ({ ...p, audioFileId: parseInt(v) }))}>
-                      <SelectTrigger><SelectValue placeholder="Select an audio file" /></SelectTrigger>
-                      <SelectContent>
-                        {readyAudioFiles.map(f => (
-                          <SelectItem key={f.id} value={String(f.id)}>{f.name} ({f.voice})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+
+                  {/* Personalized TTS Toggle */}
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
+                    <div>
+                      <Label className="text-base font-semibold">Personalized TTS Messages</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate unique audio per contact with merge fields (name, caller ID, etc.)</p>
+                    </div>
+                    <Switch checked={form.usePersonalizedTTS} onCheckedChange={v => setForm(p => ({ ...p, usePersonalizedTTS: v }))} />
                   </div>
-                  <div>
-                    <Label>Voice</Label>
-                    <Select value={form.voice} onValueChange={v => setForm(p => ({ ...p, voice: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["alloy","echo","fable","onyx","nova","shimmer"].map(v => (
-                          <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+
+                  {form.usePersonalizedTTS ? (
+                    <div className="space-y-3">
+                      {/* Message Template */}
+                      <div>
+                        <Label className="text-sm font-medium">Message Script Template *</Label>
+                        <p className="text-xs text-muted-foreground mb-2">Click merge fields below to insert dynamic placeholders into your script.</p>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {MERGE_FIELDS.map(f => (
+                            <Button key={f.key} type="button" variant="outline" size="sm" className="h-7 text-xs px-2 font-mono" onClick={() => insertMergeField(f.key)}>
+                              {`{{${f.key}}}`}
+                            </Button>
+                          ))}
+                        </div>
+                        <Textarea
+                          ref={messageRef}
+                          value={form.messageText}
+                          onChange={e => setForm(p => ({ ...p, messageText: e.target.value }))}
+                          placeholder={`Hello {{first_name}} {{last_name}}, this serves as a final notice to remind you that your overdue balance remains outstanding. Should you require any assistance or wish to discuss setting up a repayment plan, please do not hesitate to contact us at {{caller_id}}. Thank you for your attention to this matter.`}
+                          className="min-h-[120px] font-mono text-sm"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">{form.messageText.length} characters</p>
+                      </div>
+
+                      {/* Live Preview */}
+                      {form.messageText && (
+                        <div className="p-3 rounded-lg bg-muted/50 border">
+                          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live Preview (sample contact)</Label>
+                          <p className="text-sm mt-1.5 leading-relaxed">{getMessagePreview()}</p>
+                        </div>
+                      )}
+
+                      {/* Voice & Speed */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Voice</Label>
+                          <Select value={form.voice} onValueChange={v => setForm(p => ({ ...p, voice: v }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {["alloy","echo","fable","onyx","nova","shimmer"].map(v => (
+                                <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Speed: {form.ttsSpeed}x</Label>
+                          <Input type="range" min="0.25" max="4.0" step="0.25" value={form.ttsSpeed}
+                            onChange={e => setForm(p => ({ ...p, ttsSpeed: e.target.value }))} className="mt-2" />
+                          <div className="flex justify-between text-xs text-muted-foreground"><span>0.25x</span><span>1.0x</span><span>4.0x</span></div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Static Audio File */}
+                      <div>
+                        <Label>Audio File (pre-recorded)</Label>
+                        <Select value={form.audioFileId ? String(form.audioFileId) : ""} onValueChange={v => setForm(p => ({ ...p, audioFileId: parseInt(v) }))}>
+                          <SelectTrigger><SelectValue placeholder="Select an audio file" /></SelectTrigger>
+                          <SelectContent>
+                            {readyAudioFiles.map(f => (
+                              <SelectItem key={f.id} value={String(f.id)}>{f.name} ({f.voice})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label>Voice</Label>
+                        <Select value={form.voice} onValueChange={v => setForm(p => ({ ...p, voice: v }))}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {["alloy","echo","fable","onyx","nova","shimmer"].map(v => (
+                              <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* DID Rotation */}
+                  <div className="flex items-center justify-between p-3 rounded-lg border">
+                    <div>
+                      <Label>DID Rotation</Label>
+                      <p className="text-xs text-muted-foreground">Automatically rotate through your active caller IDs</p>
+                    </div>
+                    <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
                   </div>
+
                   {/* A/B Testing */}
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>A/B Test Group</Label><Input value={form.abTestGroup} onChange={e => setForm(p => ({ ...p, abTestGroup: e.target.value }))} placeholder="e.g. spring-2026" /></div>
@@ -502,8 +623,12 @@ export default function Campaigns() {
                     abTestVariant: form.abTestVariant || undefined,
                     targetStates: form.targetStates.length > 0 ? form.targetStates : undefined,
                     useGeoCallerIds: form.useGeoCallerIds ? 1 : 0,
+                    usePersonalizedTTS: form.usePersonalizedTTS ? 1 : 0,
+                    messageText: form.usePersonalizedTTS ? form.messageText : undefined,
+                    ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
+                    useDidRotation: form.useDidRotation ? 1 : 0,
                   })}
-                  disabled={!form.name || !form.contactListId || createCampaign.isPending}
+                  disabled={!form.name || !form.contactListId || (form.usePersonalizedTTS && !form.messageText) || createCampaign.isPending}
                 >
                   {createCampaign.isPending ? "Creating..." : "Create Campaign"}
                 </Button>

@@ -53,3 +53,9 @@
 - [x] Password hashing with bcrypt and secure session management
 - [x] Permission-based UI - hide/disable features user doesn't have access to
 - [x] Permanent AMI connection solution - socat proxy on port 25038 for production stability
+- [x] Dynamic TTS personalization with merge fields ({{first_name}}, {{last_name}}, {{caller_id}})
+- [x] Per-contact audio generation at dial time instead of static campaign audio
+- [x] Template variable insertion UI in campaign message composer
+- [x] Message preview with sample contact data
+- [x] Update dialer engine to generate personalized TTS before each call
+- [x] Cache personalized audio files in S3 to avoid regenerating for retries

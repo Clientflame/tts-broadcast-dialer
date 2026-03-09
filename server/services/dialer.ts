@@ -1,7 +1,7 @@
 import { getAMIClient } from "./ami";
-import { transferAudioToFreePBX } from "./tts";
+import { transferAudioToFreePBX, generatePersonalizedTTS } from "./tts";
 import * as db from "../db";
-import type { Campaign, CallLog } from "../../drizzle/schema";
+import type { Campaign, CallLog, Contact } from "../../drizzle/schema";
 
 interface ActiveCampaign {
   campaign: Campaign;
@@ -9,6 +9,7 @@ interface ActiveCampaign {
   audioPath: string | null;
   callerIds: Array<{ id: number; phoneNumber: string; label: string | null }>;
   callerIdIndex: number;
+  usePersonalizedTTS: boolean;
 }
 
 const activeCampaigns = new Map<number, ActiveCampaign>();
@@ -140,6 +141,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     audioPath,
     callerIds: callerIdPool,
     callerIdIndex: 0,
+    usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
   };
 
   activeCampaigns.set(campaignId, active);
@@ -229,24 +231,69 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
   // Build the channel - use the outbound trunk
   const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
 
-  const variables: Record<string, string> = {
-    CALLID: callId,
-  };
-
-  if (active.audioPath) {
-    variables.AUDIOFILE = active.audioPath;
-  }
-
   // Determine caller ID - use DID rotation if available, otherwise campaign caller ID
   let callerIdStr: string | undefined;
+  let callerIdNumber: string | undefined;
   if (active.callerIds.length > 0) {
     const did = active.callerIds[active.callerIdIndex % active.callerIds.length];
     active.callerIdIndex++;
     callerIdStr = `"${did.label || "Broadcast"}" <${did.phoneNumber}>`;
+    callerIdNumber = did.phoneNumber;
     // Update the DID usage count
     db.incrementCallerIdUsage(did.id).catch(err => console.error("[Dialer] Failed to update DID usage:", err));
   } else if (active.campaign.callerIdNumber) {
     callerIdStr = `"${active.campaign.callerIdName || "Broadcast"}" <${active.campaign.callerIdNumber}>`;
+    callerIdNumber = active.campaign.callerIdNumber;
+  }
+
+  const variables: Record<string, string> = {
+    CALLID: callId,
+  };
+
+  // Handle personalized TTS - generate unique audio per contact
+  if (active.usePersonalizedTTS && active.campaign.messageText) {
+    try {
+      // Fetch the contact details for merge fields
+      const contact = await db.getContact(callLog.contactId, userId);
+      const speed = parseFloat(active.campaign.ttsSpeed || "1.0");
+
+      console.log(`[Dialer] Generating personalized TTS for contact ${callLog.contactId} (${callLog.phoneNumber})`);
+
+      const personalizedResult = await generatePersonalizedTTS({
+        messageTemplate: active.campaign.messageText,
+        voice: (active.campaign.voice as any) || "alloy",
+        speed,
+        contactData: {
+          firstName: contact?.firstName,
+          lastName: contact?.lastName,
+          phoneNumber: callLog.phoneNumber,
+          company: contact?.company,
+          state: contact?.state,
+          databaseName: contact?.databaseName,
+        },
+        callerIdNumber,
+        campaignId: callLog.campaignId,
+        contactId: callLog.contactId,
+      });
+
+      // Transfer the personalized audio to FreePBX
+      const personalizedFileName = `personalized_${callLog.campaignId}_${callLog.contactId}.mp3`;
+      const transferResult = await transferAudioToFreePBX({
+        s3Url: personalizedResult.s3Url,
+        fileName: personalizedFileName,
+      });
+
+      variables.AUDIOFILE = transferResult.remotePath;
+      console.log(`[Dialer] Personalized TTS ready for ${callLog.phoneNumber}: "${personalizedResult.renderedText.substring(0, 80)}..."`);
+    } catch (err) {
+      console.error(`[Dialer] Personalized TTS failed for contact ${callLog.contactId}:`, err);
+      // Fall back to static audio if available
+      if (active.audioPath) {
+        variables.AUDIOFILE = active.audioPath;
+      }
+    }
+  } else if (active.audioPath) {
+    variables.AUDIOFILE = active.audioPath;
   }
 
   try {
@@ -264,6 +311,7 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
     await db.updateCallLog(callLog.id, {
       asteriskCallId: callId,
       asteriskChannel: channel,
+      callerIdUsed: callerIdNumber,
     });
 
     if (result.Response === "Error") {

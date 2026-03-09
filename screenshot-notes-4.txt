@@ -1,0 +1,1 @@
+Dashboard screenshot: FreePBX Connected (green badge), Live Dialer Status panel with Active Calls/Leads in Hopper/Concurrent Limit, all nav items visible including AI Script Writer, Cost Estimator, Reports. 2 campaigns exist, 1 contact list with 1 contact. Need to verify the campaign builder personalized TTS UI by navigating to Campaigns page.

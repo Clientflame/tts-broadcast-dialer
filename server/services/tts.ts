@@ -89,6 +89,101 @@ export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0):
   return { url, key };
 }
 
+// Render a message template with contact-specific merge fields
+export function renderMessageTemplate(template: string, variables: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    return variables[key] || match;
+  });
+}
+
+// Generate personalized TTS for a specific contact, with S3 caching
+export async function generatePersonalizedTTS(params: {
+  messageTemplate: string;
+  voice: TTSVoice;
+  speed?: number;
+  contactData: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phoneNumber: string;
+    company?: string | null;
+    state?: string | null;
+    databaseName?: string | null;
+  };
+  callerIdNumber?: string;
+  campaignId: number;
+  contactId: number;
+}): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OpenAI API key not configured");
+
+  // Build the variables map
+  const variables: Record<string, string> = {
+    first_name: params.contactData.firstName || "Valued Customer",
+    last_name: params.contactData.lastName || "",
+    full_name: [params.contactData.firstName, params.contactData.lastName].filter(Boolean).join(" ") || "Valued Customer",
+    phone: params.contactData.phoneNumber,
+    company: params.contactData.company || "",
+    state: params.contactData.state || "",
+    database_name: params.contactData.databaseName || "",
+    caller_id: params.callerIdNumber || "",
+  };
+
+  // Format caller_id as phone number if it's just digits
+  if (variables.caller_id && /^\d{10}$/.test(variables.caller_id.replace(/\D/g, ""))) {
+    const digits = variables.caller_id.replace(/\D/g, "");
+    variables.caller_id = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  const renderedText = renderMessageTemplate(params.messageTemplate, variables);
+  const speed = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
+
+  // Create a cache key based on rendered text + voice + speed
+  const { createHash } = await import("crypto");
+  const cacheHash = createHash("md5").update(`${renderedText}|${params.voice}|${speed}`).digest("hex");
+  const cacheKey = `tts-personalized/campaign_${params.campaignId}_contact_${params.contactId}_${cacheHash}.mp3`;
+
+  // Check if already cached in S3 (by trying to get the URL)
+  try {
+    const { storageGet } = await import("../storage");
+    const existing = await storageGet(cacheKey);
+    if (existing?.url) {
+      return { s3Url: existing.url, s3Key: cacheKey, fileSize: 0, renderedText };
+    }
+  } catch {
+    // Not cached, generate fresh
+  }
+
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "tts-1-hd",
+      input: renderedText,
+      voice: params.voice,
+      response_format: "mp3",
+      speed,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`OpenAI TTS failed (${response.status}): ${errText}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  const { url, key } = await storagePut(cacheKey, audioBuffer, "audio/mpeg");
+
+  return {
+    s3Url: url,
+    s3Key: key,
+    fileSize: audioBuffer.length,
+    renderedText,
+  };
+}
+
 export async function transferAudioToFreePBX(params: {
   s3Url: string;
   fileName: string;
