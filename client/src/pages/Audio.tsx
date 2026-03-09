@@ -11,17 +11,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic } from "lucide-react";
 
-const VOICE_OPTIONS = [
+const OPENAI_VOICE_OPTIONS = [
   { id: "alloy", name: "Alloy", desc: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
   { id: "echo", name: "Echo", desc: "Warm baritone with gravitas", gender: "Male", tone: "Confident, reassuring", bestFor: "Financial services, legal notices, executive messaging", color: "bg-amber-500/10 border-amber-500/20 text-amber-700" },
   { id: "fable", name: "Fable", desc: "Expressive with natural inflection", gender: "Male", tone: "Engaging, storytelling", bestFor: "Marketing campaigns, event invitations, promotions", color: "bg-purple-500/10 border-purple-500/20 text-purple-700" },
   { id: "onyx", name: "Onyx", desc: "Deep and commanding presence", gender: "Male", tone: "Authoritative, serious", bestFor: "Urgent notices, compliance calls, collections", color: "bg-slate-500/10 border-slate-500/20 text-slate-700" },
   { id: "nova", name: "Nova", desc: "Bright and approachable", gender: "Female", tone: "Friendly, energetic", bestFor: "Customer outreach, appointment reminders, surveys", color: "bg-green-500/10 border-green-500/20 text-green-700" },
   { id: "shimmer", name: "Shimmer", desc: "Smooth and polished", gender: "Female", tone: "Calm, professional", bestFor: "Healthcare, insurance, customer service", color: "bg-pink-500/10 border-pink-500/20 text-pink-700" },
+] as const;
+
+const GOOGLE_VOICE_OPTIONS = [
+  { id: "en-US-Studio-M", name: "Studio M", desc: "Premium male studio voice", gender: "Male", tone: "Professional, clear", bestFor: "Business calls, announcements", color: "bg-teal-500/10 border-teal-500/20 text-teal-700", type: "Studio" },
+  { id: "en-US-Studio-O", name: "Studio O", desc: "Premium female studio voice", gender: "Female", tone: "Warm, professional", bestFor: "Customer service, healthcare", color: "bg-rose-500/10 border-rose-500/20 text-rose-700", type: "Studio" },
+  { id: "en-US-Studio-Q", name: "Studio Q", desc: "Premium male studio voice", gender: "Male", tone: "Authoritative, deep", bestFor: "Legal notices, collections", color: "bg-indigo-500/10 border-indigo-500/20 text-indigo-700", type: "Studio" },
+  { id: "en-US-Wavenet-A", name: "Wavenet A", desc: "Natural male voice", gender: "Male", tone: "Conversational, warm", bestFor: "General broadcasts, reminders", color: "bg-cyan-500/10 border-cyan-500/20 text-cyan-700", type: "Wavenet" },
+  { id: "en-US-Wavenet-C", name: "Wavenet C", desc: "Natural female voice", gender: "Female", tone: "Friendly, approachable", bestFor: "Outreach, surveys, invitations", color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-700", type: "Wavenet" },
+  { id: "en-US-Wavenet-D", name: "Wavenet D", desc: "Natural male voice", gender: "Male", tone: "Confident, steady", bestFor: "Financial, insurance calls", color: "bg-orange-500/10 border-orange-500/20 text-orange-700", type: "Wavenet" },
+  { id: "en-US-Wavenet-F", name: "Wavenet F", desc: "Natural female voice", gender: "Female", tone: "Calm, reassuring", bestFor: "Healthcare, appointment reminders", color: "bg-violet-500/10 border-violet-500/20 text-violet-700", type: "Wavenet" },
+  { id: "en-US-Neural2-A", name: "Neural2 A", desc: "Advanced male neural voice", gender: "Male", tone: "Clear, articulate", bestFor: "Professional announcements", color: "bg-sky-500/10 border-sky-500/20 text-sky-700", type: "Neural2" },
+  { id: "en-US-Neural2-C", name: "Neural2 C", desc: "Advanced female neural voice", gender: "Female", tone: "Bright, engaging", bestFor: "Marketing, promotions", color: "bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-700", type: "Neural2" },
+  { id: "en-US-Neural2-D", name: "Neural2 D", desc: "Advanced male neural voice", gender: "Male", tone: "Deep, authoritative", bestFor: "Urgent notices, compliance", color: "bg-stone-500/10 border-stone-500/20 text-stone-700", type: "Neural2" },
+  { id: "en-US-Neural2-F", name: "Neural2 F", desc: "Advanced female neural voice", gender: "Female", tone: "Smooth, polished", bestFor: "Customer service, surveys", color: "bg-lime-500/10 border-lime-500/20 text-lime-700", type: "Neural2" },
 ] as const;
 
 function AudioPlayer({ url, name }: { url: string; name: string }) {
@@ -78,7 +93,9 @@ function AudioPlayer({ url, name }: { url: string; name: string }) {
   );
 }
 
-function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor }: { voice: string; color: string; name: string; desc: string; gender: string; tone: string; bestFor: string }) {
+function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor, provider }: {
+  voice: string; color: string; name: string; desc: string; gender: string; tone: string; bestFor: string; provider: "openai" | "google";
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -127,7 +144,7 @@ function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor }: { 
       return;
     }
     setLoading(true);
-    voiceSample.mutate({ voice: voice as any, speed: 1.0 });
+    voiceSample.mutate({ voice: voice as any, speed: 1.0, ttsProvider: provider });
   };
 
   return (
@@ -182,6 +199,7 @@ export default function Audio() {
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [voice, setVoice] = useState<string>("alloy");
+  const [ttsProvider, setTtsProvider] = useState<"openai" | "google">("openai");
   const [speed, setSpeed] = useState(1.0);
   const [testPhone, setTestPhone] = useState("");
   const [testAudioId, setTestAudioId] = useState<number | null>(null);
@@ -199,7 +217,7 @@ export default function Audio() {
     onSuccess: () => {
       utils.audio.list.invalidate();
       setGenerateOpen(false);
-      setName(""); setText(""); setVoice("alloy"); setSpeed(1.0);
+      setName(""); setText(""); setVoice("alloy"); setTtsProvider("openai"); setSpeed(1.0);
       toast.success("TTS generation started. Audio will be ready shortly.");
     },
     onError: (e) => toast.error(e.message),
@@ -227,13 +245,20 @@ export default function Audio() {
 
   const readyFiles = audioFiles.data?.filter(f => f.status === "ready") || [];
 
+  const allVoiceOptions = useMemo(() => [
+    ...OPENAI_VOICE_OPTIONS.map(v => ({ ...v, provider: "openai" as const })),
+    ...GOOGLE_VOICE_OPTIONS.map(v => ({ ...v, provider: "google" as const })),
+  ], []);
+
+  const currentVoiceOptions = ttsProvider === "openai" ? OPENAI_VOICE_OPTIONS : GOOGLE_VOICE_OPTIONS;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Audio / TTS</h1>
-            <p className="text-muted-foreground mt-1">Generate AI voice messages using OpenAI TTS</p>
+            <p className="text-muted-foreground mt-1">Generate AI voice messages using OpenAI or Google Cloud TTS</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => utils.audio.list.invalidate()}>
@@ -295,17 +320,71 @@ export default function Audio() {
                     <Label>Audio Name</Label>
                     <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Welcome Message" />
                   </div>
+
+                  {/* TTS Provider Selection */}
+                  <div>
+                    <Label>TTS Provider</Label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <button
+                        type="button"
+                        className={`p-3 rounded-lg border text-center transition-colors ${
+                          ttsProvider === "openai" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                        }`}
+                        onClick={() => { setTtsProvider("openai"); setVoice("alloy"); }}
+                      >
+                        <div className="font-medium text-sm">OpenAI</div>
+                        <div className="text-xs text-muted-foreground">6 premium voices</div>
+                      </button>
+                      <button
+                        type="button"
+                        className={`p-3 rounded-lg border text-center transition-colors ${
+                          ttsProvider === "google" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                        }`}
+                        onClick={() => { setTtsProvider("google"); setVoice("en-US-Studio-O"); }}
+                      >
+                        <div className="font-medium text-sm">Google Cloud</div>
+                        <div className="text-xs text-muted-foreground">11 voices (Studio, Wavenet, Neural2)</div>
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <Label>Voice</Label>
                     <Select value={voice} onValueChange={setVoice}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {VOICE_OPTIONS.map(v => (
-                          <SelectItem key={v.id} value={v.id}>
-                            <span className="font-medium">{v.name}</span>
-                            <span className="text-muted-foreground ml-2 text-xs">— {v.desc}</span>
-                          </SelectItem>
-                        ))}
+                        {ttsProvider === "openai" ? (
+                          OPENAI_VOICE_OPTIONS.map(v => (
+                            <SelectItem key={v.id} value={v.id}>
+                              <span className="font-medium">{v.name}</span>
+                              <span className="text-muted-foreground ml-2 text-xs">— {v.desc}</span>
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Studio (Premium)</div>
+                            {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Studio").map(v => (
+                              <SelectItem key={v.id} value={v.id}>
+                                <span className="font-medium">{v.name}</span>
+                                <span className="text-muted-foreground ml-2 text-xs">— {v.desc} ({v.gender})</span>
+                              </SelectItem>
+                            ))}
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Wavenet</div>
+                            {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Wavenet").map(v => (
+                              <SelectItem key={v.id} value={v.id}>
+                                <span className="font-medium">{v.name}</span>
+                                <span className="text-muted-foreground ml-2 text-xs">— {v.desc} ({v.gender})</span>
+                              </SelectItem>
+                            ))}
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Neural2</div>
+                            {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Neural2").map(v => (
+                              <SelectItem key={v.id} value={v.id}>
+                                <span className="font-medium">{v.name}</span>
+                                <span className="text-muted-foreground ml-2 text-xs">— {v.desc} ({v.gender})</span>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -337,7 +416,7 @@ export default function Audio() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setGenerateOpen(false)}>Cancel</Button>
-                  <Button onClick={() => generateTTS.mutate({ name, text, voice: voice as any, speed })} disabled={!name || !text || generateTTS.isPending}>
+                  <Button onClick={() => generateTTS.mutate({ name, text, voice: voice as any, speed, ttsProvider })} disabled={!name || !text || generateTTS.isPending}>
                     {generateTTS.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating...</> : "Generate"}
                   </Button>
                 </DialogFooter>
@@ -355,11 +434,47 @@ export default function Audio() {
             <CardDescription>Click play on any voice to hear a live preview sample</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {VOICE_OPTIONS.map(v => (
-                <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} />
-              ))}
-            </div>
+            <Tabs defaultValue="openai" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="openai">OpenAI (6 voices)</TabsTrigger>
+                <TabsTrigger value="google">Google Cloud (11 voices)</TabsTrigger>
+              </TabsList>
+              <TabsContent value="openai">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {OPENAI_VOICE_OPTIONS.map(v => (
+                    <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} provider="openai" />
+                  ))}
+                </div>
+              </TabsContent>
+              <TabsContent value="google">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Studio (Premium)</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Studio").map(v => (
+                        <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} provider="google" />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Wavenet</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Wavenet").map(v => (
+                        <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} provider="google" />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">Neural2</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {GOOGLE_VOICE_OPTIONS.filter(v => v.type === "Neural2").map(v => (
+                        <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} provider="google" />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
@@ -390,7 +505,11 @@ export default function Audio() {
                 ) : audioFiles.data.map(file => (
                   <TableRow key={file.id}>
                     <TableCell className="font-medium">{file.name}</TableCell>
-                    <TableCell><Badge variant="outline" className="capitalize">{file.voice}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize">
+                        {file.voice?.startsWith("en-US-") ? file.voice.replace("en-US-", "") : file.voice}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       {file.status === "ready" && file.s3Url ? (
                         <AudioPlayer url={file.s3Url} name={file.name} />

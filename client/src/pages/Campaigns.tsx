@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
-  Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy,
+  Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2,
 } from "lucide-react";
 
@@ -38,90 +38,128 @@ const IVR_ACTIONS = [
   { value: "confirm", label: "Confirm / Accept" },
 ];
 
-export default function Campaigns() {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [cloneOpen, setCloneOpen] = useState(false);
-  const [cloneId, setCloneId] = useState<number | null>(null);
-  const [cloneName, setCloneName] = useState("");
-  const [detailId, setDetailId] = useState<number | null>(null);
-  const [form, setForm] = useState({
-    name: "", description: "", contactListId: 0, audioFileId: 0,
-    voice: "alloy", callerIdNumber: "", callerIdName: "",
-    maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
-    timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
-    ivrEnabled: false, ivrOptions: [] as { digit: string; action: string; label: string }[],
-    abTestGroup: "", abTestVariant: "",
-    targetStates: [] as string[], useGeoCallerIds: false,
-    usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-    useDidRotation: false,
-    pacingMode: "fixed" as "fixed" | "adaptive" | "predictive",
-    pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
-  });
-  const messageRef = useRef<HTMLTextAreaElement>(null);
+const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
 
-  const [, setLocation] = useLocation();
-  const utils = trpc.useUtils();
-  const campaigns = trpc.campaigns.list.useQuery();
-  const contactLists = trpc.contactLists.list.useQuery();
-  const audioFiles = trpc.audio.list.useQuery();
-  const templates = trpc.templates.list.useQuery();
-  const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
-  const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
+const GOOGLE_VOICES = [
+  { id: "en-US-Wavenet-A", label: "Wavenet A (Male)", gender: "Male", type: "Wavenet" },
+  { id: "en-US-Wavenet-B", label: "Wavenet B (Male)", gender: "Male", type: "Wavenet" },
+  { id: "en-US-Wavenet-C", label: "Wavenet C (Female)", gender: "Female", type: "Wavenet" },
+  { id: "en-US-Wavenet-D", label: "Wavenet D (Male)", gender: "Male", type: "Wavenet" },
+  { id: "en-US-Wavenet-E", label: "Wavenet E (Female)", gender: "Female", type: "Wavenet" },
+  { id: "en-US-Wavenet-F", label: "Wavenet F (Female)", gender: "Female", type: "Wavenet" },
+  { id: "en-US-Wavenet-G", label: "Wavenet G (Female)", gender: "Female", type: "Wavenet" },
+  { id: "en-US-Wavenet-H", label: "Wavenet H (Female)", gender: "Female", type: "Wavenet" },
+  { id: "en-US-Wavenet-I", label: "Wavenet I (Male)", gender: "Male", type: "Wavenet" },
+  { id: "en-US-Wavenet-J", label: "Wavenet J (Male)", gender: "Male", type: "Wavenet" },
+  { id: "en-US-Neural2-A", label: "Neural2 A (Male)", gender: "Male", type: "Neural2" },
+  { id: "en-US-Neural2-C", label: "Neural2 C (Female)", gender: "Female", type: "Neural2" },
+  { id: "en-US-Neural2-D", label: "Neural2 D (Male)", gender: "Male", type: "Neural2" },
+  { id: "en-US-Neural2-E", label: "Neural2 E (Female)", gender: "Female", type: "Neural2" },
+  { id: "en-US-Neural2-F", label: "Neural2 F (Female)", gender: "Female", type: "Neural2" },
+  { id: "en-US-Neural2-G", label: "Neural2 G (Female)", gender: "Female", type: "Neural2" },
+  { id: "en-US-Neural2-H", label: "Neural2 H (Female)", gender: "Female", type: "Neural2" },
+  { id: "en-US-Neural2-I", label: "Neural2 I (Male)", gender: "Male", type: "Neural2" },
+  { id: "en-US-Neural2-J", label: "Neural2 J (Male)", gender: "Male", type: "Neural2" },
+  { id: "en-US-Studio-M", label: "Studio M (Male)", gender: "Male", type: "Studio" },
+  { id: "en-US-Studio-O", label: "Studio O (Female)", gender: "Female", type: "Studio" },
+  { id: "en-US-Studio-Q", label: "Studio Q (Male)", gender: "Male", type: "Studio" },
+];
 
-  const createCampaign = trpc.campaigns.create.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); resetForm(); toast.success("Campaign created"); },
-    onError: (e) => toast.error(e.message),
-  });
+const MERGE_FIELDS = [
+  { key: "first_name", label: "First Name", example: "John" },
+  { key: "last_name", label: "Last Name", example: "Smith" },
+  { key: "full_name", label: "Full Name", example: "John Smith" },
+  { key: "caller_id", label: "Caller ID", example: "(407) 555-1177" },
+  { key: "company", label: "Company", example: "Acme Corp" },
+  { key: "state", label: "State", example: "FL" },
+  { key: "database_name", label: "Database", example: "Spring 2026" },
+  { key: "phone", label: "Phone", example: "4075551177" },
+];
 
-  const cloneCampaign = trpc.campaigns.clone.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); setCloneOpen(false); setCloneName(""); toast.success("Campaign cloned"); },
-    onError: (e) => toast.error(e.message),
-  });
+type FormState = {
+  name: string; description: string; contactListId: number; audioFileId: number;
+  voice: string; ttsProvider: "openai" | "google"; callerIdNumber: string; callerIdName: string;
+  maxConcurrentCalls: number; retryAttempts: number; retryDelay: number;
+  timezone: string; timeWindowStart: string; timeWindowEnd: string;
+  ivrEnabled: boolean; ivrOptions: { digit: string; action: string; label: string }[];
+  abTestGroup: string; abTestVariant: string;
+  targetStates: string[]; useGeoCallerIds: boolean;
+  usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
+  useDidRotation: boolean;
+  pacingMode: "fixed" | "adaptive" | "predictive";
+  pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
+};
 
-  const startCampaign = trpc.campaigns.start.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign started"); },
-    onError: (e) => toast.error(e.message),
-  });
+const DEFAULT_FORM: FormState = {
+  name: "", description: "", contactListId: 0, audioFileId: 0,
+  voice: "alloy", ttsProvider: "openai", callerIdNumber: "", callerIdName: "",
+  maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
+  timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
+  ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
+  targetStates: [], useGeoCallerIds: false,
+  usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
+  useDidRotation: false,
+  pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
+};
 
-  const pauseCampaign = trpc.campaigns.pause.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign paused"); },
-    onError: (e) => toast.error(e.message),
-  });
+function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
+  value: string; provider: "openai" | "google";
+  onVoiceChange: (v: string) => void; onProviderChange: (p: "openai" | "google") => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>TTS Provider</Label>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" className={`p-2 rounded-lg border text-center text-sm transition-colors ${
+          provider === "openai" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+        }`} onClick={() => { onProviderChange("openai"); onVoiceChange("alloy"); }}>
+          <div className="font-medium">OpenAI</div>
+          <div className="text-xs text-muted-foreground">6 voices</div>
+        </button>
+        <button type="button" className={`p-2 rounded-lg border text-center text-sm transition-colors ${
+          provider === "google" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+        }`} onClick={() => { onProviderChange("google"); onVoiceChange("en-US-Wavenet-C"); }}>
+          <div className="font-medium">Google Cloud</div>
+          <div className="text-xs text-muted-foreground">22 voices</div>
+        </button>
+      </div>
+      <Label>Voice</Label>
+      {provider === "openai" ? (
+        <Select value={value} onValueChange={onVoiceChange}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {OPENAI_VOICES.map(v => (
+              <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Select value={value} onValueChange={onVoiceChange}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {["Studio", "Wavenet", "Neural2"].map(type => (
+              <div key={type}>
+                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{type}</div>
+                {GOOGLE_VOICES.filter(v => v.type === type).map(v => (
+                  <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                ))}
+              </div>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
 
-  const cancelCampaign = trpc.campaigns.cancel.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign cancelled"); },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteCampaign = trpc.campaigns.delete.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); setDetailId(null); toast.success("Campaign deleted"); },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const resetForm = () => setForm({
-    name: "", description: "", contactListId: 0, audioFileId: 0,
-    voice: "alloy", callerIdNumber: "", callerIdName: "",
-    maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
-    timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
-    ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
-    targetStates: [], useGeoCallerIds: false,
-    usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-    useDidRotation: false,
-    pacingMode: "fixed" as "fixed" | "adaptive" | "predictive",
-    pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
-  });
-
-  const MERGE_FIELDS = [
-    { key: "first_name", label: "First Name", example: "John" },
-    { key: "last_name", label: "Last Name", example: "Smith" },
-    { key: "full_name", label: "Full Name", example: "John Smith" },
-    { key: "caller_id", label: "Caller ID", example: "(407) 555-1177" },
-    { key: "company", label: "Company", example: "Acme Corp" },
-    { key: "state", label: "State", example: "FL" },
-    { key: "database_name", label: "Database", example: "Spring 2026" },
-    { key: "phone", label: "Phone", example: "4075551177" },
-  ];
-
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates }: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  messageRef: React.RefObject<HTMLTextAreaElement | null>;
+  contactLists: any;
+  readyAudioFiles: any[];
+  templates: any;
+}) {
   const insertMergeField = (fieldKey: string) => {
     const textarea = messageRef.current;
     if (!textarea) {
@@ -151,7 +189,7 @@ export default function Campaigns() {
   };
 
   const loadTemplate = (templateId: number) => {
-    const t = templates.data?.find(t => t.id === templateId);
+    const t = templates?.find((t: any) => t.id === templateId);
     if (!t) return;
     setForm(p => ({
       ...p,
@@ -185,6 +223,373 @@ export default function Campaigns() {
     }));
   };
 
+  return (
+    <>
+      {/* Template loader */}
+      {templates && templates.length > 0 && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 mb-2">
+          <Wand2 className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Load from template:</span>
+          <Select onValueChange={v => loadTemplate(parseInt(v))}>
+            <SelectTrigger className="w-[200px] h-8"><SelectValue placeholder="Select template" /></SelectTrigger>
+            <SelectContent>
+              {templates.map((t: any) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <Tabs defaultValue="basic" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="basic">Basic</TabsTrigger>
+          <TabsTrigger value="dialing">Dialing</TabsTrigger>
+          <TabsTrigger value="ivr">IVR</TabsTrigger>
+          <TabsTrigger value="targeting">Targeting</TabsTrigger>
+          <TabsTrigger value="schedule">Schedule</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic" className="space-y-4 mt-4">
+          <div><Label>Campaign Name *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. March Promo Blast" /></div>
+          <div><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Campaign description..." /></div>
+          <div>
+            <Label>Contact List *</Label>
+            <Select value={form.contactListId ? String(form.contactListId) : ""} onValueChange={v => setForm(p => ({ ...p, contactListId: parseInt(v) }))}>
+              <SelectTrigger><SelectValue placeholder="Select a contact list" /></SelectTrigger>
+              <SelectContent>
+                {contactLists?.map((l: any) => (
+                  <SelectItem key={l.id} value={String(l.id)}>{l.name} ({l.contactCount} contacts)</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Personalized TTS Toggle */}
+          <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
+            <div>
+              <Label className="text-base font-semibold">Personalized TTS Messages</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">Generate unique audio per contact with merge fields (name, caller ID, etc.)</p>
+            </div>
+            <Switch checked={form.usePersonalizedTTS} onCheckedChange={v => setForm(p => ({ ...p, usePersonalizedTTS: v }))} />
+          </div>
+
+          {form.usePersonalizedTTS ? (
+            <div className="space-y-3">
+              {/* Message Template */}
+              <div>
+                <Label className="text-sm font-medium">Message Script Template *</Label>
+                <p className="text-xs text-muted-foreground mb-2">Click merge fields below to insert dynamic placeholders into your script.</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {MERGE_FIELDS.map(f => (
+                    <Button key={f.key} type="button" variant="outline" size="sm" className="h-7 text-xs px-2 font-mono" onClick={() => insertMergeField(f.key)}>
+                      {`{{${f.key}}}`}
+                    </Button>
+                  ))}
+                </div>
+                <Textarea
+                  ref={messageRef}
+                  value={form.messageText}
+                  onChange={e => setForm(p => ({ ...p, messageText: e.target.value }))}
+                  placeholder={`Hello {{first_name}} {{last_name}}, this serves as a final notice...`}
+                  className="min-h-[120px] font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mt-1">{form.messageText.length} characters</p>
+              </div>
+
+              {/* Live Preview */}
+              {form.messageText && (
+                <div className="p-3 rounded-lg bg-muted/50 border">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live Preview (sample contact)</Label>
+                  <p className="text-sm mt-1.5 leading-relaxed">{getMessagePreview()}</p>
+                </div>
+              )}
+
+              {/* Voice & Speed */}
+              <div className="grid grid-cols-2 gap-4">
+                <VoiceSelector
+                  value={form.voice}
+                  provider={form.ttsProvider}
+                  onVoiceChange={v => setForm(p => ({ ...p, voice: v }))}
+                  onProviderChange={p => setForm(prev => ({ ...prev, ttsProvider: p }))}
+                />
+                <div>
+                  <Label>Speed: {form.ttsSpeed}x</Label>
+                  <Input type="range" min="0.25" max="4.0" step="0.25" value={form.ttsSpeed}
+                    onChange={e => setForm(p => ({ ...p, ttsSpeed: e.target.value }))} className="mt-2" />
+                  <div className="flex justify-between text-xs text-muted-foreground"><span>0.25x</span><span>1.0x</span><span>4.0x</span></div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Static Audio File */}
+              <div>
+                <Label>Audio File (pre-recorded)</Label>
+                <Select value={form.audioFileId ? String(form.audioFileId) : ""} onValueChange={v => setForm(p => ({ ...p, audioFileId: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue placeholder="Select an audio file" /></SelectTrigger>
+                  <SelectContent>
+                    {readyAudioFiles.map((f: any) => (
+                      <SelectItem key={f.id} value={String(f.id)}>{f.name} ({f.voice})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <VoiceSelector
+                value={form.voice}
+                provider={form.ttsProvider}
+                onVoiceChange={v => setForm(p => ({ ...p, voice: v }))}
+                onProviderChange={p => setForm(prev => ({ ...prev, ttsProvider: p }))}
+              />
+            </>
+          )}
+
+          {/* DID Rotation */}
+          <div className="flex items-center justify-between p-3 rounded-lg border">
+            <div>
+              <Label>DID Rotation</Label>
+              <p className="text-xs text-muted-foreground">Automatically rotate through your active caller IDs</p>
+            </div>
+            <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
+          </div>
+
+          {/* A/B Testing */}
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>A/B Test Group</Label><Input value={form.abTestGroup} onChange={e => setForm(p => ({ ...p, abTestGroup: e.target.value }))} placeholder="e.g. spring-2026" /></div>
+            <div><Label>Variant</Label>
+              <Select value={form.abTestVariant || "none"} onValueChange={v => setForm(p => ({ ...p, abTestVariant: v === "none" ? "" : v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No A/B Test</SelectItem>
+                  <SelectItem value="A">Variant A</SelectItem>
+                  <SelectItem value="B">Variant B</SelectItem>
+                  <SelectItem value="C">Variant C</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="dialing" className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Caller ID Number</Label><Input value={form.callerIdNumber} onChange={e => setForm(p => ({ ...p, callerIdNumber: e.target.value }))} placeholder="Leave blank for DID rotation" /></div>
+            <div><Label>Caller ID Name</Label><Input value={form.callerIdName} onChange={e => setForm(p => ({ ...p, callerIdName: e.target.value }))} placeholder="e.g. My Company" /></div>
+          </div>
+          <p className="text-xs text-muted-foreground">Leave Caller ID blank to use automatic DID rotation from your Caller ID pool.</p>
+          <div>
+            <Label>Max Concurrent Calls</Label>
+            <Input type="number" min={1} max={50} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
+            <p className="text-xs text-muted-foreground mt-1">Base number of simultaneous outbound calls (1-50)</p>
+          </div>
+
+          {/* Call Pacing Mode */}
+          <div className="p-4 rounded-lg border space-y-4">
+            <div>
+              <Label className="text-base font-semibold">Call Pacing Mode</Label>
+              <p className="text-xs text-muted-foreground">Controls how concurrent call volume is managed during the campaign</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(["fixed", "adaptive", "predictive"] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`p-3 rounded-lg border text-center transition-colors ${
+                    form.pacingMode === mode
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                  onClick={() => setForm(p => ({ ...p, pacingMode: mode }))}
+                >
+                  <div className="font-medium capitalize text-sm">{mode}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {mode === "fixed" && "Static call limit"}
+                    {mode === "adaptive" && "Adjusts to answer rate"}
+                    {mode === "predictive" && "AI-optimized pacing"}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {form.pacingMode !== "fixed" && (
+              <div className="space-y-3 pt-2 border-t">
+                <div>
+                  <Label>Target Drop Rate: {form.pacingTargetDropRate}%</Label>
+                  <Input type="range" min={1} max={10} step={1} value={form.pacingTargetDropRate}
+                    onChange={e => setForm(p => ({ ...p, pacingTargetDropRate: parseInt(e.target.value) }))} className="mt-1" />
+                  <div className="flex justify-between text-xs text-muted-foreground"><span>1% (conservative)</span><span>10% (aggressive)</span></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Min Concurrent</Label>
+                    <Input type="number" min={1} max={50} value={form.pacingMinConcurrent}
+                      onChange={e => setForm(p => ({ ...p, pacingMinConcurrent: parseInt(e.target.value) || 1 }))} />
+                  </div>
+                  <div>
+                    <Label>Max Concurrent</Label>
+                    <Input type="number" min={1} max={100} value={form.pacingMaxConcurrent}
+                      onChange={e => setForm(p => ({ ...p, pacingMaxConcurrent: parseInt(e.target.value) || 10 }))} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {form.pacingMode === "adaptive" 
+                    ? "Adaptive mode adjusts concurrent calls based on real-time answer and drop rates within a 60-second rolling window."
+                    : "Predictive mode uses historical answer rates and call duration to calculate optimal call volume, overcommitting slightly to maximize throughput."}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
+            <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /></div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ivr" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-base">Interactive Voice Response (IVR)</Label>
+              <p className="text-xs text-muted-foreground mt-1">Allow callers to press keys to take actions during the broadcast</p>
+            </div>
+            <Switch checked={form.ivrEnabled} onCheckedChange={v => setForm(p => ({ ...p, ivrEnabled: v }))} />
+          </div>
+          {form.ivrEnabled && (
+            <div className="space-y-3">
+              {form.ivrOptions.map((opt, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border">
+                  <Badge variant="outline" className="w-8 h-8 flex items-center justify-center text-lg font-mono">{opt.digit}</Badge>
+                  <Select value={opt.action} onValueChange={v => {
+                    const updated = [...form.ivrOptions];
+                    updated[idx] = { ...updated[idx], action: v };
+                    setForm(p => ({ ...p, ivrOptions: updated }));
+                  }}>
+                    <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {IVR_ACTIONS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Input placeholder="Label (e.g. Press 1 to confirm)" value={opt.label}
+                    onChange={e => {
+                      const updated = [...form.ivrOptions];
+                      updated[idx] = { ...updated[idx], label: e.target.value };
+                      setForm(p => ({ ...p, ivrOptions: updated }));
+                    }} className="flex-1" />
+                  <Button variant="ghost" size="sm" onClick={() => removeIvrOption(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={addIvrOption} disabled={form.ivrOptions.length >= 9}>
+                <Plus className="h-4 w-4 mr-1" />Add IVR Option
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="targeting" className="space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-base">Geographic Caller ID Matching</Label>
+              <p className="text-xs text-muted-foreground mt-1">Automatically match caller IDs to contact area codes/states</p>
+            </div>
+            <Switch checked={form.useGeoCallerIds} onCheckedChange={v => setForm(p => ({ ...p, useGeoCallerIds: v }))} />
+          </div>
+          <div>
+            <Label className="flex items-center gap-2"><MapPin className="h-4 w-4" />Target States</Label>
+            <p className="text-xs text-muted-foreground mb-2">Only dial contacts in selected states. Leave empty to dial all.</p>
+            <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto p-2 border rounded-lg">
+              {US_STATES.map(state => (
+                <Badge key={state} variant={form.targetStates.includes(state) ? "default" : "outline"}
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => toggleState(state)}>{state}</Badge>
+              ))}
+            </div>
+            {form.targetStates.length > 0 && (
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
+                <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [] }))}>Clear All</Button>
+              </div>
+            )}
+          </div>
+          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm">
+            <div className="flex items-center gap-2 mb-1"><Shield className="h-4 w-4 text-blue-600" /><span className="font-medium text-blue-600">TCPA Compliance</span></div>
+            <p className="text-muted-foreground text-xs">Calls are automatically checked against TCPA time windows (8 AM - 9 PM local time) based on each contact's area code timezone. Contacts outside the allowed window are deferred until the next valid time.</p>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="schedule" className="space-y-4 mt-4">
+          <div>
+            <Label>Timezone</Label>
+            <Select value={form.timezone} onValueChange={v => setForm(p => ({ ...p, timezone: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Phoenix","Pacific/Honolulu","America/Anchorage","UTC"].map(tz => (
+                  <SelectItem key={tz} value={tz}>{tz.replace("America/", "").replace("_", " ")}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label>Window Start</Label><Input type="time" value={form.timeWindowStart} onChange={e => setForm(p => ({ ...p, timeWindowStart: e.target.value }))} /></div>
+            <div><Label>Window End</Label><Input type="time" value={form.timeWindowEnd} onChange={e => setForm(p => ({ ...p, timeWindowEnd: e.target.value }))} /></div>
+          </div>
+          <p className="text-xs text-muted-foreground">Calls will only be placed within this time window. TCPA compliance auto-checks each contact's local time.</p>
+        </TabsContent>
+      </Tabs>
+    </>
+  );
+}
+
+export default function Campaigns() {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneId, setCloneId] = useState<number | null>(null);
+  const [cloneName, setCloneName] = useState("");
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM });
+  const [editForm, setEditForm] = useState<FormState>({ ...DEFAULT_FORM });
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const editMessageRef = useRef<HTMLTextAreaElement>(null);
+
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const campaigns = trpc.campaigns.list.useQuery();
+  const contactLists = trpc.contactLists.list.useQuery();
+  const audioFiles = trpc.audio.list.useQuery();
+  const templates = trpc.templates.list.useQuery();
+  const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
+  const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
+
+  const createCampaign = trpc.campaigns.create.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateCampaign = trpc.campaigns.update.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); setEditOpen(false); toast.success("Campaign updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const cloneCampaign = trpc.campaigns.clone.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); setCloneOpen(false); setCloneName(""); toast.success("Campaign cloned"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const startCampaign = trpc.campaigns.start.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign started"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const pauseCampaign = trpc.campaigns.pause.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign paused"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const cancelCampaign = trpc.campaigns.cancel.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign cancelled"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteCampaign = trpc.campaigns.delete.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); setDetailId(null); toast.success("Campaign deleted"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const readyAudioFiles = useMemo(() => audioFiles.data?.filter(f => f.status === "ready") || [], [audioFiles.data]);
 
   const completionRate = useMemo(() => {
@@ -192,10 +597,114 @@ export default function Campaigns() {
     return Math.round((campaignStats.data.completed / campaignStats.data.total) * 100);
   }, [campaignStats.data]);
 
+  const openEditDialog = (c: any) => {
+    const isGoogleVoice = c.voice?.startsWith("en-US-");
+    setEditForm({
+      name: c.name || "",
+      description: c.description || "",
+      contactListId: c.contactListId || 0,
+      audioFileId: c.audioFileId || 0,
+      voice: c.voice || "alloy",
+      ttsProvider: isGoogleVoice ? "google" : "openai",
+      callerIdNumber: c.callerIdNumber || "",
+      callerIdName: c.callerIdName || "",
+      maxConcurrentCalls: c.maxConcurrentCalls || 3,
+      retryAttempts: c.retryAttempts || 0,
+      retryDelay: c.retryDelay || 300,
+      timezone: c.timezone || "America/New_York",
+      timeWindowStart: c.timeWindowStart || "09:00",
+      timeWindowEnd: c.timeWindowEnd || "21:00",
+      ivrEnabled: !!c.ivrEnabled,
+      ivrOptions: c.ivrOptions ? (typeof c.ivrOptions === "string" ? JSON.parse(c.ivrOptions) : c.ivrOptions) : [],
+      abTestGroup: c.abTestGroup || "",
+      abTestVariant: c.abTestVariant || "",
+      targetStates: c.targetStates ? (typeof c.targetStates === "string" ? c.targetStates.split(",").filter(Boolean) : c.targetStates) : [],
+      useGeoCallerIds: !!c.useGeoCallerIds,
+      usePersonalizedTTS: !!c.usePersonalizedTTS,
+      messageText: c.messageText || "",
+      ttsSpeed: c.ttsSpeed || "1.0",
+      useDidRotation: !!c.useDidRotation,
+      pacingMode: (c as any).pacingMode || "fixed",
+      pacingTargetDropRate: (c as any).pacingTargetDropRate || 3,
+      pacingMinConcurrent: (c as any).pacingMinConcurrent || 1,
+      pacingMaxConcurrent: (c as any).pacingMaxConcurrent || 10,
+    });
+    setEditOpen(true);
+  };
+
+  const submitEdit = () => {
+    if (!detailId) return;
+    updateCampaign.mutate({
+      id: detailId,
+      name: editForm.name,
+      description: editForm.description || undefined,
+      contactListId: editForm.contactListId,
+      audioFileId: editForm.audioFileId || undefined,
+      voice: editForm.voice as any,
+      ttsProvider: editForm.ttsProvider,
+      callerIdNumber: editForm.callerIdNumber || undefined,
+      callerIdName: editForm.callerIdName || undefined,
+      maxConcurrentCalls: editForm.maxConcurrentCalls,
+      retryAttempts: editForm.retryAttempts,
+      retryDelay: editForm.retryDelay,
+      timezone: editForm.timezone,
+      timeWindowStart: editForm.timeWindowStart,
+      timeWindowEnd: editForm.timeWindowEnd,
+      ivrEnabled: editForm.ivrEnabled ? 1 : 0,
+      ivrOptions: editForm.ivrEnabled ? editForm.ivrOptions : undefined,
+      abTestGroup: editForm.abTestGroup || undefined,
+      abTestVariant: editForm.abTestVariant || undefined,
+      targetStates: editForm.targetStates.length > 0 ? editForm.targetStates : undefined,
+      useGeoCallerIds: editForm.useGeoCallerIds ? 1 : 0,
+      usePersonalizedTTS: editForm.usePersonalizedTTS ? 1 : 0,
+      messageText: editForm.usePersonalizedTTS ? editForm.messageText : undefined,
+      ttsSpeed: editForm.ttsSpeed !== "1.0" ? editForm.ttsSpeed : undefined,
+      useDidRotation: editForm.useDidRotation ? 1 : 0,
+      pacingMode: editForm.pacingMode,
+      pacingTargetDropRate: editForm.pacingMode !== "fixed" ? editForm.pacingTargetDropRate : undefined,
+      pacingMinConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMinConcurrent : undefined,
+      pacingMaxConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMaxConcurrent : undefined,
+    });
+  };
+
+  const submitCreate = () => {
+    createCampaign.mutate({
+      name: form.name,
+      description: form.description || undefined,
+      contactListId: form.contactListId,
+      audioFileId: form.audioFileId || undefined,
+      voice: form.voice as any,
+      ttsProvider: form.ttsProvider,
+      callerIdNumber: form.callerIdNumber || undefined,
+      callerIdName: form.callerIdName || undefined,
+      maxConcurrentCalls: form.maxConcurrentCalls,
+      retryAttempts: form.retryAttempts,
+      retryDelay: form.retryDelay,
+      timezone: form.timezone,
+      timeWindowStart: form.timeWindowStart,
+      timeWindowEnd: form.timeWindowEnd,
+      ivrEnabled: form.ivrEnabled ? 1 : 0,
+      ivrOptions: form.ivrEnabled ? form.ivrOptions : undefined,
+      abTestGroup: form.abTestGroup || undefined,
+      abTestVariant: form.abTestVariant || undefined,
+      targetStates: form.targetStates.length > 0 ? form.targetStates : undefined,
+      useGeoCallerIds: form.useGeoCallerIds ? 1 : 0,
+      usePersonalizedTTS: form.usePersonalizedTTS ? 1 : 0,
+      messageText: form.usePersonalizedTTS ? form.messageText : undefined,
+      ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
+      useDidRotation: form.useDidRotation ? 1 : 0,
+      pacingMode: form.pacingMode,
+      pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
+      pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
+      pacingMaxConcurrent: form.pacingMode !== "fixed" ? form.pacingMaxConcurrent : undefined,
+    });
+  };
+
   // Campaign Detail View
   if (detailId && campaignDetail.data) {
     const c = campaignDetail.data;
     const stats = campaignStats.data;
+    const canEdit = c.status === "draft" || c.status === "paused" || c.status === "completed" || c.status === "cancelled";
     return (
       <DashboardLayout>
         <div className="space-y-6">
@@ -207,6 +716,12 @@ export default function Campaigns() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_COLORS[c.status] || "outline"} className="text-sm px-3 py-1">{c.status}</Badge>
+              {/* Edit button */}
+              {canEdit && (
+                <Button variant="outline" size="sm" onClick={() => openEditDialog(c)}>
+                  <Pencil className="h-4 w-4 mr-1" />Edit
+                </Button>
+              )}
               {/* Clone button */}
               <Button variant="outline" size="sm" onClick={() => { setCloneId(c.id); setCloneName(`${c.name} (Copy)`); setCloneOpen(true); }}>
                 <Copy className="h-4 w-4 mr-1" />Clone
@@ -282,6 +797,7 @@ export default function Campaigns() {
               <CardHeader><CardTitle className="text-base">Configuration</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Voice</span><span className="capitalize">{c.voice || "alloy"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">TTS Provider</span><span className="capitalize">{c.voice?.startsWith("en-US-") ? "Google Cloud" : "OpenAI"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Concurrent Calls</span><span>{c.maxConcurrentCalls}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Pacing Mode</span><span className="capitalize">{(c as any).pacingMode || "fixed"}</span></div>
                 {(c as any).pacingMode && (c as any).pacingMode !== "fixed" && (
@@ -310,6 +826,9 @@ export default function Campaigns() {
                 <div className="flex justify-between"><span className="text-muted-foreground">IVR</span>
                   <Badge variant={c.ivrEnabled ? "default" : "outline"}>{c.ivrEnabled ? "Enabled" : "Disabled"}</Badge>
                 </div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Personalized TTS</span>
+                  <Badge variant={c.usePersonalizedTTS ? "default" : "outline"}>{c.usePersonalizedTTS ? "Active" : "Off"}</Badge>
+                </div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Geo Targeting</span>
                   <Badge variant={c.useGeoCallerIds ? "default" : "outline"}>{c.useGeoCallerIds ? "Active" : "Off"}</Badge>
                 </div>
@@ -331,6 +850,30 @@ export default function Campaigns() {
             </Button>
           </div>
         </div>
+
+        {/* Edit Campaign Dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>Edit Campaign</DialogTitle></DialogHeader>
+            <CampaignFormTabs
+              form={editForm}
+              setForm={setEditForm}
+              messageRef={editMessageRef}
+              contactLists={contactLists.data}
+              readyAudioFiles={readyAudioFiles}
+              templates={templates.data}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button
+                onClick={submitEdit}
+                disabled={!editForm.name || !editForm.contactListId || (editForm.usePersonalizedTTS && !editForm.messageText) || updateCampaign.isPending}
+              >
+                {updateCampaign.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     );
   }
@@ -350,355 +893,18 @@ export default function Campaigns() {
             </DialogTrigger>
             <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Create Campaign</DialogTitle></DialogHeader>
-
-              {/* Template loader */}
-              {templates.data && templates.data.length > 0 && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 mb-2">
-                  <Wand2 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Load from template:</span>
-                  <Select onValueChange={v => loadTemplate(parseInt(v))}>
-                    <SelectTrigger className="w-[200px] h-8"><SelectValue placeholder="Select template" /></SelectTrigger>
-                    <SelectContent>
-                      {templates.data.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              <Tabs defaultValue="basic" className="w-full">
-                <TabsList className="grid w-full grid-cols-5">
-                  <TabsTrigger value="basic">Basic</TabsTrigger>
-                  <TabsTrigger value="dialing">Dialing</TabsTrigger>
-                  <TabsTrigger value="ivr">IVR</TabsTrigger>
-                  <TabsTrigger value="targeting">Targeting</TabsTrigger>
-                  <TabsTrigger value="schedule">Schedule</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="basic" className="space-y-4 mt-4">
-                  <div><Label>Campaign Name *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. March Promo Blast" /></div>
-                  <div><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Campaign description..." /></div>
-                  <div>
-                    <Label>Contact List *</Label>
-                    <Select value={form.contactListId ? String(form.contactListId) : ""} onValueChange={v => setForm(p => ({ ...p, contactListId: parseInt(v) }))}>
-                      <SelectTrigger><SelectValue placeholder="Select a contact list" /></SelectTrigger>
-                      <SelectContent>
-                        {contactLists.data?.map(l => (
-                          <SelectItem key={l.id} value={String(l.id)}>{l.name} ({l.contactCount} contacts)</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Personalized TTS Toggle */}
-                  <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
-                    <div>
-                      <Label className="text-base font-semibold">Personalized TTS Messages</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Generate unique audio per contact with merge fields (name, caller ID, etc.)</p>
-                    </div>
-                    <Switch checked={form.usePersonalizedTTS} onCheckedChange={v => setForm(p => ({ ...p, usePersonalizedTTS: v }))} />
-                  </div>
-
-                  {form.usePersonalizedTTS ? (
-                    <div className="space-y-3">
-                      {/* Message Template */}
-                      <div>
-                        <Label className="text-sm font-medium">Message Script Template *</Label>
-                        <p className="text-xs text-muted-foreground mb-2">Click merge fields below to insert dynamic placeholders into your script.</p>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {MERGE_FIELDS.map(f => (
-                            <Button key={f.key} type="button" variant="outline" size="sm" className="h-7 text-xs px-2 font-mono" onClick={() => insertMergeField(f.key)}>
-                              {`{{${f.key}}}`}
-                            </Button>
-                          ))}
-                        </div>
-                        <Textarea
-                          ref={messageRef}
-                          value={form.messageText}
-                          onChange={e => setForm(p => ({ ...p, messageText: e.target.value }))}
-                          placeholder={`Hello {{first_name}} {{last_name}}, this serves as a final notice to remind you that your overdue balance remains outstanding. Should you require any assistance or wish to discuss setting up a repayment plan, please do not hesitate to contact us at {{caller_id}}. Thank you for your attention to this matter.`}
-                          className="min-h-[120px] font-mono text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">{form.messageText.length} characters</p>
-                      </div>
-
-                      {/* Live Preview */}
-                      {form.messageText && (
-                        <div className="p-3 rounded-lg bg-muted/50 border">
-                          <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live Preview (sample contact)</Label>
-                          <p className="text-sm mt-1.5 leading-relaxed">{getMessagePreview()}</p>
-                        </div>
-                      )}
-
-                      {/* Voice & Speed */}
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label>Voice</Label>
-                          <Select value={form.voice} onValueChange={v => setForm(p => ({ ...p, voice: v }))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {["alloy","echo","fable","onyx","nova","shimmer"].map(v => (
-                                <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label>Speed: {form.ttsSpeed}x</Label>
-                          <Input type="range" min="0.25" max="4.0" step="0.25" value={form.ttsSpeed}
-                            onChange={e => setForm(p => ({ ...p, ttsSpeed: e.target.value }))} className="mt-2" />
-                          <div className="flex justify-between text-xs text-muted-foreground"><span>0.25x</span><span>1.0x</span><span>4.0x</span></div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Static Audio File */}
-                      <div>
-                        <Label>Audio File (pre-recorded)</Label>
-                        <Select value={form.audioFileId ? String(form.audioFileId) : ""} onValueChange={v => setForm(p => ({ ...p, audioFileId: parseInt(v) }))}>
-                          <SelectTrigger><SelectValue placeholder="Select an audio file" /></SelectTrigger>
-                          <SelectContent>
-                            {readyAudioFiles.map(f => (
-                              <SelectItem key={f.id} value={String(f.id)}>{f.name} ({f.voice})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label>Voice</Label>
-                        <Select value={form.voice} onValueChange={v => setForm(p => ({ ...p, voice: v }))}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {["alloy","echo","fable","onyx","nova","shimmer"].map(v => (
-                              <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
-
-                  {/* DID Rotation */}
-                  <div className="flex items-center justify-between p-3 rounded-lg border">
-                    <div>
-                      <Label>DID Rotation</Label>
-                      <p className="text-xs text-muted-foreground">Automatically rotate through your active caller IDs</p>
-                    </div>
-                    <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
-                  </div>
-
-                  {/* A/B Testing */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>A/B Test Group</Label><Input value={form.abTestGroup} onChange={e => setForm(p => ({ ...p, abTestGroup: e.target.value }))} placeholder="e.g. spring-2026" /></div>
-                    <div><Label>Variant</Label>
-                      <Select value={form.abTestVariant || "none"} onValueChange={v => setForm(p => ({ ...p, abTestVariant: v === "none" ? "" : v }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No A/B Test</SelectItem>
-                          <SelectItem value="A">Variant A</SelectItem>
-                          <SelectItem value="B">Variant B</SelectItem>
-                          <SelectItem value="C">Variant C</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="dialing" className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Caller ID Number</Label><Input value={form.callerIdNumber} onChange={e => setForm(p => ({ ...p, callerIdNumber: e.target.value }))} placeholder="Leave blank for DID rotation" /></div>
-                    <div><Label>Caller ID Name</Label><Input value={form.callerIdName} onChange={e => setForm(p => ({ ...p, callerIdName: e.target.value }))} placeholder="e.g. My Company" /></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Leave Caller ID blank to use automatic DID rotation from your Caller ID pool.</p>
-                  <div>
-                    <Label>Max Concurrent Calls</Label>
-                    <Input type="number" min={1} max={50} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
-                    <p className="text-xs text-muted-foreground mt-1">Base number of simultaneous outbound calls (1-50)</p>
-                  </div>
-
-                  {/* Call Pacing Mode */}
-                  <div className="p-4 rounded-lg border space-y-4">
-                    <div>
-                      <Label className="text-base font-semibold">Call Pacing Mode</Label>
-                      <p className="text-xs text-muted-foreground">Controls how concurrent call volume is managed during the campaign</p>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {(["fixed", "adaptive", "predictive"] as const).map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          className={`p-3 rounded-lg border text-center transition-colors ${
-                            form.pacingMode === mode
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border hover:border-primary/50"
-                          }`}
-                          onClick={() => setForm(p => ({ ...p, pacingMode: mode }))}
-                        >
-                          <div className="font-medium capitalize text-sm">{mode}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {mode === "fixed" && "Static call limit"}
-                            {mode === "adaptive" && "Adjusts to answer rate"}
-                            {mode === "predictive" && "AI-optimized pacing"}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                    {form.pacingMode !== "fixed" && (
-                      <div className="space-y-3 pt-2 border-t">
-                        <div>
-                          <Label>Target Drop Rate: {form.pacingTargetDropRate}%</Label>
-                          <Input type="range" min={1} max={10} step={1} value={form.pacingTargetDropRate}
-                            onChange={e => setForm(p => ({ ...p, pacingTargetDropRate: parseInt(e.target.value) }))} className="mt-1" />
-                          <div className="flex justify-between text-xs text-muted-foreground"><span>1% (conservative)</span><span>10% (aggressive)</span></div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>Min Concurrent</Label>
-                            <Input type="number" min={1} max={50} value={form.pacingMinConcurrent}
-                              onChange={e => setForm(p => ({ ...p, pacingMinConcurrent: parseInt(e.target.value) || 1 }))} />
-                          </div>
-                          <div>
-                            <Label>Max Concurrent</Label>
-                            <Input type="number" min={1} max={100} value={form.pacingMaxConcurrent}
-                              onChange={e => setForm(p => ({ ...p, pacingMaxConcurrent: parseInt(e.target.value) || 10 }))} />
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {form.pacingMode === "adaptive" 
-                            ? "Adaptive mode adjusts concurrent calls based on real-time answer and drop rates within a 60-second rolling window."
-                            : "Predictive mode uses historical answer rates and call duration to calculate optimal call volume, overcommitting slightly to maximize throughput."}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
-                    <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /></div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="ivr" className="space-y-4 mt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base">Interactive Voice Response (IVR)</Label>
-                      <p className="text-xs text-muted-foreground mt-1">Allow callers to press keys to take actions during the broadcast</p>
-                    </div>
-                    <Switch checked={form.ivrEnabled} onCheckedChange={v => setForm(p => ({ ...p, ivrEnabled: v }))} />
-                  </div>
-                  {form.ivrEnabled && (
-                    <div className="space-y-3">
-                      {form.ivrOptions.map((opt, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border">
-                          <Badge variant="outline" className="w-8 h-8 flex items-center justify-center text-lg font-mono">{opt.digit}</Badge>
-                          <Select value={opt.action} onValueChange={v => {
-                            const updated = [...form.ivrOptions];
-                            updated[idx] = { ...updated[idx], action: v };
-                            setForm(p => ({ ...p, ivrOptions: updated }));
-                          }}>
-                            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {IVR_ACTIONS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                          <Input placeholder="Label (e.g. Press 1 to confirm)" value={opt.label}
-                            onChange={e => {
-                              const updated = [...form.ivrOptions];
-                              updated[idx] = { ...updated[idx], label: e.target.value };
-                              setForm(p => ({ ...p, ivrOptions: updated }));
-                            }} className="flex-1" />
-                          <Button variant="ghost" size="sm" onClick={() => removeIvrOption(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                        </div>
-                      ))}
-                      <Button variant="outline" size="sm" onClick={addIvrOption} disabled={form.ivrOptions.length >= 9}>
-                        <Plus className="h-4 w-4 mr-1" />Add IVR Option
-                      </Button>
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="targeting" className="space-y-4 mt-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base">Geographic Caller ID Matching</Label>
-                      <p className="text-xs text-muted-foreground mt-1">Automatically match caller IDs to contact area codes/states</p>
-                    </div>
-                    <Switch checked={form.useGeoCallerIds} onCheckedChange={v => setForm(p => ({ ...p, useGeoCallerIds: v }))} />
-                  </div>
-                  <div>
-                    <Label className="flex items-center gap-2"><MapPin className="h-4 w-4" />Target States</Label>
-                    <p className="text-xs text-muted-foreground mb-2">Only dial contacts in selected states. Leave empty to dial all.</p>
-                    <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto p-2 border rounded-lg">
-                      {US_STATES.map(state => (
-                        <Badge key={state} variant={form.targetStates.includes(state) ? "default" : "outline"}
-                          className="cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => toggleState(state)}>{state}</Badge>
-                      ))}
-                    </div>
-                    {form.targetStates.length > 0 && (
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
-                        <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [] }))}>Clear All</Button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm">
-                    <div className="flex items-center gap-2 mb-1"><Shield className="h-4 w-4 text-blue-600" /><span className="font-medium text-blue-600">TCPA Compliance</span></div>
-                    <p className="text-muted-foreground text-xs">Calls are automatically checked against TCPA time windows (8 AM - 9 PM local time) based on each contact's area code timezone. Contacts outside the allowed window are deferred until the next valid time.</p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="schedule" className="space-y-4 mt-4">
-                  <div>
-                    <Label>Timezone</Label>
-                    <Select value={form.timezone} onValueChange={v => setForm(p => ({ ...p, timezone: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Phoenix","Pacific/Honolulu","America/Anchorage","UTC"].map(tz => (
-                          <SelectItem key={tz} value={tz}>{tz.replace("America/", "").replace("_", " ")}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Window Start</Label><Input type="time" value={form.timeWindowStart} onChange={e => setForm(p => ({ ...p, timeWindowStart: e.target.value }))} /></div>
-                    <div><Label>Window End</Label><Input type="time" value={form.timeWindowEnd} onChange={e => setForm(p => ({ ...p, timeWindowEnd: e.target.value }))} /></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Calls will only be placed within this time window. TCPA compliance auto-checks each contact's local time.</p>
-                </TabsContent>
-              </Tabs>
-
+              <CampaignFormTabs
+                form={form}
+                setForm={setForm}
+                messageRef={messageRef}
+                contactLists={contactLists.data}
+                readyAudioFiles={readyAudioFiles}
+                templates={templates.data}
+              />
               <DialogFooter>
-                <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setCreateOpen(false); setForm({ ...DEFAULT_FORM }); }}>Cancel</Button>
                 <Button
-                  onClick={() => createCampaign.mutate({
-                    name: form.name,
-                    description: form.description || undefined,
-                    contactListId: form.contactListId,
-                    audioFileId: form.audioFileId || undefined,
-                    voice: form.voice as any,
-                    callerIdNumber: form.callerIdNumber || undefined,
-                    callerIdName: form.callerIdName || undefined,
-                    maxConcurrentCalls: form.maxConcurrentCalls,
-                    retryAttempts: form.retryAttempts,
-                    retryDelay: form.retryDelay,
-                    timezone: form.timezone,
-                    timeWindowStart: form.timeWindowStart,
-                    timeWindowEnd: form.timeWindowEnd,
-                    ivrEnabled: form.ivrEnabled ? 1 : 0,
-                    ivrOptions: form.ivrEnabled ? form.ivrOptions : undefined,
-                    abTestGroup: form.abTestGroup || undefined,
-                    abTestVariant: form.abTestVariant || undefined,
-                    targetStates: form.targetStates.length > 0 ? form.targetStates : undefined,
-                    useGeoCallerIds: form.useGeoCallerIds ? 1 : 0,
-                    usePersonalizedTTS: form.usePersonalizedTTS ? 1 : 0,
-                    messageText: form.usePersonalizedTTS ? form.messageText : undefined,
-                    ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
-                    useDidRotation: form.useDidRotation ? 1 : 0,
-                    pacingMode: form.pacingMode,
-                    pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
-                    pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
-                    pacingMaxConcurrent: form.pacingMode !== "fixed" ? form.pacingMaxConcurrent : undefined,
-                  })}
+                  onClick={submitCreate}
                   disabled={!form.name || !form.contactListId || (form.usePersonalizedTTS && !form.messageText) || createCampaign.isPending}
                 >
                   {createCampaign.isPending ? "Creating..." : "Create Campaign"}
@@ -735,7 +941,7 @@ export default function Campaigns() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2">
                     <span className="flex items-center gap-1"><Users className="h-3 w-3" />{campaign.totalContacts}</span>
                     <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{campaign.completedCalls}/{campaign.totalContacts}</span>
-                    <span className="flex items-center gap-1"><Volume2 className="h-3 w-3 capitalize" />{campaign.voice}</span>
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(campaign.createdAt).toLocaleDateString()}</span>
                   </div>
                   {campaign.status === "running" && campaign.totalContacts > 0 && (
                     <Progress value={(campaign.completedCalls / campaign.totalContacts) * 100} className="h-1.5 mt-2" />

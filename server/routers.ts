@@ -5,13 +5,19 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
-import { generateTTS, TTS_VOICES, generateVoiceSample } from "./services/tts";
+import { generateTTS, TTS_VOICES, generateVoiceSample, GOOGLE_TTS_VOICES, generateGoogleTTS, generateGoogleVoiceSample, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./services/tts";
 // AMI is now handled by the PBX agent on the FreePBX server
 // import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
 import { invokeLLM } from "./_core/llm";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
+
+// Shared voice enums for OpenAI and Google TTS
+const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
+const GOOGLE_VOICES = ["en-US-Journey-D", "en-US-Journey-F", "en-US-Journey-O", "en-US-Studio-M", "en-US-Studio-O", "en-US-Studio-Q", "en-US-Neural2-A", "en-US-Neural2-C", "en-US-Neural2-D", "en-US-Neural2-F", "en-US-Wavenet-A", "en-US-Wavenet-C", "en-US-Wavenet-D", "en-US-Wavenet-F"] as const;
+const ALL_VOICES = [...OPENAI_VOICES, ...GOOGLE_VOICES] as const;
+const voiceEnum = z.enum(ALL_VOICES as unknown as [string, ...string[]]);
 
 // US area code to timezone mapping (simplified)
 const AREA_CODE_TIMEZONE: Record<string, string> = {
@@ -266,13 +272,18 @@ export const appRouter = router({
     generate: protectedProcedure.input(z.object({
       name: z.string().min(1).max(255),
       text: z.string().min(1).max(5000),
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]),
+      voice: voiceEnum,
       speed: z.number().min(0.25).max(4.0).optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
     })).mutation(async ({ ctx, input }) => {
+      const provider = input.ttsProvider || (GOOGLE_VOICES.includes(input.voice as any) ? "google" : "openai");
       const record = await db.createAudioFile({
         userId: ctx.user.id, name: input.name, text: input.text, voice: input.voice, status: "generating",
       });
-      generateTTS({ text: input.text, voice: input.voice, name: input.name, speed: input.speed })
+      const generateFn = provider === "google"
+        ? generateGoogleTTS({ text: input.text, voice: input.voice as GoogleTTSVoice, name: input.name, speed: input.speed })
+        : generateTTS({ text: input.text, voice: input.voice as any, name: input.name, speed: input.speed });
+      generateFn
         .then(async (result) => {
           await db.updateAudioFile(record.id, { s3Url: result.s3Url, s3Key: result.s3Key, fileSize: result.fileSize, status: "ready" });
         })
@@ -280,19 +291,23 @@ export const appRouter = router({
           console.error("[TTS] Generation failed:", err);
           await db.updateAudioFile(record.id, { status: "failed" });
         });
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.generate", resource: "audioFile", resourceId: record.id, details: { voice: input.voice } });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.generate", resource: "audioFile", resourceId: record.id, details: { voice: input.voice, provider } });
       return record;
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       await db.deleteAudioFile(input.id, ctx.user.id);
       return { success: true };
     }),
-    voices: publicProcedure.query(() => TTS_VOICES),
+    voices: publicProcedure.query(() => ({ openai: TTS_VOICES, google: GOOGLE_TTS_VOICES })),
     voiceSample: protectedProcedure.input(z.object({
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]),
+      voice: voiceEnum,
       speed: z.number().min(0.25).max(4.0).optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
     })).mutation(async ({ input }) => {
-      const result = await generateVoiceSample(input.voice, input.speed);
+      const provider = input.ttsProvider || (GOOGLE_VOICES.includes(input.voice as any) ? "google" : "openai");
+      const result = provider === "google"
+        ? await generateGoogleVoiceSample(input.voice as GoogleTTSVoice, input.speed)
+        : await generateVoiceSample(input.voice as any, input.speed);
       return { url: result.url };
     }),
   }),
@@ -312,7 +327,8 @@ export const appRouter = router({
       contactListId: z.number(),
       audioFileId: z.number().optional(),
       messageText: z.string().optional(),
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      voice: voiceEnum.optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
       callerIdNumber: z.string().max(20).optional(),
       callerIdName: z.string().max(100).optional(),
       ivrEnabled: z.number().min(0).max(1).optional(),
@@ -348,7 +364,8 @@ export const appRouter = router({
       contactListId: z.number().optional(),
       audioFileId: z.number().optional(),
       messageText: z.string().optional(),
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      voice: voiceEnum.optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
       callerIdNumber: z.string().max(20).optional(),
       callerIdName: z.string().max(100).optional(),
       ivrEnabled: z.number().min(0).max(1).optional(),
@@ -363,7 +380,7 @@ export const appRouter = router({
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
       timezone: z.string().max(64).optional(),
-          timeWindowStart: z.string().max(5).optional(),
+      timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
@@ -558,7 +575,8 @@ export const appRouter = router({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
       messageText: z.string().optional(),
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      voice: voiceEnum.optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
       maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
@@ -576,7 +594,8 @@ export const appRouter = router({
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
       messageText: z.string().optional(),
-      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      voice: voiceEnum.optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
       maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),

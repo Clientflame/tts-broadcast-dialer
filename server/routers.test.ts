@@ -81,15 +81,15 @@ describe("audio.voices", () => {
     const caller = appRouter.createCaller(ctx);
     const voices = await caller.audio.voices();
     expect(voices).toBeDefined();
-    expect(Array.isArray(voices)).toBe(true);
-    expect(voices.length).toBe(6);
-    const voiceIds = voices.map((v: any) => v.id);
-    expect(voiceIds).toContain("alloy");
-    expect(voiceIds).toContain("echo");
-    expect(voiceIds).toContain("fable");
-    expect(voiceIds).toContain("onyx");
-    expect(voiceIds).toContain("nova");
-    expect(voiceIds).toContain("shimmer");
+    expect(voices.openai).toBeDefined();
+    expect(voices.google).toBeDefined();
+    expect(Array.isArray(voices.openai)).toBe(true);
+    expect(voices.openai.length).toBe(6);
+    const openaiIds = voices.openai.map((v: any) => v.id);
+    expect(openaiIds).toContain("alloy");
+    expect(openaiIds).toContain("echo");
+    expect(openaiIds).toContain("shimmer");
+    expect(voices.google.length).toBeGreaterThan(0);
   });
 });
 

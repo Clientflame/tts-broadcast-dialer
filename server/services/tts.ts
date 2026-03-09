@@ -2,15 +2,34 @@ import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import { Client as SSHClient } from "ssh2";
 
+export type TTSProvider = "openai" | "google";
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
+export type GoogleTTSVoice = "en-US-Journey-D" | "en-US-Journey-F" | "en-US-Journey-O" | "en-US-Studio-M" | "en-US-Studio-O" | "en-US-Studio-Q" | "en-US-Neural2-A" | "en-US-Neural2-C" | "en-US-Neural2-D" | "en-US-Neural2-F" | "en-US-Neural2-H" | "en-US-Neural2-I" | "en-US-Neural2-J" | "en-US-Wavenet-A" | "en-US-Wavenet-B" | "en-US-Wavenet-C" | "en-US-Wavenet-D" | "en-US-Wavenet-E" | "en-US-Wavenet-F";
 
-export const TTS_VOICES: { id: TTSVoice; name: string; description: string; gender: string; tone: string; bestFor: string }[] = [
-  { id: "alloy", name: "Alloy", description: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications" },
-  { id: "echo", name: "Echo", description: "Warm baritone with gravitas", gender: "Male", tone: "Confident, reassuring", bestFor: "Financial services, legal notices, executive messaging" },
-  { id: "fable", name: "Fable", description: "Expressive with natural inflection", gender: "Male", tone: "Engaging, storytelling", bestFor: "Marketing campaigns, event invitations, promotions" },
-  { id: "onyx", name: "Onyx", description: "Deep and commanding presence", gender: "Male", tone: "Authoritative, serious", bestFor: "Urgent notices, compliance calls, collections" },
-  { id: "nova", name: "Nova", description: "Bright and approachable", gender: "Female", tone: "Friendly, energetic", bestFor: "Customer outreach, appointment reminders, surveys" },
-  { id: "shimmer", name: "Shimmer", description: "Smooth and polished", gender: "Female", tone: "Calm, professional", bestFor: "Healthcare, insurance, customer service" },
+export const TTS_VOICES: { id: TTSVoice; name: string; description: string; gender: string; tone: string; bestFor: string; provider: "openai" }[] = [
+  { id: "alloy", name: "Alloy", description: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", provider: "openai" },
+  { id: "echo", name: "Echo", description: "Warm baritone with gravitas", gender: "Male", tone: "Confident, reassuring", bestFor: "Financial services, legal notices, executive messaging", provider: "openai" },
+  { id: "fable", name: "Fable", description: "Expressive with natural inflection", gender: "Male", tone: "Engaging, storytelling", bestFor: "Marketing campaigns, event invitations, promotions", provider: "openai" },
+  { id: "onyx", name: "Onyx", description: "Deep and commanding presence", gender: "Male", tone: "Authoritative, serious", bestFor: "Urgent notices, compliance calls, collections", provider: "openai" },
+  { id: "nova", name: "Nova", description: "Bright and approachable", gender: "Female", tone: "Friendly, energetic", bestFor: "Customer outreach, appointment reminders, surveys", provider: "openai" },
+  { id: "shimmer", name: "Shimmer", description: "Smooth and polished", gender: "Female", tone: "Calm, professional", bestFor: "Healthcare, insurance, customer service", provider: "openai" },
+];
+
+export const GOOGLE_TTS_VOICES: { id: GoogleTTSVoice; name: string; description: string; gender: string; tone: string; bestFor: string; provider: "google"; tier: string }[] = [
+  { id: "en-US-Journey-D", name: "Journey D", description: "Natural conversational male", gender: "Male", tone: "Warm, conversational", bestFor: "Customer outreach, friendly reminders", provider: "google", tier: "Journey" },
+  { id: "en-US-Journey-F", name: "Journey F", description: "Natural conversational female", gender: "Female", tone: "Warm, approachable", bestFor: "Appointment reminders, customer service", provider: "google", tier: "Journey" },
+  { id: "en-US-Journey-O", name: "Journey O", description: "Natural conversational female", gender: "Female", tone: "Friendly, engaging", bestFor: "Marketing campaigns, promotions", provider: "google", tier: "Journey" },
+  { id: "en-US-Studio-M", name: "Studio M", description: "Professional studio male", gender: "Male", tone: "Polished, authoritative", bestFor: "Business announcements, legal notices", provider: "google", tier: "Studio" },
+  { id: "en-US-Studio-O", name: "Studio O", description: "Professional studio female", gender: "Female", tone: "Clear, professional", bestFor: "Healthcare, insurance, compliance", provider: "google", tier: "Studio" },
+  { id: "en-US-Studio-Q", name: "Studio Q", description: "Professional studio male", gender: "Male", tone: "Confident, commanding", bestFor: "Financial services, executive messaging", provider: "google", tier: "Studio" },
+  { id: "en-US-Neural2-A", name: "Neural2 A", description: "Neural network male", gender: "Male", tone: "Natural, balanced", bestFor: "General purpose announcements", provider: "google", tier: "Neural2" },
+  { id: "en-US-Neural2-C", name: "Neural2 C", description: "Neural network female", gender: "Female", tone: "Bright, clear", bestFor: "Customer outreach, surveys", provider: "google", tier: "Neural2" },
+  { id: "en-US-Neural2-D", name: "Neural2 D", description: "Neural network male", gender: "Male", tone: "Deep, steady", bestFor: "Urgent notices, collections", provider: "google", tier: "Neural2" },
+  { id: "en-US-Neural2-F", name: "Neural2 F", description: "Neural network female", gender: "Female", tone: "Warm, empathetic", bestFor: "Healthcare, appointment reminders", provider: "google", tier: "Neural2" },
+  { id: "en-US-Wavenet-A", name: "Wavenet A", description: "WaveNet male", gender: "Male", tone: "Smooth, natural", bestFor: "General announcements", provider: "google", tier: "Wavenet" },
+  { id: "en-US-Wavenet-C", name: "Wavenet C", description: "WaveNet female", gender: "Female", tone: "Pleasant, clear", bestFor: "Customer service, reminders", provider: "google", tier: "Wavenet" },
+  { id: "en-US-Wavenet-D", name: "Wavenet D", description: "WaveNet male", gender: "Male", tone: "Confident, professional", bestFor: "Business communications", provider: "google", tier: "Wavenet" },
+  { id: "en-US-Wavenet-F", name: "Wavenet F", description: "WaveNet female", gender: "Female", tone: "Friendly, warm", bestFor: "Marketing, promotions", provider: "google", tier: "Wavenet" },
 ];
 
 // Natural, human-like sample scripts unique to each voice personality
@@ -187,6 +206,145 @@ export async function generatePersonalizedTTS(params: {
     fileSize: audioBuffer.length,
     renderedText,
   };
+}
+
+// Google Cloud TTS synthesis
+export async function generateGoogleTTS(params: {
+  text: string;
+  voice: GoogleTTSVoice;
+  name: string;
+  speed?: number;
+}): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
+  const apiKey = process.env.GOOGLE_TTS_API_KEY;
+  if (!apiKey) throw new Error("Google TTS API key not configured");
+
+  const speakingRate = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
+
+  const response = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text: params.text },
+        voice: { languageCode: "en-US", name: params.voice },
+        audioConfig: { audioEncoding: "MP3", speakingRate },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const audioBuffer = Buffer.from(data.audioContent, "base64");
+  const fileKey = `tts-audio/${nanoid()}-${params.name.replace(/[^a-zA-Z0-9]/g, "_")}.mp3`;
+  const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+
+  return { s3Url: url, s3Key: key, fileSize: audioBuffer.length };
+}
+
+// Generate Google TTS voice sample for preview
+export async function generateGoogleVoiceSample(voice: GoogleTTSVoice, speed: number = 1.0): Promise<{ url: string; key: string }> {
+  const apiKey = process.env.GOOGLE_TTS_API_KEY;
+  if (!apiKey) throw new Error("Google TTS API key not configured");
+
+  const sampleText = "Hi there. I'm reaching out today because we have an important update regarding your account. We'd love to walk you through the details and answer any questions you might have. Please give us a call back at your earliest convenience.";
+  const speakingRate = Math.max(0.25, Math.min(4.0, speed));
+
+  const response = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text: sampleText },
+        voice: { languageCode: "en-US", name: voice },
+        audioConfig: { audioEncoding: "MP3", speakingRate },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Google voice sample generation failed (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const audioBuffer = Buffer.from(data.audioContent, "base64");
+  const fileKey = `voice-samples/google-${voice}-speed${speakingRate}.mp3`;
+  const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+  return { url, key };
+}
+
+// Generate personalized TTS using Google Cloud voices
+export async function generateGooglePersonalizedTTS(params: {
+  messageTemplate: string;
+  voice: GoogleTTSVoice;
+  speed?: number;
+  contactData: {
+    firstName?: string | null;
+    lastName?: string | null;
+    phoneNumber: string;
+    company?: string | null;
+    state?: string | null;
+    databaseName?: string | null;
+  };
+  callerIdNumber?: string;
+  campaignId: number;
+  contactId: number;
+}): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
+  const apiKey = process.env.GOOGLE_TTS_API_KEY;
+  if (!apiKey) throw new Error("Google TTS API key not configured");
+
+  const variables: Record<string, string> = {
+    first_name: params.contactData.firstName || "Valued Customer",
+    last_name: params.contactData.lastName || "",
+    full_name: [params.contactData.firstName, params.contactData.lastName].filter(Boolean).join(" ") || "Valued Customer",
+    phone: params.contactData.phoneNumber,
+    company: params.contactData.company || "",
+    state: params.contactData.state || "",
+    database_name: params.contactData.databaseName || "",
+    caller_id: params.callerIdNumber || "",
+  };
+
+  if (variables.caller_id && /^\d{10}$/.test(variables.caller_id.replace(/\D/g, ""))) {
+    const digits = variables.caller_id.replace(/\D/g, "");
+    variables.caller_id = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  const renderedText = renderMessageTemplate(params.messageTemplate, variables);
+  const speed = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
+
+  const { createHash } = await import("crypto");
+  const cacheHash = createHash("md5").update(`${renderedText}|${params.voice}|${speed}`).digest("hex");
+  const cacheKey = `tts-personalized/campaign_${params.campaignId}_contact_${params.contactId}_${cacheHash}.mp3`;
+
+  const response = await fetch(
+    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input: { text: renderedText },
+        voice: { languageCode: "en-US", name: params.voice },
+        audioConfig: { audioEncoding: "MP3", speakingRate: speed },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+  }
+
+  const data = await response.json();
+  const audioBuffer = Buffer.from(data.audioContent, "base64");
+  const { url, key } = await storagePut(cacheKey, audioBuffer, "audio/mpeg");
+
+  return { s3Url: url, s3Key: key, fileSize: audioBuffer.length, renderedText };
 }
 
 /**

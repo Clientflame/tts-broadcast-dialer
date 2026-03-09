@@ -1,4 +1,4 @@
-import { generatePersonalizedTTS } from "./tts";
+import { generatePersonalizedTTS, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./tts";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import * as db from "../db";
@@ -288,9 +288,11 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 
       console.log(`[Dialer] Generating personalized TTS for contact ${callLog.contactId}`);
 
-      const personalizedResult = await generatePersonalizedTTS({
+      const voice = active.campaign.voice || "alloy";
+      const isGoogleVoice = voice.startsWith("en-US-");
+      const ttsParams = {
         messageTemplate: active.campaign.messageText,
-        voice: (active.campaign.voice as any) || "alloy",
+        voice: voice as any,
         speed,
         contactData: {
           firstName: contact?.firstName,
@@ -303,7 +305,10 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
         callerIdNumber,
         campaignId: callLog.campaignId,
         contactId: callLog.contactId,
-      });
+      };
+      const personalizedResult = isGoogleVoice
+        ? await generateGooglePersonalizedTTS(ttsParams as any)
+        : await generatePersonalizedTTS(ttsParams as any);
 
       const personalizedAudioName = `personalized_${callLog.campaignId}_${callLog.contactId}`;
       variables.AUDIO_URL = personalizedResult.s3Url;

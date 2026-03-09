@@ -104,3 +104,9 @@
 - [x] Fix: Campaign calls failing - personalized TTS used storageGet() presigned URLs that expired before PBX agent downloaded
 - [x] Fix: Test campaign stuck in running state - added server startup recovery for stale campaigns
 - [x] Fix: Campaign should auto-stop when all leads have been dialed and results reported (removed 'answered' from active count, added call_queue check)
+- [x] Campaign editing - ability to edit campaign settings (name, description, audio, dialing config, schedule, etc.)
+- [x] Campaign edit tRPC endpoint and database helper
+- [x] Campaign edit UI (edit dialog/form in campaigns page)
+- [x] Google TTS integration - add Google TTS as a voice provider alongside OpenAI
+- [x] Update Audio/TTS page to support Google TTS voice selection
+- [x] Update TTS service to support Google TTS API
