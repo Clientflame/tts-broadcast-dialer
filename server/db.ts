@@ -349,3 +349,79 @@ export async function getDashboardStats(userId: number) {
     totalLists: listStats?.total ?? 0,
   };
 }
+
+// ─── DNC (Do Not Call) List ─────────────────────────────────────────────────
+import { dncList, InsertDncEntry } from "../drizzle/schema";
+import { like } from "drizzle-orm";
+
+export async function addToDnc(data: InsertDncEntry) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Normalize phone number - strip non-digits
+  const normalized = data.phoneNumber.replace(/\D/g, "");
+  // Check if already exists
+  const existing = await db.select().from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, data.userId))).limit(1);
+  if (existing.length > 0) return { id: existing[0].id, duplicate: true };
+  const result = await db.insert(dncList).values({ ...data, phoneNumber: normalized });
+  return { id: result[0].insertId, duplicate: false };
+}
+
+export async function bulkAddToDnc(entries: InsertDncEntry[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (entries.length === 0) return { added: 0, duplicates: 0 };
+  let added = 0;
+  let duplicates = 0;
+  for (const entry of entries) {
+    const normalized = entry.phoneNumber.replace(/\D/g, "");
+    const existing = await db.select({ id: dncList.id }).from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, entry.userId))).limit(1);
+    if (existing.length > 0) { duplicates++; continue; }
+    await db.insert(dncList).values({ ...entry, phoneNumber: normalized });
+    added++;
+  }
+  return { added, duplicates };
+}
+
+export async function getDncEntries(userId: number, search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (search) {
+    return db.select().from(dncList).where(and(eq(dncList.userId, userId), like(dncList.phoneNumber, `%${search}%`))).orderBy(desc(dncList.createdAt)).limit(500);
+  }
+  return db.select().from(dncList).where(eq(dncList.userId, userId)).orderBy(desc(dncList.createdAt)).limit(500);
+}
+
+export async function removeDncEntry(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(dncList).where(and(eq(dncList.id, id), eq(dncList.userId, userId)));
+}
+
+export async function bulkRemoveDnc(ids: number[], userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (ids.length === 0) return;
+  await db.delete(dncList).where(and(inArray(dncList.id, ids), eq(dncList.userId, userId)));
+}
+
+export async function isPhoneOnDnc(phoneNumber: string, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const normalized = phoneNumber.replace(/\D/g, "");
+  const result = await db.select({ id: dncList.id }).from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, userId))).limit(1);
+  return result.length > 0;
+}
+
+export async function getDncPhoneNumbers(userId: number): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList).where(eq(dncList.userId, userId));
+  return new Set(rows.map(r => r.phoneNumber));
+}
+
+export async function getDncCount(userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const [result] = await db.select({ cnt: count() }).from(dncList).where(eq(dncList.userId, userId));
+  return result?.cnt ?? 0;
+}

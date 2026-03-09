@@ -20,3 +20,7 @@
 - [x] Settings page for FreePBX connection config
 - [x] Vitest unit tests for backend procedures
 - [x] Fix FreePBX AMI connection - ensure credentials are set and AMI connects on startup
+- [x] Test live call end-to-end via FreePBX AMI
+- [x] Add DNC (Do Not Call) list feature with schema, API, UI, and auto-filtering
+- [x] Identify production IP and prepare whitelisting instructions for FreePBX
+- [x] AMI keepalive ping and exponential backoff reconnection logic

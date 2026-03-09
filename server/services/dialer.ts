@@ -42,9 +42,21 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     }
   }
 
-  // Get contacts and create call logs
-  const contactsList = await db.getActiveContactsForCampaign(campaign.contactListId);
-  if (contactsList.length === 0) throw new Error("No active contacts in the list");
+  // Get contacts and filter out DNC numbers
+  const allContacts = await db.getActiveContactsForCampaign(campaign.contactListId);
+  if (allContacts.length === 0) throw new Error("No active contacts in the list");
+
+  // Filter out DNC numbers
+  const dncNumbers = await db.getDncPhoneNumbers(userId);
+  const contactsList = allContacts.filter(c => {
+    const normalized = c.phoneNumber.replace(/\D/g, "");
+    return !dncNumbers.has(normalized);
+  });
+  const dncFiltered = allContacts.length - contactsList.length;
+  if (contactsList.length === 0) throw new Error(`All ${allContacts.length} contacts are on the DNC list`);
+  if (dncFiltered > 0) {
+    console.log(`[Dialer] Filtered ${dncFiltered} DNC numbers from campaign ${campaignId}`);
+  }
 
   const callLogData = contactsList.map(contact => ({
     campaignId: campaign.id,

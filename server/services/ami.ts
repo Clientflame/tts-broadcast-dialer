@@ -29,7 +29,10 @@ class AMIClient extends EventEmitter {
   private actionCounter = 0;
   private pendingActions = new Map<string, { resolve: (v: AMIEvent) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
   private shouldReconnect = true;
+  private reconnectAttempts = 0;
+  private maxReconnectDelay = 120000; // 2 minutes max
 
   constructor(config: AMIConfig) {
     super();
@@ -105,8 +108,10 @@ class AMIClient extends EventEmitter {
 
       if (parsed.Response === "Success" && parsed.Message === "Authentication accepted") {
         this.authenticated = true;
+        this.reconnectAttempts = 0; // Reset backoff on successful auth
         // Ensure no lingering timeout kills the persistent connection
         this.socket?.setTimeout(0);
+        this.startKeepalive();
         console.log("[AMI] Authentication accepted");
         this.emit("authenticated");
         continue;
@@ -212,8 +217,30 @@ class AMIClient extends EventEmitter {
     return this.sendAction(action);
   }
 
+  private startKeepalive() {
+    this.stopKeepalive();
+    // Send a Ping every 60 seconds to keep the connection alive
+    this.keepaliveTimer = setInterval(() => {
+      if (this.connected && this.authenticated) {
+        this.sendRaw(`Action: Ping\r\nActionID: keepalive-${Date.now()}\r\n\r\n`);
+      }
+    }, 60000);
+  }
+
+  private stopKeepalive() {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
+  }
+
   private scheduleReconnect() {
     if (this.reconnectTimer) return;
+    this.stopKeepalive();
+    // Exponential backoff: 10s, 20s, 40s, 80s, 120s max
+    const delay = Math.min(10000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay);
+    this.reconnectAttempts++;
+    console.log(`[AMI] Scheduling reconnect in ${delay / 1000}s (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       try {
@@ -223,11 +250,12 @@ class AMIClient extends EventEmitter {
         console.error("[AMI] Reconnect failed:", (e as Error).message);
         this.scheduleReconnect();
       }
-    }, 5000);
+    }, delay);
   }
 
   disconnect() {
     this.shouldReconnect = false;
+    this.stopKeepalive();
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     this.pendingActions.forEach((pending) => {
       clearTimeout(pending.timer);

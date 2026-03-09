@@ -15,6 +15,13 @@
       "when": 1773023387388,
       "tag": "0001_sharp_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1773025120476,
+      "tag": "0002_useful_firedrake",
+      "breakpoints": true
     }
   ]
 }

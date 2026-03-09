@@ -242,3 +242,67 @@ describe("protected routes require auth", () => {
     await expect(caller.auditLogs.list({})).rejects.toThrow();
   });
 });
+
+describe("dnc - input validation", () => {
+  it("rejects empty phone number on add", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.add({ phoneNumber: "" })).rejects.toThrow();
+  });
+
+  it("rejects phone number over 20 chars on add", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.add({ phoneNumber: "1".repeat(21) })).rejects.toThrow();
+  });
+
+  it("rejects invalid source on add", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.add({ phoneNumber: "4075551234", source: "invalid" as any })).rejects.toThrow();
+  });
+
+  it("rejects empty entries array on bulkAdd", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.bulkAdd({ entries: [] })).rejects.toThrow();
+  });
+
+  it("rejects empty ids array on bulkRemove", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.bulkRemove({ ids: [] })).rejects.toThrow();
+  });
+
+  it("requires auth for dnc.list", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.list({})).rejects.toThrow();
+  });
+
+  it("requires auth for dnc.count", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.count()).rejects.toThrow();
+  });
+
+  it("requires auth for dnc.check", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dnc.check({ phoneNumber: "4075551234" })).rejects.toThrow();
+  });
+
+  it("accepts valid source values", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    // These should not throw on input validation (may fail on DB, but that's expected)
+    for (const source of ["manual", "import", "opt-out", "complaint"] as const) {
+      try {
+        await caller.dnc.add({ phoneNumber: "4075551234", source });
+      } catch (e: any) {
+        // DB errors are fine - we're testing input validation
+        expect(e.code).not.toBe("BAD_REQUEST");
+      }
+    }
+  });
+});

@@ -11,6 +11,7 @@ import Audio from "./pages/Audio";
 import CallLogs from "./pages/CallLogs";
 import AuditLog from "./pages/AuditLog";
 import FreePBX from "./pages/FreePBX";
+import DncList from "./pages/DncList";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
       <Route path={"/audio"} component={Audio} />
       <Route path={"/call-logs"} component={CallLogs} />
       <Route path={"/audit"} component={AuditLog} />
+      <Route path={"/dnc"} component={DncList} />
       <Route path={"/freepbx"} component={FreePBX} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

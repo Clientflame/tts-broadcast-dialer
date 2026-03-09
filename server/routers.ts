@@ -258,6 +258,50 @@ export const appRouter = router({
     }),
   }),
 
+  dnc: router({
+    list: protectedProcedure.input(z.object({ search: z.string().optional() })).query(async ({ ctx, input }) => {
+      return db.getDncEntries(ctx.user.id, input.search);
+    }),
+    count: protectedProcedure.query(async ({ ctx }) => {
+      return { count: await db.getDncCount(ctx.user.id) };
+    }),
+    add: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1).max(20),
+      reason: z.string().max(255).optional(),
+      source: z.enum(["manual", "import", "opt-out", "complaint"]).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.addToDnc({ ...input, userId: ctx.user.id, addedBy: ctx.user.name || "Unknown" });
+      if (!result.duplicate) {
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "dnc.add", resource: "dnc", resourceId: result.id, details: { phoneNumber: input.phoneNumber } });
+      }
+      return result;
+    }),
+    bulkAdd: protectedProcedure.input(z.object({
+      entries: z.array(z.object({
+        phoneNumber: z.string().min(1),
+        reason: z.string().optional(),
+        source: z.enum(["manual", "import", "opt-out", "complaint"]).optional(),
+      })).min(1).max(10000),
+    })).mutation(async ({ ctx, input }) => {
+      const data = input.entries.map(e => ({ ...e, userId: ctx.user.id, addedBy: ctx.user.name || "Unknown" }));
+      const result = await db.bulkAddToDnc(data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "dnc.bulkAdd", resource: "dnc", details: { added: result.added, duplicates: result.duplicates } });
+      return result;
+    }),
+    remove: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.removeDncEntry(input.id, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "dnc.remove", resource: "dnc", resourceId: input.id });
+      return { success: true };
+    }),
+    bulkRemove: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      await db.bulkRemoveDnc(input.ids, ctx.user.id);
+      return { success: true };
+    }),
+    check: protectedProcedure.input(z.object({ phoneNumber: z.string() })).query(async ({ ctx, input }) => {
+      return { onDnc: await db.isPhoneOnDnc(input.phoneNumber, ctx.user.id) };
+    }),
+  }),
+
   freepbx: router({
     status: protectedProcedure.query(async () => {
       return getAMIStatus();

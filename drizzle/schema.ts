@@ -165,3 +165,17 @@ export const auditLogs = mysqlTable("audit_logs", {
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+// ─── Do Not Call (DNC) List ─────────────────────────────────────────────────
+export const dncList = mysqlTable("dnc_list", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  reason: varchar("reason", { length: 255 }),
+  source: mysqlEnum("source", ["manual", "import", "opt-out", "complaint"]).default("manual").notNull(),
+  addedBy: varchar("addedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DncEntry = typeof dncList.$inferSelect;
+export type InsertDncEntry = typeof dncList.$inferInsert;
