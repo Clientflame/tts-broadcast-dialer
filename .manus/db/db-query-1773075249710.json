@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE campaigns SET status = 'completed', completedAt = UNIX_TIMESTAMP() * 1000, completedCalls = 1, answeredCalls = 1, failedCalls = 3 WHERE id = 30003 AND status = 'running';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute UPDATE campaigns SET status = 'completed', completedAt = UNIX_TIMESTAMP() * 1000, completedCalls = 1, answeredCalls = 1, failedCalls = 3 WHERE id = 30003 AND status = 'running';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 66
+}

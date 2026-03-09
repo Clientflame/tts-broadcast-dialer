@@ -60,8 +60,16 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
+  server.listen(port, async () => {
     console.log(`Server running on http://localhost:${port}/`);
+
+    // Recover campaigns stuck in 'running' state after server restart
+    try {
+      const { recoverStaleCampaigns } = await import("../services/dialer");
+      await recoverStaleCampaigns();
+    } catch (err) {
+      console.error("[Startup] Campaign recovery failed:", err);
+    }
   });
 }
 

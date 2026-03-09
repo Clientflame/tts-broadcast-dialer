@@ -389,3 +389,91 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
     return true;
   }
 }
+
+/**
+ * Recovery function: runs on server startup to handle campaigns that were
+ * left in "running" state after a server restart. For each such campaign,
+ * check if all calls are done (no pending call_logs and no active/claimed queue items).
+ * If so, mark the campaign as completed. Otherwise, leave it in "running" for
+ * manual intervention (resume or cancel).
+ */
+export async function recoverStaleCampaigns(): Promise<void> {
+  try {
+    const dbInst = await db.getDb();
+    if (!dbInst) return;
+
+    const { campaigns: campaignsTable, callLogs, callQueue } = await import("../../drizzle/schema");
+    const { eq, and, inArray, count, sql } = await import("drizzle-orm");
+
+    // Find all campaigns stuck in "running" state
+    const runningCampaigns = await dbInst
+      .select({ id: campaignsTable.id, userId: campaignsTable.userId })
+      .from(campaignsTable)
+      .where(eq(campaignsTable.status, "running"));
+
+    if (runningCampaigns.length === 0) return;
+
+    console.log(`[Dialer Recovery] Found ${runningCampaigns.length} campaign(s) in 'running' state after restart`);
+
+    for (const campaign of runningCampaigns) {
+      // Check if there are any pending or dialing call_logs
+      const pendingLogs = await dbInst
+        .select({ count: count() })
+        .from(callLogs)
+        .where(and(
+          eq(callLogs.campaignId, campaign.id),
+          inArray(callLogs.status, ["pending", "dialing"])
+        ));
+
+      // Check if there are any pending or claimed queue items
+      const pendingQueue = await dbInst
+        .select({ count: count() })
+        .from(callQueue)
+        .where(and(
+          eq(callQueue.campaignId, campaign.id),
+          inArray(callQueue.status, ["pending", "claimed"])
+        ));
+
+      const pendingLogCount = pendingLogs[0]?.count || 0;
+      const pendingQueueCount = pendingQueue[0]?.count || 0;
+
+      if (pendingLogCount === 0 && pendingQueueCount === 0) {
+        // All calls are done — mark campaign as completed
+        const stats = await db.getCampaignStats(campaign.id);
+        await db.updateCampaign(campaign.id, campaign.userId, {
+          status: "completed",
+          completedAt: Date.now(),
+          completedCalls: stats.completed,
+          answeredCalls: stats.answered,
+          failedCalls: stats.failed + stats.busy + stats.noAnswer,
+        });
+        console.log(`[Dialer Recovery] Campaign ${campaign.id} auto-completed (all calls finished)`);
+      } else {
+        // There are still pending calls — mark any "dialing" call_logs as failed
+        // since the server lost track of them
+        await dbInst.update(callLogs).set({
+          status: "failed",
+          errorMessage: "Server restarted during call",
+          endedAt: sql`${Date.now()}`,
+        }).where(and(
+          eq(callLogs.campaignId, campaign.id),
+          eq(callLogs.status, "dialing")
+        ));
+
+        // Release any claimed queue items back to pending
+        await dbInst.update(callQueue).set({
+          status: "pending",
+          claimedBy: null,
+          claimedAt: null,
+        }).where(and(
+          eq(callQueue.campaignId, campaign.id),
+          eq(callQueue.status, "claimed")
+        ));
+
+        console.log(`[Dialer Recovery] Campaign ${campaign.id} has ${pendingLogCount} pending logs and ${pendingQueueCount} pending queue items — left in 'running' for manual action`);
+      }
+    }
+  } catch (err) {
+    console.error("[Dialer Recovery] Error during recovery:", err);
+  }
+}

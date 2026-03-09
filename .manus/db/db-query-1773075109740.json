@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, name, status, totalContacts, completedCalls, failedCalls, answeredCalls, createdAt FROM campaigns WHERE status = 'running' OR status = 'active' ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, status, totalContacts, completedCalls, failedCalls, answeredCalls, createdAt FROM campaigns WHERE status = 'running' OR status = 'active' ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "30003",
+      "name": "First 3 Contact Test",
+      "status": "running",
+      "totalContacts": "4",
+      "completedCalls": "1",
+      "failedCalls": "3",
+      "answeredCalls": "1",
+      "createdAt": "2026-03-09 16:47:54"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tstatus\ttotalContacts\tcompletedCalls\tfailedCalls\tansweredCalls\tcreatedAt\n30003\tFirst 3 Contact Test\trunning\t4\t1\t3\t1\t2026-03-09 16:47:54\n",
+  "stderr": "",
+  "execution_time_ms": 67
+}

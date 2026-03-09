@@ -1,0 +1,55 @@
+{
+  "query": "SELECT id, name, status, totalContacts, completedCalls, failedCalls, answeredCalls FROM campaigns ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, status, totalContacts, completedCalls, failedCalls, answeredCalls FROM campaigns ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "30003",
+      "name": "First 3 Contact Test",
+      "status": "running",
+      "totalContacts": "4",
+      "completedCalls": "1",
+      "failedCalls": "3",
+      "answeredCalls": "1"
+    },
+    {
+      "id": "30002",
+      "name": "Test 5",
+      "status": "draft",
+      "totalContacts": "4",
+      "completedCalls": "0",
+      "failedCalls": "0",
+      "answeredCalls": "0"
+    },
+    {
+      "id": "30001",
+      "name": "tewst 3",
+      "status": "completed",
+      "totalContacts": "4",
+      "completedCalls": "0",
+      "failedCalls": "4",
+      "answeredCalls": "0"
+    },
+    {
+      "id": "2",
+      "name": "Test",
+      "status": "draft",
+      "totalContacts": "0",
+      "completedCalls": "0",
+      "failedCalls": "0",
+      "answeredCalls": "0"
+    },
+    {
+      "id": "1",
+      "name": "Test",
+      "status": "draft",
+      "totalContacts": "0",
+      "completedCalls": "0",
+      "failedCalls": "0",
+      "answeredCalls": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tstatus\ttotalContacts\tcompletedCalls\tfailedCalls\tansweredCalls\n30003\tFirst 3 Contact Test\trunning\t4\t1\t3\t1\n30002\tTest 5\tdraft\t4\t0\t0\t0\n30001\ttewst 3\tcompleted\t4\t0\t4\t0\n2\tTest\tdraft\t0\t0\t0\t0\n1\tTest\tdraft\t0\t0\t0\t0\n",
+  "stderr": "",
+  "execution_time_ms": 100
+}

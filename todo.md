@@ -102,3 +102,4 @@
 - [x] Increase PBX agent max concurrent calls from 5 to 50
 - [x] Fix: Unable to create campaign - Personalized TTS toggle requires message text input
 - [x] Fix: Campaign calls failing - personalized TTS used storageGet() presigned URLs that expired before PBX agent downloaded
+- [x] Fix: Test campaign stuck in running state - added server startup recovery for stale campaigns
