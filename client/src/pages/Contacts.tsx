@@ -46,7 +46,14 @@ export default function Contacts() {
   });
 
   const importContacts = trpc.contacts.import.useMutation({
-    onSuccess: (data) => { utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setImportOpen(false); toast.success(`Imported ${data.count} contacts`); },
+    onSuccess: (data: any) => {
+      utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setImportOpen(false);
+      if (data.duplicatesOmitted > 0) {
+        toast.success(`Imported ${data.count} contacts (${data.duplicatesOmitted} duplicate${data.duplicatesOmitted > 1 ? 's' : ''} omitted)`);
+      } else {
+        toast.success(`Imported ${data.count} contacts`);
+      }
+    },
     onError: (e) => toast.error(e.message),
   });
 

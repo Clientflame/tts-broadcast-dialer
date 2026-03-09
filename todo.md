@@ -123,3 +123,7 @@
 - [x] Max 2 recorded audio segments per script (enforced in UI and backend)
 - [x] Callback number field on campaigns for {{callback_number}} merge field
 - [x] Vitest tests for call scripts CRUD (9 tests)
+- [x] Contact dupe check on CSV upload - omit duplicate phone numbers
+- [x] Check dupes within the uploaded CSV (intra-file dedup)
+- [x] Check dupes against existing contacts in the same contact list (inter-list dedup)
+- [x] Show dupe count in upload result feedback to user

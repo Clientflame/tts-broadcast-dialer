@@ -152,11 +152,55 @@ export async function createContact(data: InsertContact) {
 export async function bulkCreateContacts(data: InsertContact[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  if (data.length === 0) return { count: 0 };
-  await db.insert(contacts).values(data);
+  if (data.length === 0) return { count: 0, duplicatesOmitted: 0, duplicatePhones: [] as string[] };
+
   const listId = data[0].listId;
+  const userId = data[0].userId;
+
+  // --- Step 1: Intra-file dedup (keep first occurrence) ---
+  const seenInFile = new Set<string>();
+  const intraFileDupes: string[] = [];
+  const uniqueInFile = data.filter(c => {
+    const normalized = normalizePhone(c.phoneNumber);
+    if (seenInFile.has(normalized)) {
+      intraFileDupes.push(c.phoneNumber);
+      return false;
+    }
+    seenInFile.add(normalized);
+    return true;
+  });
+
+  // --- Step 2: Check against existing contacts in the same list ---
+  const existingRows = await db.select({ phoneNumber: contacts.phoneNumber })
+    .from(contacts)
+    .where(and(eq(contacts.listId, listId), eq(contacts.userId, userId)));
+  const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
+
+  const interListDupes: string[] = [];
+  const deduped = uniqueInFile.filter(c => {
+    const normalized = normalizePhone(c.phoneNumber);
+    if (existingPhones.has(normalized)) {
+      interListDupes.push(c.phoneNumber);
+      return false;
+    }
+    return true;
+  });
+
+  const totalDupes = intraFileDupes.length + interListDupes.length;
+  const allDupePhones = [...intraFileDupes, ...interListDupes];
+
+  if (deduped.length > 0) {
+    await db.insert(contacts).values(deduped);
+  }
   await db.update(contactLists).set({ contactCount: sql`(SELECT COUNT(*) FROM contacts WHERE listId = ${listId})` }).where(eq(contactLists.id, listId));
-  return { count: data.length };
+  return { count: deduped.length, duplicatesOmitted: totalDupes, duplicatePhones: allDupePhones.slice(0, 50) };
+}
+
+/** Normalize phone number for comparison: strip non-digits, remove leading 1 if 11 digits */
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
+  return digits;
 }
 
 export async function getContacts(listId: number, userId: number) {
