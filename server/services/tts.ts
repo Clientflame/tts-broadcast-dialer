@@ -1,5 +1,6 @@
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
+import { Client as SSHClient } from "ssh2";
 
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
 
@@ -194,77 +195,209 @@ export async function generatePersonalizedTTS(params: {
   };
 }
 
+/**
+ * Transfer audio file to FreePBX via SSH2 (native Node.js, works in production).
+ * 
+ * Strategy:
+ * 1. Download the MP3 from S3
+ * 2. SFTP upload the MP3 to FreePBX
+ * 3. Use SSH exec to convert MP3 -> WAV on FreePBX (ffmpeg is installed there)
+ * 4. Set proper ownership for Asterisk
+ * 5. Return the Asterisk-compatible playback path (no extension)
+ */
 export async function transferAudioToFreePBX(params: {
   s3Url: string;
   fileName: string;
 }): Promise<{ remotePath: string }> {
-  // Download from S3 and upload to FreePBX via SSH/SCP
-  // For now, we'll use the S3 URL directly with Asterisk's HTTP playback
-  // or transfer via SSH when connection is available
-  const remotePath = `/var/lib/asterisk/sounds/custom/broadcast/${params.fileName}`;
+  const host = process.env.FREEPBX_HOST || "45.77.75.198";
+  const sshUser = process.env.FREEPBX_SSH_USER || "root";
+  const sshPass = process.env.FREEPBX_SSH_PASSWORD || "";
+  const sshPort = 22;
 
-  try {
-    // Download the audio file
-    const response = await fetch(params.s3Url);
-    if (!response.ok) throw new Error("Failed to download audio from S3");
-    const audioData = await response.arrayBuffer();
+  const remoteDir = "/var/lib/asterisk/sounds/custom/broadcast";
+  const remoteMp3Path = `${remoteDir}/${params.fileName}`;
+  const remoteWavPath = remoteMp3Path.replace(/\.mp3$/i, ".wav");
 
-    // Use SSH to transfer - we'll do this via a child process
-    const { execSync } = await import("child_process");
-    const fs = await import("fs");
-    const tmpPath = `/tmp/${params.fileName}`;
+  console.log(`[TTS Transfer] Starting transfer: ${params.fileName} -> ${host}`);
 
-    // Write to temp file
-    fs.writeFileSync(tmpPath, Buffer.from(audioData));
-
-    // Convert to WAV format for Asterisk (8kHz, mono, 16-bit)
-    try {
-      execSync(`which ffmpeg && ffmpeg -y -i ${tmpPath} -ar 8000 -ac 1 -acodec pcm_s16le ${tmpPath.replace('.mp3', '.wav')}`, { timeout: 30000 });
-      const wavPath = tmpPath.replace('.mp3', '.wav');
-
-      // SCP to FreePBX
-      const host = process.env.FREEPBX_HOST || "45.77.75.198";
-      const user = process.env.FREEPBX_SSH_USER || "root";
-      const pass = process.env.FREEPBX_SSH_PASSWORD || "";
-      const remoteWavPath = remotePath.replace('.mp3', '.wav');
-
-      execSync(
-        `sshpass -p '${pass}' scp -o StrictHostKeyChecking=no ${wavPath} ${user}@${host}:${remoteWavPath}`,
-        { timeout: 30000 }
-      );
-
-      // Set permissions
-      execSync(
-        `sshpass -p '${pass}' ssh -o StrictHostKeyChecking=no ${user}@${host} "chown asterisk:asterisk ${remoteWavPath}"`,
-        { timeout: 10000 }
-      );
-
-      // Cleanup
-      try { fs.unlinkSync(tmpPath); fs.unlinkSync(wavPath); } catch {}
-
-      return { remotePath: remoteWavPath.replace('/var/lib/asterisk/sounds/', '').replace('.wav', '') };
-    } catch (ffmpegErr) {
-      // If ffmpeg not available, try direct SCP of mp3
-      const host = process.env.FREEPBX_HOST || "45.77.75.198";
-      const user = process.env.FREEPBX_SSH_USER || "root";
-      const pass = process.env.FREEPBX_SSH_PASSWORD || "";
-
-      execSync(
-        `sshpass -p '${pass}' scp -o StrictHostKeyChecking=no ${tmpPath} ${user}@${host}:${remotePath}`,
-        { timeout: 30000 }
-      );
-
-      execSync(
-        `sshpass -p '${pass}' ssh -o StrictHostKeyChecking=no ${user}@${host} "chown asterisk:asterisk ${remotePath}"`,
-        { timeout: 10000 }
-      );
-
-      try { fs.unlinkSync(tmpPath); } catch {}
-
-      return { remotePath: remotePath.replace('/var/lib/asterisk/sounds/', '').replace('.mp3', '') };
-    }
-  } catch (err) {
-    console.error("[TTS] Failed to transfer audio to FreePBX:", err);
-    throw new Error(`Failed to transfer audio to FreePBX: ${(err as Error).message}`);
+  // Step 1: Download from S3
+  console.log("[TTS Transfer] Downloading from S3...");
+  const response = await fetch(params.s3Url);
+  if (!response.ok) {
+    throw new Error(`Failed to download audio from S3 (${response.status}): ${response.statusText}`);
   }
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  console.log(`[TTS Transfer] Downloaded ${audioBuffer.length} bytes from S3`);
+
+  if (audioBuffer.length < 100) {
+    throw new Error(`Audio file too small (${audioBuffer.length} bytes) - likely not a valid audio file`);
+  }
+
+  // Step 2-5: SSH/SFTP operations
+  return new Promise((resolve, reject) => {
+    const conn = new SSHClient();
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        conn.end();
+        reject(new Error("SSH transfer timeout after 60 seconds"));
+      }
+    }, 60000);
+
+    conn.on("ready", () => {
+      console.log("[TTS Transfer] SSH connected, starting SFTP upload...");
+
+      // Step 2: SFTP upload the MP3
+      conn.sftp((err, sftp) => {
+        if (err) {
+          clearTimeout(timeout);
+          resolved = true;
+          conn.end();
+          return reject(new Error(`SFTP session failed: ${err.message}`));
+        }
+
+        // Ensure directory exists
+        sftp.mkdir(remoteDir, (mkdirErr) => {
+          // Ignore EEXIST errors
+          if (mkdirErr && (mkdirErr as any).code !== 4) {
+            console.log("[TTS Transfer] mkdir note:", mkdirErr.message);
+          }
+
+          // Upload the MP3 file
+          const writeStream = sftp.createWriteStream(remoteMp3Path);
+
+          writeStream.on("error", (writeErr: Error) => {
+            if (!resolved) {
+              clearTimeout(timeout);
+              resolved = true;
+              conn.end();
+              reject(new Error(`SFTP write failed: ${writeErr.message}`));
+            }
+          });
+
+          writeStream.on("close", () => {
+            console.log(`[TTS Transfer] MP3 uploaded to ${remoteMp3Path}`);
+            sftp.end();
+
+            // Step 3: Convert MP3 to WAV on FreePBX using ffmpeg
+            const convertCmd = `ffmpeg -y -i "${remoteMp3Path}" -ar 8000 -ac 1 -acodec pcm_s16le "${remoteWavPath}" 2>&1 && chown asterisk:asterisk "${remoteWavPath}" && rm -f "${remoteMp3Path}" && echo "CONVERSION_OK"`;
+
+            console.log("[TTS Transfer] Converting MP3 to WAV on FreePBX...");
+            conn.exec(convertCmd, (execErr, stream) => {
+              if (execErr) {
+                // If ffmpeg conversion fails, try using the MP3 directly
+                console.warn("[TTS Transfer] Exec failed, trying MP3 directly:", execErr.message);
+                fallbackToMp3(conn, remoteMp3Path, timeout, resolved, resolve, reject);
+                return;
+              }
+
+              let output = "";
+              stream.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+
+              stream.on("close", (code: number) => {
+                if (!resolved) {
+                  clearTimeout(timeout);
+                  resolved = true;
+                  conn.end();
+
+                  if (output.includes("CONVERSION_OK")) {
+                    // WAV conversion succeeded
+                    const asteriskPath = remoteWavPath
+                      .replace("/var/lib/asterisk/sounds/", "")
+                      .replace(/\.wav$/i, "");
+                    console.log(`[TTS Transfer] Success! Asterisk path: ${asteriskPath}`);
+                    resolve({ remotePath: asteriskPath });
+                  } else {
+                    // Conversion failed, but MP3 is already uploaded
+                    // Asterisk supports MP3 playback, so use that
+                    console.warn(`[TTS Transfer] WAV conversion failed (code ${code}), using MP3 directly. Output: ${output.substring(0, 200)}`);
+                    const asteriskPath = remoteMp3Path
+                      .replace("/var/lib/asterisk/sounds/", "")
+                      .replace(/\.mp3$/i, "");
+                    
+                    // Set ownership on the MP3
+                    const chownConn = new SSHClient();
+                    chownConn.on("ready", () => {
+                      chownConn.exec(`chown asterisk:asterisk "${remoteMp3Path}"`, () => {
+                        chownConn.end();
+                      });
+                    });
+                    chownConn.on("error", () => { chownConn.end(); });
+                    chownConn.connect({ host, port: sshPort, username: sshUser, password: sshPass });
+
+                    resolve({ remotePath: asteriskPath });
+                  }
+                }
+              });
+            });
+          });
+
+          // Write the audio data
+          writeStream.end(audioBuffer);
+        });
+      });
+    });
+
+    conn.on("error", (err) => {
+      if (!resolved) {
+        clearTimeout(timeout);
+        resolved = true;
+        reject(new Error(`SSH connection failed: ${err.message}`));
+      }
+    });
+
+    console.log(`[TTS Transfer] Connecting to ${sshUser}@${host}:${sshPort}...`);
+    conn.connect({
+      host,
+      port: sshPort,
+      username: sshUser,
+      password: sshPass,
+      readyTimeout: 15000,
+      algorithms: {
+        kex: [
+          "ecdh-sha2-nistp256",
+          "ecdh-sha2-nistp384",
+          "ecdh-sha2-nistp521",
+          "diffie-hellman-group-exchange-sha256",
+          "diffie-hellman-group14-sha256",
+          "diffie-hellman-group14-sha1",
+        ],
+      },
+    });
+  });
+}
+
+function fallbackToMp3(
+  conn: SSHClient,
+  remoteMp3Path: string,
+  timeout: ReturnType<typeof setTimeout>,
+  resolved: boolean,
+  resolve: (v: { remotePath: string }) => void,
+  reject: (e: Error) => void,
+) {
+  if (resolved) return;
+  // Set ownership and use MP3 directly
+  conn.exec(`chown asterisk:asterisk "${remoteMp3Path}" && echo "CHOWN_OK"`, (err, stream) => {
+    if (err) {
+      clearTimeout(timeout);
+      conn.end();
+      reject(new Error(`Fallback chown failed: ${err.message}`));
+      return;
+    }
+
+    let output = "";
+    stream.on("data", (data: Buffer) => { output += data.toString(); });
+    stream.on("close", () => {
+      clearTimeout(timeout);
+      conn.end();
+      const asteriskPath = remoteMp3Path
+        .replace("/var/lib/asterisk/sounds/", "")
+        .replace(/\.mp3$/i, "");
+      console.log(`[TTS Transfer] Fallback MP3 path: ${asteriskPath}`);
+      resolve({ remotePath: asteriskPath });
+    });
+  });
 }

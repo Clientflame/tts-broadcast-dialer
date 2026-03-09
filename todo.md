@@ -61,3 +61,4 @@
 - [x] Cache personalized audio files in S3 to avoid regenerating for retries
 - [x] Fix Quick Test button greyed out on Audio/TTS page (was working - needed audio files with 'ready' status)
 - [x] Improve voice samples - use tts-1-hd model, natural conversational sample text, and better descriptions
+- [x] Fix Quick Test call - replaced child_process/sshpass with native ssh2 for production-compatible audio transfer
