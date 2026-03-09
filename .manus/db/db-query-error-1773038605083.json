@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, name, s3_url FROM audio_files WHERE s3_url IS NOT NULL LIMIT 3",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, s3_url FROM audio_files WHERE s3_url IS NOT NULL LIMIT 3",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 's3_url' in 'where clause'"
+  ]
+}

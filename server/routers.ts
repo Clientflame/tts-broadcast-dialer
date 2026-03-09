@@ -738,8 +738,8 @@ Return ONLY the message text, nothing else.`;
       const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
 
-      // PBX-side approach: pass the S3 URL directly to FreePBX
-      // The dialplan uses System() to call fetch-audio.sh which downloads & converts on the PBX
+      // PBX-side approach: pass the S3 URL directly to FreePBX via AMI variables
+      // The dialplan uses inline System(curl/ffmpeg) to download & convert audio on the PBX
       const ami = getAMIClient();
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;

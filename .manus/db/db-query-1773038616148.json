@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, name, s3Url FROM audio_files WHERE s3Url IS NOT NULL LIMIT 3",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, s3Url FROM audio_files WHERE s3Url IS NOT NULL LIMIT 3",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Test Audio",
+      "s3Url": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\ts3Url\n1\tTest Audio\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

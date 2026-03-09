@@ -162,7 +162,7 @@ class AMIClient extends EventEmitter {
     }
   }
 
-  async sendAction(action: AMIAction): Promise<AMIEvent> {
+  async sendAction(action: AMIAction, extraLines?: string[]): Promise<AMIEvent> {
     if (!this.connected || !this.authenticated) {
       await this.connect();
     }
@@ -179,6 +179,12 @@ class AMIClient extends EventEmitter {
       let msg = `ActionID: ${actionId}\r\n`;
       for (const [key, value] of Object.entries(action)) {
         msg += `${key}: ${value}\r\n`;
+      }
+      // Append extra lines (e.g. multiple Variable: lines)
+      if (extraLines) {
+        for (const line of extraLines) {
+          msg += `${line}\r\n`;
+        }
       }
       msg += "\r\n";
       this.sendRaw(msg);
@@ -207,14 +213,16 @@ class AMIClient extends EventEmitter {
 
     if (params.callerId) action.CallerID = params.callerId;
 
+    // Send each variable on its own "Variable:" line to avoid
+    // comma-separated format breaking on URLs with special chars
+    const extraLines: string[] = [];
     if (params.variables) {
-      const varStr = Object.entries(params.variables)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(",");
-      action.Variable = varStr;
+      for (const [k, v] of Object.entries(params.variables)) {
+        extraLines.push(`Variable: ${k}=${v}`);
+      }
     }
 
-    return this.sendAction(action);
+    return this.sendAction(action, extraLines);
   }
 
   private startKeepalive() {

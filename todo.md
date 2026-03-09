@@ -66,3 +66,12 @@
 - [x] Fix Quick Test call - use PBX-side audio fetching instead of SSH2 transfer
 - [x] Update Asterisk dialplan to download audio from S3 URL before playback
 - [x] Update dialer engine to use PBX-side approach for campaign calls
+- [x] Investigate AMI failure root cause - FreePBX Responsive Firewall was blocking connections
+- [x] Fix AMI Variable format - send each variable on separate line to avoid URL corruption
+- [x] Redesign dialplan to use inline System(curl/ffmpeg) - no external scripts needed
+- [x] Deploy self-contained dialplan to FreePBX
+- [x] Verify Quick Test call end-to-end - call connects and audio plays correctly
+- [x] Create systemd service for socat AMI proxy (persistent across reboots)
+- [x] Whitelist sandbox IP in FreePBX hosts.allow
+- [ ] Disable FreePBX Responsive Firewall permanently or whitelist production IP
+- [ ] Publish and verify Quick Test works from production deployment
