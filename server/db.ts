@@ -657,6 +657,87 @@ export async function getNextRotatingCallerId(userId: number) {
   return result[0];
 }
 
+// ─── Caller ID Health Checks ──────────────────────────────────────────────
+const HEALTH_CHECK_FAIL_THRESHOLD = 3; // auto-disable after this many consecutive failures
+
+export async function getCallerIdsForHealthCheck(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get all active caller IDs that haven't been checked in the last 4 hours, or never checked
+  const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+  return db.select().from(callerIds)
+    .where(and(
+      eq(callerIds.userId, userId),
+      eq(callerIds.isActive, 1),
+      sql`(${callerIds.lastCheckAt} IS NULL OR ${callerIds.lastCheckAt} < ${fourHoursAgo})`,
+    ))
+    .orderBy(callerIds.lastCheckAt)
+    .limit(20); // Check up to 20 at a time
+}
+
+export async function getCallerIdsDueForCheck() {
+  const db = await getDb();
+  if (!db) return [];
+  // Get all active caller IDs across all users that need checking
+  const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+  return db.select().from(callerIds)
+    .where(and(
+      eq(callerIds.isActive, 1),
+      sql`(${callerIds.lastCheckAt} IS NULL OR ${callerIds.lastCheckAt} < ${fourHoursAgo})`,
+    ))
+    .orderBy(callerIds.lastCheckAt)
+    .limit(10); // Process 10 at a time
+}
+
+export async function updateCallerIdHealthCheck(
+  id: number,
+  result: "healthy" | "degraded" | "failed",
+  details?: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  const current = await db.select({
+    consecutiveFailures: callerIds.consecutiveFailures,
+    userId: callerIds.userId,
+    phoneNumber: callerIds.phoneNumber,
+  }).from(callerIds).where(eq(callerIds.id, id)).limit(1);
+  if (!current[0]) return { autoDisabled: false };
+
+  const newFailCount = result === "failed"
+    ? current[0].consecutiveFailures + 1
+    : 0;
+
+  const shouldAutoDisable = newFailCount >= HEALTH_CHECK_FAIL_THRESHOLD;
+
+  await db.update(callerIds).set({
+    healthStatus: result,
+    lastCheckAt: Date.now(),
+    lastCheckResult: details || result,
+    consecutiveFailures: newFailCount,
+    ...(shouldAutoDisable ? { isActive: 0, autoDisabled: 1 } : {}),
+  }).where(eq(callerIds.id, id));
+
+  return {
+    autoDisabled: shouldAutoDisable,
+    phoneNumber: current[0].phoneNumber,
+    failCount: newFailCount,
+  };
+}
+
+export async function resetCallerIdHealth(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callerIds).set({
+    healthStatus: "unknown" as any,
+    consecutiveFailures: 0,
+    autoDisabled: 0,
+    isActive: 1,
+    lastCheckAt: null,
+    lastCheckResult: null,
+  }).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+}
+
 // ─── Broadcast Templates ────────────────────────────────────────────────────
 export async function createBroadcastTemplate(data: InsertBroadcastTemplate) {
   const db = await getDb();

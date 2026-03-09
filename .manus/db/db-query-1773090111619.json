@@ -1,0 +1,50 @@
+{
+  "query": "SELECT COUNT(*) as cnt, phoneNumber FROM contacts WHERE userId = 901 GROUP BY phoneNumber LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT COUNT(*) as cnt, phoneNumber FROM contacts WHERE userId = 901 GROUP BY phoneNumber LIMIT 20;",
+  "rows": [
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550020"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550030"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550040"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550041"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550050"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550003"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550011"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550001"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550010"
+    },
+    {
+      "cnt": "1",
+      "phoneNumber": "2015550002"
+    }
+  ],
+  "messages": [],
+  "stdout": "cnt\tphoneNumber\n1\t2015550020\n1\t2015550030\n1\t2015550040\n1\t2015550041\n1\t2015550050\n1\t2015550003\n1\t2015550011\n1\t2015550001\n1\t2015550010\n1\t2015550002\n",
+  "stderr": "",
+  "execution_time_ms": 109
+}

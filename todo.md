@@ -132,3 +132,10 @@
 - [x] Import preview step - show summary (row count, dupe count, DNC count, column mapping) before committing
 - [x] Duplicate caller ID detection - prevent adding caller IDs that already exist
 - [x] Bulk delete caller IDs - select multiple and delete at once
+- [x] Caller ID health check - periodically test each DID to verify it's active/valid
+- [x] Add health check fields to callerIds schema (lastCheckAt, lastCheckResult, checkStatus, failCount)
+- [x] Health check API endpoint for PBX agent to report DID test results
+- [x] Server-side health check trigger - queue DID checks via PBX agent
+- [x] Auto-disable DIDs that fail consecutive checks (3 consecutive failures threshold)
+- [x] Health check UI - status indicators, manual check trigger, reset button
+- [x] Vitest tests for health check logic (8 tests)

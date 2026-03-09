@@ -10,8 +10,49 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { Phone, Plus, Upload, Trash2 } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw } from "lucide-react";
+
+function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures }: {
+  status: string;
+  autoDisabled: number;
+  lastCheckAt: number | null;
+  lastCheckResult: string | null;
+  consecutiveFailures: number;
+}) {
+  const config: Record<string, { icon: React.ReactNode; label: string; variant: "default" | "secondary" | "destructive" | "outline"; color: string }> = {
+    unknown: { icon: <ShieldQuestion className="h-3 w-3" />, label: "Unchecked", variant: "outline", color: "text-muted-foreground" },
+    healthy: { icon: <ShieldCheck className="h-3 w-3" />, label: "Healthy", variant: "default", color: "text-green-600" },
+    degraded: { icon: <ShieldAlert className="h-3 w-3" />, label: "Degraded", variant: "secondary", color: "text-yellow-600" },
+    failed: { icon: <ShieldX className="h-3 w-3" />, label: "Failed", variant: "destructive", color: "text-red-600" },
+  };
+  const c = config[status] || config.unknown;
+
+  const tooltipContent = [
+    lastCheckAt ? `Last checked: ${new Date(lastCheckAt).toLocaleString()}` : "Never checked",
+    lastCheckResult ? `Result: ${lastCheckResult}` : null,
+    consecutiveFailures > 0 ? `Consecutive failures: ${consecutiveFailures}` : null,
+    autoDisabled ? "Auto-disabled due to repeated failures" : null,
+  ].filter(Boolean).join("\n");
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1">
+            <Badge variant={c.variant} className={`text-xs gap-1 ${autoDisabled ? "border-red-400 bg-red-50 text-red-700" : ""}`}>
+              {c.icon} {autoDisabled ? "Auto-Disabled" : c.label}
+            </Badge>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent className="whitespace-pre-line text-xs max-w-xs">
+          {tooltipContent}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 export default function CallerIds() {
   const utils = trpc.useUtils();
@@ -36,6 +77,20 @@ export default function CallerIds() {
   const deleteMut = trpc.callerIds.delete.useMutation({ onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Caller ID removed"); } });
   const bulkDeleteMut = trpc.callerIds.bulkDelete.useMutation({
     onSuccess: () => { utils.callerIds.list.invalidate(); setSelected(new Set()); toast.success("Selected caller IDs removed"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const healthCheckMut = trpc.callerIds.triggerHealthCheck.useMutation({
+    onSuccess: (r) => {
+      toast.success(r.message);
+      // Poll for results after a delay
+      setTimeout(() => utils.callerIds.list.invalidate(), 5000);
+      setTimeout(() => utils.callerIds.list.invalidate(), 15000);
+      setTimeout(() => utils.callerIds.list.invalidate(), 30000);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const resetHealthMut = trpc.callerIds.resetHealth.useMutation({
+    onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Health status reset and caller ID re-enabled"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -69,7 +124,6 @@ export default function CallerIds() {
     reader.onload = (ev) => {
       const text = ev.target?.result as string;
       const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-      // Skip header if it contains non-numeric first field
       const start = lines[0] && /[a-zA-Z]/.test(lines[0].split(",")[0]) ? 1 : 0;
       const entries = lines.slice(start).map(line => {
         const parts = line.split(",").map(p => p.trim());
@@ -94,6 +148,10 @@ export default function CallerIds() {
   };
 
   const activeCount = callerIds.filter(c => c.isActive === 1).length;
+  const healthyCount = callerIds.filter(c => c.healthStatus === "healthy").length;
+  const failedCount = callerIds.filter(c => c.healthStatus === "failed").length;
+  const autoDisabledCount = callerIds.filter(c => c.autoDisabled === 1).length;
+  const uncheckedCount = callerIds.filter(c => c.healthStatus === "unknown").length;
 
   return (
     <DashboardLayout>
@@ -103,12 +161,21 @@ export default function CallerIds() {
             <h1 className="text-2xl font-bold tracking-tight">Caller IDs (DIDs)</h1>
             <p className="text-muted-foreground">Manage your outbound caller ID rotation pool</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap justify-end">
             {selected.size > 0 && (
-              <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${selected.size} caller ID(s)?`)) bulkDeleteMut.mutate({ ids: Array.from(selected) }); }}>
-                <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
-              </Button>
+              <>
+                <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${selected.size} caller ID(s)?`)) bulkDeleteMut.mutate({ ids: Array.from(selected) }); }}>
+                  <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate({ ids: Array.from(selected) })} disabled={healthCheckMut.isPending}>
+                  <Activity className="h-4 w-4 mr-1" /> Check {selected.size}
+                </Button>
+              </>
             )}
+            <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate()} disabled={healthCheckMut.isPending}>
+              {healthCheckMut.isPending ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Activity className="h-4 w-4 mr-1" />}
+              Health Check All
+            </Button>
             <input type="file" ref={fileRef} accept=".csv,.txt" className="hidden" onChange={handleCSVImport} />
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
               <Upload className="h-4 w-4 mr-1" /> Import CSV
@@ -161,7 +228,7 @@ export default function CallerIds() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total DIDs</CardDescription>
@@ -176,17 +243,35 @@ export default function CallerIds() {
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Inactive</CardDescription>
-              <CardTitle className="text-3xl text-muted-foreground">{callerIds.length - activeCount}</CardTitle>
+              <CardDescription className="flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5 text-green-500" /> Healthy</CardDescription>
+              <CardTitle className="text-3xl text-green-500">{healthyCount}</CardTitle>
             </CardHeader>
           </Card>
-          <Card className="md:col-span-3">
+          <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Total Calls Made Across All DIDs</CardDescription>
-              <CardTitle className="text-3xl">{callerIds.reduce((sum, c) => sum + (c.callCount || 0), 0)}</CardTitle>
+              <CardDescription className="flex items-center gap-1"><ShieldX className="h-3.5 w-3.5 text-red-500" /> Failed</CardDescription>
+              <CardTitle className="text-3xl text-red-500">{failedCount}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1"><ShieldQuestion className="h-3.5 w-3.5" /> Unchecked</CardDescription>
+              <CardTitle className="text-3xl text-muted-foreground">{uncheckedCount}</CardTitle>
             </CardHeader>
           </Card>
         </div>
+
+        {autoDisabledCount > 0 && (
+          <Card className="border-red-200 bg-red-50/50">
+            <CardContent className="py-3 px-4">
+              <div className="flex items-center gap-2 text-red-700 text-sm">
+                <ShieldX className="h-4 w-4" />
+                <span className="font-medium">{autoDisabledCount} caller ID{autoDisabledCount > 1 ? "s" : ""} auto-disabled</span>
+                <span className="text-red-600/80">due to repeated health check failures. Reset health status to re-enable.</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="p-0">
@@ -200,6 +285,7 @@ export default function CallerIds() {
                     <th className="p-3 text-left">Phone Number</th>
                     <th className="p-3 text-left">Label</th>
                     <th className="p-3 text-left">Status</th>
+                    <th className="p-3 text-left">Health</th>
                     <th className="p-3 text-left">Date Added</th>
                     <th className="p-3 text-left">Calls Made</th>
                     <th className="p-3 text-left">Last Used</th>
@@ -208,14 +294,14 @@ export default function CallerIds() {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
+                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
                   ) : callerIds.length === 0 ? (
-                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No caller IDs yet. Add DIDs to enable caller ID rotation.
                     </td></tr>
                   ) : callerIds.map(cid => (
-                    <tr key={cid.id} className="border-b hover:bg-muted/30">
+                    <tr key={cid.id} className={`border-b hover:bg-muted/30 ${cid.autoDisabled ? "bg-red-50/30" : ""}`}>
                       <td className="p-3"><Checkbox checked={selected.has(cid.id)} onCheckedChange={() => toggleSelect(cid.id)} /></td>
                       <td className="p-3 font-mono">{cid.phoneNumber}</td>
                       <td className="p-3">{cid.label || "—"}</td>
@@ -230,6 +316,15 @@ export default function CallerIds() {
                           </Badge>
                         </div>
                       </td>
+                      <td className="p-3">
+                        <HealthBadge
+                          status={cid.healthStatus}
+                          autoDisabled={cid.autoDisabled}
+                          lastCheckAt={cid.lastCheckAt}
+                          lastCheckResult={cid.lastCheckResult}
+                          consecutiveFailures={cid.consecutiveFailures}
+                        />
+                      </td>
                       <td className="p-3 text-muted-foreground text-xs">
                         {cid.createdAt ? new Date(cid.createdAt).toLocaleDateString() : "—"}
                       </td>
@@ -238,9 +333,33 @@ export default function CallerIds() {
                         {cid.lastUsedAt ? new Date(cid.lastUsedAt).toLocaleString() : "Never"}
                       </td>
                       <td className="p-3 text-right">
-                        <Button variant="ghost" size="sm" onClick={() => deleteMut.mutate({ id: cid.id })}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {(cid.healthStatus === "failed" || cid.autoDisabled === 1) && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" onClick={() => resetHealthMut.mutate({ id: cid.id })} disabled={resetHealthMut.isPending}>
+                                    <RotateCcw className="h-4 w-4 text-blue-500" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Reset health &amp; re-enable</TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => healthCheckMut.mutate({ ids: [cid.id] })} disabled={healthCheckMut.isPending}>
+                                  <Activity className="h-4 w-4 text-muted-foreground" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Run health check</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <Button variant="ghost" size="sm" onClick={() => deleteMut.mutate({ id: cid.id })}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

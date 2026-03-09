@@ -575,6 +575,47 @@ export const appRouter = router({
     getRegions: protectedProcedure.input(z.object({ callerIdId: z.number() })).query(async ({ input }) => {
       return db.getCallerIdRegions(input.callerIdId);
     }),
+    // Health check endpoints
+    triggerHealthCheck: protectedProcedure.input(z.object({
+      ids: z.array(z.number()).min(1).max(50).optional(),
+    }).optional()).mutation(async ({ ctx, input }) => {
+      // Queue health checks for specified IDs or all due IDs
+      const idsToCheck = input?.ids;
+      let callerIdsToCheck;
+      if (idsToCheck && idsToCheck.length > 0) {
+        // Specific IDs requested
+        callerIdsToCheck = await db.getCallerIds(ctx.user.id);
+        callerIdsToCheck = callerIdsToCheck.filter(c => idsToCheck.includes(c.id));
+      } else {
+        // Get all due for check
+        callerIdsToCheck = await db.getCallerIdsForHealthCheck(ctx.user.id);
+      }
+      if (callerIdsToCheck.length === 0) {
+        return { queued: 0, message: "No caller IDs need checking right now" };
+      }
+      // Queue health check calls via the call queue (PBX agent will pick them up)
+      let queued = 0;
+      for (const cid of callerIdsToCheck) {
+        await db.enqueueCall({
+          phoneNumber: cid.phoneNumber,
+          channel: `SIP/vitel-outbound/${cid.phoneNumber}`,
+          context: "health-check",
+          callerIdStr: cid.phoneNumber,
+          audioUrl: "",
+          audioName: "health-check",
+          variables: { healthCheckCallerIdId: String(cid.id), healthCheck: "true" },
+          priority: 1,
+          userId: ctx.user.id,
+        });
+        queued++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.healthCheck", resource: "callerId", details: { queued } });
+      return { queued, message: `${queued} health check(s) queued` };
+    }),
+    resetHealth: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.resetCallerIdHealth(input.id, ctx.user.id);
+      return { success: true };
+    }),
   }),
 
   templates: router({

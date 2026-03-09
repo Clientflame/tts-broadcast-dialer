@@ -1,0 +1,50 @@
+{
+  "query": "SELECT phoneNumber, listId FROM contacts WHERE userId = 901 ORDER BY phoneNumber;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT phoneNumber, listId FROM contacts WHERE userId = 901 ORDER BY phoneNumber;",
+  "rows": [
+    {
+      "phoneNumber": "2015550001",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550002",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550003",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550010",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550011",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550020",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550030",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550040",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550041",
+      "listId": "30011"
+    },
+    {
+      "phoneNumber": "2015550050",
+      "listId": "30011"
+    }
+  ],
+  "messages": [],
+  "stdout": "phoneNumber\tlistId\n2015550001\t30011\n2015550002\t30011\n2015550003\t30011\n2015550010\t30011\n2015550011\t30011\n2015550020\t30011\n2015550030\t30011\n2015550040\t30011\n2015550041\t30011\n2015550050\t30011\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

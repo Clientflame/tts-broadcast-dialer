@@ -234,6 +234,40 @@ async function getQueueStatsForCampaign(campaignId: number) {
   return { pending: stats["pending"] || 0, claimed: stats["claimed"] || 0 };
 }
 
+// ─── Health Check Result Report ────────────────────────────────────────────
+// PBX agent reports DID health check results
+pbxRouter.post("/health-check-result", async (req: Request, res: Response) => {
+  try {
+    const { callerIdId, result, details } = req.body;
+    if (!callerIdId || !result) {
+      res.status(400).json({ error: "Missing callerIdId or result" });
+      return;
+    }
+
+    const validResults = ["healthy", "degraded", "failed"];
+    if (!validResults.includes(result)) {
+      res.status(400).json({ error: `Invalid result. Must be one of: ${validResults.join(", ")}` });
+      return;
+    }
+
+    const updateResult = await db.updateCallerIdHealthCheck(callerIdId, result, details);
+
+    if (updateResult.autoDisabled) {
+      // Notify owner that a DID was auto-disabled
+      notifyOwner({
+        title: `Caller ID Auto-Disabled: ${updateResult.phoneNumber}`,
+        content: `Caller ID ${updateResult.phoneNumber} has been automatically disabled after ${updateResult.failCount} consecutive health check failures.\n\nLast check result: ${details || result}\n\nYou can re-enable it from the Caller IDs page after verifying the number is working.`,
+      }).catch(err => console.warn("[PBX-API] Failed to send auto-disable notification:", err));
+      console.log(`[PBX-API] Caller ID ${updateResult.phoneNumber} auto-disabled after ${updateResult.failCount} failures`);
+    }
+
+    res.json({ success: true, autoDisabled: updateResult.autoDisabled });
+  } catch (err) {
+    console.error("[PBX-API] Health check result error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 // ─── Agent Offline Detection ───────────────────────────────────────────────
 // Periodically check for agents that haven't sent a heartbeat in 2+ minutes
 let offlineCheckInterval: ReturnType<typeof setInterval> | null = null;

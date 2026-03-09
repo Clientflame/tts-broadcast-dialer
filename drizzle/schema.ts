@@ -257,6 +257,12 @@ export const callerIds = mysqlTable("caller_ids", {
   callCount: int("callCount").default(0).notNull(),
   lastUsedAt: bigint("lastUsedAt", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  // Health check fields
+  healthStatus: mysqlEnum("healthStatus", ["unknown", "healthy", "degraded", "failed"]).default("unknown").notNull(),
+  lastCheckAt: bigint("lastCheckAt", { mode: "number" }),
+  lastCheckResult: text("lastCheckResult"),
+  consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
+  autoDisabled: int("autoDisabled").default(0).notNull(),
 });
 
 export type CallerId = typeof callerIds.$inferSelect;
