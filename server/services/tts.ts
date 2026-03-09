@@ -153,16 +153,10 @@ export async function generatePersonalizedTTS(params: {
   const cacheHash = createHash("md5").update(`${renderedText}|${params.voice}|${speed}`).digest("hex");
   const cacheKey = `tts-personalized/campaign_${params.campaignId}_contact_${params.contactId}_${cacheHash}.mp3`;
 
-  // Check if already cached in S3 (by trying to get the URL)
-  try {
-    const { storageGet } = await import("../storage");
-    const existing = await storageGet(cacheKey);
-    if (existing?.url) {
-      return { s3Url: existing.url, s3Key: cacheKey, fileSize: 0, renderedText };
-    }
-  } catch {
-    // Not cached, generate fresh
-  }
+  // IMPORTANT: Do NOT use storageGet() for cache checks — it returns a presigned
+  // URL that expires, causing 403 errors when the PBX agent downloads later.
+  // Instead, always regenerate and use storagePut() which returns a permanent public URL.
+  // storagePut is idempotent (overwrites same key), so re-uploading is safe.
 
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",

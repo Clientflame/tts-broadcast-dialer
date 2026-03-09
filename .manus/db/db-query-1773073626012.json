@@ -1,0 +1,46 @@
+{
+  "query": "SELECT id, audioUrl, status, result FROM call_queue;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, audioUrl, status, result FROM call_queue;",
+  "rows": [
+    {
+      "id": "1",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "2",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "status": "completed",
+      "result": "answered"
+    },
+    {
+      "id": "3",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_1_dec92d32a35a760886248d165e3f0b5d.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "4",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30001_b3511bc3f7cb5365c5b57d31c28b3c8f.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "5",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30002_b8164f91ae0acc5c34b550e75919d6b3.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "6",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30003_c5dbf747cdb835a7dfb0f055b4147c48.mp3",
+      "status": "failed",
+      "result": "failed"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\taudioUrl\tstatus\tresult\n1\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tfailed\tfailed\n2\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tcompleted\tanswered\n3\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_1_dec92d32a35a760886248d165e3f0b5d.mp3\tfailed\tfailed\n4\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30001_b3511bc3f7cb5365c5b57d31c28b3c8f.mp3\tfailed\tfailed\n5\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30002_b8164f91ae0acc5c34b550e75919d6b3.mp3\tfailed\tfailed\n6\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-personalized/campaign_30001_contact_30003_c5dbf747cdb835a7dfb0f055b4147c48.mp3\tfailed\tfailed\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

@@ -1,0 +1,37 @@
+{
+  "query": "SELECT id, name, status, contactListId, audioFileId, messageText, usePersonalizedTTS FROM campaigns ORDER BY id DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, status, contactListId, audioFileId, messageText, usePersonalizedTTS FROM campaigns ORDER BY id DESC;",
+  "rows": [
+    {
+      "id": "30001",
+      "name": "tewst 3",
+      "status": "completed",
+      "contactListId": "1",
+      "audioFileId": "NULL",
+      "messageText": "Hello {{first_name}} {{last_name}} This serves as a final notice to remind you that your overdue balance remains outstanding. Should you require any assistance or wish to discuss setting up a repayment plan please do not hesitate to contact us at {{caller_id}} it is crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter",
+      "usePersonalizedTTS": "1"
+    },
+    {
+      "id": "2",
+      "name": "Test",
+      "status": "draft",
+      "contactListId": "1",
+      "audioFileId": "NULL",
+      "messageText": "NULL",
+      "usePersonalizedTTS": "0"
+    },
+    {
+      "id": "1",
+      "name": "Test",
+      "status": "draft",
+      "contactListId": "1",
+      "audioFileId": "NULL",
+      "messageText": "NULL",
+      "usePersonalizedTTS": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tstatus\tcontactListId\taudioFileId\tmessageText\tusePersonalizedTTS\n30001\ttewst 3\tcompleted\t1\tNULL\tHello {{first_name}} {{last_name}} This serves as a final notice to remind you that your overdue balance remains outstanding. Should you require any assistance or wish to discuss setting up a repayment plan please do not hesitate to contact us at {{caller_id}} it is crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter\t1\n2\tTest\tdraft\t1\tNULL\tNULL\t0\n1\tTest\tdraft\t1\tNULL\tNULL\t0\n",
+  "stderr": "",
+  "execution_time_ms": 53
+}

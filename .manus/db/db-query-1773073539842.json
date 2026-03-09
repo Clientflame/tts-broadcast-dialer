@@ -1,0 +1,49 @@
+{
+  "query": "SELECT * FROM audio_files ORDER BY id DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT * FROM audio_files ORDER BY id DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "30002",
+      "userId": "1",
+      "name": "Crucial Response",
+      "text": "it is crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter",
+      "voice": "alloy",
+      "s3Url": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3",
+      "s3Key": "tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3",
+      "duration": "NULL",
+      "fileSize": "283680",
+      "status": "ready",
+      "createdAt": "2026-03-09 16:22:21"
+    },
+    {
+      "id": "30001",
+      "userId": "1",
+      "name": "Serves Final Notice",
+      "text": "This serves as a final notice to remind you that your overdue balance remains outstanding Should you require any assistance or wish to discuss setting up a repayment plan please do not hesitate to contact us at",
+      "voice": "echo",
+      "s3Url": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3",
+      "s3Key": "tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3",
+      "duration": "NULL",
+      "fileSize": "266880",
+      "status": "ready",
+      "createdAt": "2026-03-09 16:21:39"
+    },
+    {
+      "id": "1",
+      "userId": "1",
+      "name": "Test Audio",
+      "text": "its crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter",
+      "voice": "alloy",
+      "s3Url": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "s3Key": "tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "duration": "NULL",
+      "fileSize": "292320",
+      "status": "ready",
+      "createdAt": "2026-03-09 04:50:40"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tname\ttext\tvoice\ts3Url\ts3Key\tduration\tfileSize\tstatus\tcreatedAt\n30002\t1\tCrucial Response\tit is crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter\talloy\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\ttts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\tNULL\t283680\tready\t2026-03-09 16:22:21\n30001\t1\tServes Final Notice\tThis serves as a final notice to remind you that your overdue balance remains outstanding Should you require any assistance or wish to discuss setting up a repayment plan please do not hesitate to contact us at\techo\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3\ttts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3\tNULL\t266880\tready\t2026-03-09 16:21:39\n1\t1\tTest Audio\tits crucial for us to document a response before the reporting date This communication serves as an attempt to collect a debt and any information gathered will be used for this purpose Thank you for your attention to this matter\talloy\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\ttts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tNULL\t292320\tready\t2026-03-09 04:50:40\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

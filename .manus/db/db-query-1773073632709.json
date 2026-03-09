@@ -1,0 +1,58 @@
+{
+  "query": "SELECT id, LENGTH(audioUrl) as url_len, LEFT(audioUrl, 50) as url_start, RIGHT(audioUrl, 50) as url_end, status, result FROM call_queue;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, LENGTH(audioUrl) as url_len, LEFT(audioUrl, 50) as url_start, RIGHT(audioUrl, 50) as url_end, status, result FROM call_queue;",
+  "rows": [
+    {
+      "id": "1",
+      "url_len": "126",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "AFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "2",
+      "url_len": "126",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "AFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "status": "completed",
+      "result": "answered"
+    },
+    {
+      "id": "3",
+      "url_len": "158",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "001_contact_1_dec92d32a35a760886248d165e3f0b5d.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "4",
+      "url_len": "162",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "contact_30001_b3511bc3f7cb5365c5b57d31c28b3c8f.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "5",
+      "url_len": "162",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "contact_30002_b8164f91ae0acc5c34b550e75919d6b3.mp3",
+      "status": "failed",
+      "result": "failed"
+    },
+    {
+      "id": "6",
+      "url_len": "162",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328",
+      "url_end": "contact_30003_c5dbf747cdb835a7dfb0f055b4147c48.mp3",
+      "status": "failed",
+      "result": "failed"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\turl_len\turl_start\turl_end\tstatus\tresult\n1\t126\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\tAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tfailed\tfailed\n2\t126\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\tAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tcompleted\tanswered\n3\t158\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\t001_contact_1_dec92d32a35a760886248d165e3f0b5d.mp3\tfailed\tfailed\n4\t162\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\tcontact_30001_b3511bc3f7cb5365c5b57d31c28b3c8f.mp3\tfailed\tfailed\n5\t162\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\tcontact_30002_b8164f91ae0acc5c34b550e75919d6b3.mp3\tfailed\tfailed\n6\t162\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328\tcontact_30003_c5dbf747cdb835a7dfb0f055b4147c48.mp3\tfailed\tfailed\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

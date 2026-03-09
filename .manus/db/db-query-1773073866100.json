@@ -1,0 +1,31 @@
+{
+  "query": "SELECT id, name, LENGTH(s3Url) as url_len, SUBSTRING(s3Url, 1, 120) as url_start, SUBSTRING(s3Url, -60) as url_end FROM audio_files LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, LENGTH(s3Url) as url_len, SUBSTRING(s3Url, 1, 120) as url_start, SUBSTRING(s3Url, -60) as url_end FROM audio_files LIMIT 3;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Test Audio",
+      "url_len": "126",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Aud",
+      "url_end": "TogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3"
+    },
+    {
+      "id": "30001",
+      "name": "Serves Final Notice",
+      "url_len": "135",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_F",
+      "url_end": "DAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3"
+    },
+    {
+      "id": "30002",
+      "name": "Crucial Response",
+      "url_len": "132",
+      "url_start": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_",
+      "url_end": "csoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\turl_len\turl_start\turl_end\n1\tTest Audio\t126\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Aud\tTogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\n30001\tServes Final Notice\t135\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_F\tDAFH/tts-audio/4dbCznY9ERfXliN1IvF2s-Serves_Final_Notice.mp3\n30002\tCrucial Response\t132\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_\tcsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

@@ -99,3 +99,6 @@
 - [x] Fix call queue re-polling same call (ActionID matching + proper result reporting)
 - [x] Fix PBX agent AMI banner read bug (_read_banner method added)
 - [x] Fix User-Agent header for Cloudflare compatibility
+- [x] Increase PBX agent max concurrent calls from 5 to 50
+- [x] Fix: Unable to create campaign - Personalized TTS toggle requires message text input
+- [x] Fix: Campaign calls failing - personalized TTS used storageGet() presigned URLs that expired before PBX agent downloaded
