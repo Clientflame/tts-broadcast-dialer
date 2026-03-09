@@ -16,12 +16,12 @@ import { toast } from "sonner";
 import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic } from "lucide-react";
 
 const VOICE_OPTIONS = [
-  { id: "alloy", name: "Alloy", desc: "Neutral and balanced", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
-  { id: "echo", name: "Echo", desc: "Warm and confident", color: "bg-amber-500/10 border-amber-500/20 text-amber-700" },
-  { id: "fable", name: "Fable", desc: "Expressive and dynamic", color: "bg-purple-500/10 border-purple-500/20 text-purple-700" },
-  { id: "onyx", name: "Onyx", desc: "Deep and authoritative", color: "bg-slate-500/10 border-slate-500/20 text-slate-700" },
-  { id: "nova", name: "Nova", desc: "Friendly and upbeat", color: "bg-green-500/10 border-green-500/20 text-green-700" },
-  { id: "shimmer", name: "Shimmer", desc: "Clear and pleasant", color: "bg-pink-500/10 border-pink-500/20 text-pink-700" },
+  { id: "alloy", name: "Alloy", desc: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
+  { id: "echo", name: "Echo", desc: "Warm baritone with gravitas", gender: "Male", tone: "Confident, reassuring", bestFor: "Financial services, legal notices, executive messaging", color: "bg-amber-500/10 border-amber-500/20 text-amber-700" },
+  { id: "fable", name: "Fable", desc: "Expressive with natural inflection", gender: "Male", tone: "Engaging, storytelling", bestFor: "Marketing campaigns, event invitations, promotions", color: "bg-purple-500/10 border-purple-500/20 text-purple-700" },
+  { id: "onyx", name: "Onyx", desc: "Deep and commanding presence", gender: "Male", tone: "Authoritative, serious", bestFor: "Urgent notices, compliance calls, collections", color: "bg-slate-500/10 border-slate-500/20 text-slate-700" },
+  { id: "nova", name: "Nova", desc: "Bright and approachable", gender: "Female", tone: "Friendly, energetic", bestFor: "Customer outreach, appointment reminders, surveys", color: "bg-green-500/10 border-green-500/20 text-green-700" },
+  { id: "shimmer", name: "Shimmer", desc: "Smooth and polished", gender: "Female", tone: "Calm, professional", bestFor: "Healthcare, insurance, customer service", color: "bg-pink-500/10 border-pink-500/20 text-pink-700" },
 ] as const;
 
 function AudioPlayer({ url, name }: { url: string; name: string }) {
@@ -78,21 +78,25 @@ function AudioPlayer({ url, name }: { url: string; name: string }) {
   );
 }
 
-function VoiceSampleCard({ voice, color, name, desc }: { voice: string; color: string; name: string; desc: string }) {
+function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor }: { voice: string; color: string; name: string; desc: string; gender: string; tone: string; bestFor: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sampleUrl, setSampleUrl] = useState<string | null>(null);
-  const [sampleSpeed, setSampleSpeed] = useState(1.0);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const voiceSample = trpc.audio.voiceSample.useMutation({
     onSuccess: (data) => {
       setSampleUrl(data.url);
       setLoading(false);
-      // Auto-play after generation
       const audio = new window.Audio(data.url);
       audioRef.current = audio;
-      audio.onended = () => setPlaying(false);
+      audio.onloadedmetadata = () => setDuration(audio.duration || 0);
+      audio.ontimeupdate = () => {
+        if (audio.duration) setProgress((audio.currentTime / audio.duration) * 100);
+      };
+      audio.onended = () => { setPlaying(false); setProgress(0); };
       audio.onerror = () => { setPlaying(false); toast.error("Failed to play sample"); };
       audio.play();
       setPlaying(true);
@@ -110,29 +114,34 @@ function VoiceSampleCard({ voice, color, name, desc }: { voice: string; color: s
       setPlaying(false);
       return;
     }
-
-    if (sampleUrl && sampleSpeed === 1.0) {
-      // Replay cached sample
+    if (sampleUrl) {
       if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play(); setPlaying(true); }
+      else {
+        const audio = new window.Audio(sampleUrl);
+        audioRef.current = audio;
+        audio.onloadedmetadata = () => setDuration(audio.duration || 0);
+        audio.ontimeupdate = () => { if (audio.duration) setProgress((audio.currentTime / audio.duration) * 100); };
+        audio.onended = () => { setPlaying(false); setProgress(0); };
+        audio.play(); setPlaying(true);
+      }
       return;
     }
-
-    // Generate new sample
     setLoading(true);
-    voiceSample.mutate({ voice: voice as any, speed: sampleSpeed });
+    voiceSample.mutate({ voice: voice as any, speed: 1.0 });
   };
 
   return (
-    <div className={`border rounded-lg p-4 space-y-3 ${color}`}>
+    <div className={`border rounded-xl p-5 space-y-3 transition-all hover:shadow-md ${color}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Mic className="h-4 w-4" />
-          <span className="font-semibold text-sm">{name}</span>
+          <span className="font-bold text-sm">{name}</span>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0">{gender}</Badge>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8"
+          className="h-9 w-9 rounded-full"
           onClick={handlePlay}
           disabled={loading}
         >
@@ -145,10 +154,24 @@ function VoiceSampleCard({ voice, color, name, desc }: { voice: string; color: s
           )}
         </Button>
       </div>
-      <p className="text-xs opacity-80">{desc}</p>
-      <div className="text-[10px] opacity-60">
-        {sampleUrl ? "Click play to hear sample" : "Click play to generate sample"}
+      <p className="text-xs font-medium opacity-90">{desc}</p>
+      <div className="space-y-1">
+        <div className="text-[10px] opacity-70"><span className="font-semibold">Tone:</span> {tone}</div>
+        <div className="text-[10px] opacity-70"><span className="font-semibold">Best for:</span> {bestFor}</div>
       </div>
+      {(playing || sampleUrl) && (
+        <div className="pt-1">
+          <Progress value={progress} className="h-1" />
+          <div className="text-[10px] opacity-50 mt-0.5 text-right">
+            {duration > 0 ? `${Math.floor(duration)}s` : ""}
+          </div>
+        </div>
+      )}
+      {!sampleUrl && !loading && (
+        <div className="text-[10px] opacity-50 flex items-center gap-1">
+          <Volume2 className="h-3 w-3" /> Click play to hear HD voice sample
+        </div>
+      )}
     </div>
   );
 }
@@ -334,7 +357,7 @@ export default function Audio() {
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {VOICE_OPTIONS.map(v => (
-                <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} />
+                <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} gender={v.gender} tone={v.tone} bestFor={v.bestFor} />
               ))}
             </div>
           </CardContent>

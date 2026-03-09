@@ -3,14 +3,24 @@ import { nanoid } from "nanoid";
 
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
 
-export const TTS_VOICES: { id: TTSVoice; name: string; description: string }[] = [
-  { id: "alloy", name: "Alloy", description: "Neutral and balanced" },
-  { id: "echo", name: "Echo", description: "Warm and confident" },
-  { id: "fable", name: "Fable", description: "Expressive and dynamic" },
-  { id: "onyx", name: "Onyx", description: "Deep and authoritative" },
-  { id: "nova", name: "Nova", description: "Friendly and upbeat" },
-  { id: "shimmer", name: "Shimmer", description: "Clear and pleasant" },
+export const TTS_VOICES: { id: TTSVoice; name: string; description: string; gender: string; tone: string; bestFor: string }[] = [
+  { id: "alloy", name: "Alloy", description: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications" },
+  { id: "echo", name: "Echo", description: "Warm baritone with gravitas", gender: "Male", tone: "Confident, reassuring", bestFor: "Financial services, legal notices, executive messaging" },
+  { id: "fable", name: "Fable", description: "Expressive with natural inflection", gender: "Male", tone: "Engaging, storytelling", bestFor: "Marketing campaigns, event invitations, promotions" },
+  { id: "onyx", name: "Onyx", description: "Deep and commanding presence", gender: "Male", tone: "Authoritative, serious", bestFor: "Urgent notices, compliance calls, collections" },
+  { id: "nova", name: "Nova", description: "Bright and approachable", gender: "Female", tone: "Friendly, energetic", bestFor: "Customer outreach, appointment reminders, surveys" },
+  { id: "shimmer", name: "Shimmer", description: "Smooth and polished", gender: "Female", tone: "Calm, professional", bestFor: "Healthcare, insurance, customer service" },
 ];
+
+// Natural, human-like sample scripts unique to each voice personality
+const VOICE_SAMPLE_SCRIPTS: Record<TTSVoice, string> = {
+  alloy: "Hi there. I'm reaching out today because we have an important update regarding your account. We'd love to walk you through the details and answer any questions you might have. Please give us a call back at your earliest convenience. We appreciate your time.",
+  echo: "Good afternoon. This is a courtesy call to inform you that your account requires immediate attention. We understand your time is valuable, so we've made it easy to resolve this matter. Please contact our office at your earliest convenience, and we'll be happy to assist you.",
+  fable: "Hey! Great news — we've got something special lined up just for you. Whether you're looking to save on your next purchase or take advantage of an exclusive offer, we didn't want you to miss out. Give us a call and let's chat about what we can do for you.",
+  onyx: "This is an important notice. Our records indicate that your account has an outstanding balance that requires your prompt attention. Please contact our office immediately to discuss your options and avoid any further action. Thank you for addressing this matter.",
+  nova: "Hi! Just a friendly reminder that your appointment is coming up soon. We want to make sure everything is set and you're all good to go. If you need to reschedule or have any questions, don't hesitate to reach out. We're here to help and look forward to seeing you!",
+  shimmer: "Hello. Thank you for being a valued member. I'm calling to let you know about an update to your coverage that may benefit you. We want to ensure you have all the information you need to make the best decision. Please call us back when you have a moment.",
+};
 
 export async function generateTTS(params: {
   text: string;
@@ -55,12 +65,12 @@ export async function generateTTS(params: {
   };
 }
 
-// Generate a short voice sample for preview
+// Generate a natural-sounding voice sample for preview using HD model
 export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0): Promise<{ url: string; key: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI API key not configured");
 
-  const sampleText = "Hello, this is a sample of my voice. I can help you deliver clear and professional broadcast messages to your audience.";
+  const sampleText = VOICE_SAMPLE_SCRIPTS[voice];
   const clampedSpeed = Math.max(0.25, Math.min(4.0, speed));
 
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
@@ -70,7 +80,7 @@ export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0):
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "tts-1",
+      model: "tts-1-hd",
       input: sampleText,
       voice,
       response_format: "mp3",
@@ -84,7 +94,7 @@ export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0):
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
-  const fileKey = `voice-samples/${voice}-speed${clampedSpeed}.mp3`;
+  const fileKey = `voice-samples/${voice}-hd-speed${clampedSpeed}.mp3`;
   const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
   return { url, key };
 }
