@@ -11,16 +11,33 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Phone, Plus, Upload, Trash2, ToggleLeft } from "lucide-react";
+import { Phone, Plus, Upload, Trash2 } from "lucide-react";
 
 export default function CallerIds() {
   const utils = trpc.useUtils();
   const { data: callerIds = [], isLoading } = trpc.callerIds.list.useQuery();
-  const createMut = trpc.callerIds.create.useMutation({ onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Caller ID added"); setShowAdd(false); } });
-  const bulkCreateMut = trpc.callerIds.bulkCreate.useMutation({ onSuccess: (r) => { utils.callerIds.list.invalidate(); toast.success(`${r.count} caller IDs added`); setShowBulk(false); setBulkText(""); } });
+  const createMut = trpc.callerIds.create.useMutation({
+    onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Caller ID added"); setShowAdd(false); setPhone(""); setLabel(""); },
+    onError: (e) => toast.error(e.message),
+  });
+  const bulkCreateMut = trpc.callerIds.bulkCreate.useMutation({
+    onSuccess: (r: any) => {
+      utils.callerIds.list.invalidate();
+      if (r.duplicatesOmitted > 0) {
+        toast.success(`${r.count} caller IDs added (${r.duplicatesOmitted} duplicate${r.duplicatesOmitted > 1 ? 's' : ''} omitted)`);
+      } else {
+        toast.success(`${r.count} caller IDs added`);
+      }
+      setShowBulk(false); setBulkText("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const updateMut = trpc.callerIds.update.useMutation({ onSuccess: () => { utils.callerIds.list.invalidate(); } });
   const deleteMut = trpc.callerIds.delete.useMutation({ onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Caller ID removed"); } });
-  const bulkDeleteMut = trpc.callerIds.bulkDelete.useMutation({ onSuccess: () => { utils.callerIds.list.invalidate(); setSelected(new Set()); toast.success("Selected caller IDs removed"); } });
+  const bulkDeleteMut = trpc.callerIds.bulkDelete.useMutation({
+    onSuccess: () => { utils.callerIds.list.invalidate(); setSelected(new Set()); toast.success("Selected caller IDs removed"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -88,7 +105,7 @@ export default function CallerIds() {
           </div>
           <div className="flex gap-2">
             {selected.size > 0 && (
-              <Button variant="destructive" size="sm" onClick={() => bulkDeleteMut.mutate({ ids: Array.from(selected) })}>
+              <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${selected.size} caller ID(s)?`)) bulkDeleteMut.mutate({ ids: Array.from(selected) }); }}>
                 <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
               </Button>
             )}
@@ -103,7 +120,7 @@ export default function CallerIds() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Bulk Add Caller IDs</DialogTitle>
-                  <DialogDescription>Enter one caller ID per line. Format: phone_number, label (optional)</DialogDescription>
+                  <DialogDescription>Enter one caller ID per line. Format: phone_number, label (optional). Duplicates will be automatically skipped.</DialogDescription>
                 </DialogHeader>
                 <Textarea value={bulkText} onChange={e => setBulkText(e.target.value)} rows={10} placeholder={"4071234567, Main Line\n4079876543, Sales\n8001234567"} />
                 <DialogFooter>

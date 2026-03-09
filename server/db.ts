@@ -149,10 +149,10 @@ export async function createContact(data: InsertContact) {
   return { id: result[0].insertId };
 }
 
-export async function bulkCreateContacts(data: InsertContact[]) {
+export async function bulkCreateContacts(data: InsertContact[], options?: { skipDnc?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  if (data.length === 0) return { count: 0, duplicatesOmitted: 0, duplicatePhones: [] as string[] };
+  if (data.length === 0) return { count: 0, duplicatesOmitted: 0, dncOmitted: 0, crossListDupes: 0, duplicatePhones: [] as string[], dncPhones: [] as string[] };
 
   const listId = data[0].listId;
   const userId = data[0].userId;
@@ -170,34 +170,113 @@ export async function bulkCreateContacts(data: InsertContact[]) {
     return true;
   });
 
-  // --- Step 2: Check against existing contacts in the same list ---
-  const existingRows = await db.select({ phoneNumber: contacts.phoneNumber })
+  // --- Step 2: Cross-list dedup - check against ALL contact lists for this user ---
+  const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
     .from(contacts)
-    .where(and(eq(contacts.listId, listId), eq(contacts.userId, userId)));
+    .where(eq(contacts.userId, userId));
   const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
+  const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
 
-  const interListDupes: string[] = [];
-  const deduped = uniqueInFile.filter(c => {
+  const sameListDupes: string[] = [];
+  const crossListDupePhones: string[] = [];
+  const afterDedup = uniqueInFile.filter(c => {
     const normalized = normalizePhone(c.phoneNumber);
+    if (sameListPhones.has(normalized)) {
+      sameListDupes.push(c.phoneNumber);
+      return false;
+    }
     if (existingPhones.has(normalized)) {
-      interListDupes.push(c.phoneNumber);
+      crossListDupePhones.push(c.phoneNumber);
       return false;
     }
     return true;
   });
 
-  const totalDupes = intraFileDupes.length + interListDupes.length;
-  const allDupePhones = [...intraFileDupes, ...interListDupes];
+  // --- Step 3: DNC check - remove contacts on the DNC list ---
+  const dncPhoneSet = await getDncPhoneNumbers(userId);
+  const dncOmitted: string[] = [];
+  const afterDnc = options?.skipDnc ? afterDedup : afterDedup.filter(c => {
+    const normalized = normalizePhone(c.phoneNumber);
+    // DNC stores digits only, check both normalized forms
+    if (dncPhoneSet.has(normalized) || dncPhoneSet.has(c.phoneNumber.replace(/\D/g, ""))) {
+      dncOmitted.push(c.phoneNumber);
+      return false;
+    }
+    return true;
+  });
 
-  if (deduped.length > 0) {
-    await db.insert(contacts).values(deduped);
+  const totalDupes = intraFileDupes.length + sameListDupes.length + crossListDupePhones.length;
+  const allDupePhones = [...intraFileDupes, ...sameListDupes, ...crossListDupePhones];
+
+  if (afterDnc.length > 0) {
+    await db.insert(contacts).values(afterDnc);
   }
   await db.update(contactLists).set({ contactCount: sql`(SELECT COUNT(*) FROM contacts WHERE listId = ${listId})` }).where(eq(contactLists.id, listId));
-  return { count: deduped.length, duplicatesOmitted: totalDupes, duplicatePhones: allDupePhones.slice(0, 50) };
+  return {
+    count: afterDnc.length,
+    duplicatesOmitted: totalDupes,
+    dncOmitted: dncOmitted.length,
+    crossListDupes: crossListDupePhones.length,
+    duplicatePhones: allDupePhones.slice(0, 50),
+    dncPhones: dncOmitted.slice(0, 50),
+  };
+}
+
+/** Preview an import without actually inserting - returns dedup/DNC stats */
+export async function previewImport(phoneNumbers: string[], userId: number, listId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  // Intra-file dedup
+  const seenInFile = new Set<string>();
+  let intraFileDupes = 0;
+  const uniquePhones: string[] = [];
+  for (const phone of phoneNumbers) {
+    const normalized = normalizePhone(phone);
+    if (seenInFile.has(normalized)) { intraFileDupes++; continue; }
+    seenInFile.add(normalized);
+    uniquePhones.push(phone);
+  }
+
+  // Cross-list dedup
+  const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
+    .from(contacts)
+    .where(eq(contacts.userId, userId));
+  const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
+  const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
+
+  let sameListDupes = 0;
+  let crossListDupes = 0;
+  const afterDedup: string[] = [];
+  for (const phone of uniquePhones) {
+    const normalized = normalizePhone(phone);
+    if (sameListPhones.has(normalized)) { sameListDupes++; continue; }
+    if (existingPhones.has(normalized)) { crossListDupes++; continue; }
+    afterDedup.push(phone);
+  }
+
+  // DNC check
+  const dncPhoneSet = await getDncPhoneNumbers(userId);
+  let dncMatches = 0;
+  for (const phone of afterDedup) {
+    const normalized = normalizePhone(phone);
+    if (dncPhoneSet.has(normalized) || dncPhoneSet.has(phone.replace(/\D/g, ""))) {
+      dncMatches++;
+    }
+  }
+
+  return {
+    totalRows: phoneNumbers.length,
+    intraFileDupes,
+    sameListDupes,
+    crossListDupes,
+    dncMatches,
+    willImport: afterDedup.length - dncMatches,
+  };
 }
 
 /** Normalize phone number for comparison: strip non-digits, remove leading 1 if 11 digits */
-function normalizePhone(phone: string): string {
+export function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("1")) return digits.slice(1);
   return digits;
@@ -486,17 +565,48 @@ export async function createCallerId(data: InsertCallerId) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const normalized = data.phoneNumber.replace(/\D/g, "");
+  // Check for duplicate
+  const existing = await db.select({ id: callerIds.id, phoneNumber: callerIds.phoneNumber })
+    .from(callerIds)
+    .where(and(eq(callerIds.userId, data.userId), eq(callerIds.phoneNumber, normalized)))
+    .limit(1);
+  if (existing.length > 0) {
+    return { id: existing[0].id, duplicate: true };
+  }
   const result = await db.insert(callerIds).values({ ...data, phoneNumber: normalized });
-  return { id: result[0].insertId };
+  return { id: result[0].insertId, duplicate: false };
 }
 
 export async function bulkCreateCallerIds(entries: InsertCallerId[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  if (entries.length === 0) return { count: 0 };
-  const normalized = entries.map(e => ({ ...e, phoneNumber: e.phoneNumber.replace(/\D/g, "") }));
-  await db.insert(callerIds).values(normalized);
-  return { count: normalized.length };
+  if (entries.length === 0) return { count: 0, duplicatesOmitted: 0, duplicatePhones: [] as string[] };
+
+  const userId = entries[0].userId;
+
+  // Get existing caller IDs for this user
+  const existingRows = await db.select({ phoneNumber: callerIds.phoneNumber })
+    .from(callerIds)
+    .where(eq(callerIds.userId, userId));
+  const existingPhones = new Set(existingRows.map(r => r.phoneNumber));
+
+  // Intra-batch dedup + existing dedup
+  const seenInBatch = new Set<string>();
+  const dupePhones: string[] = [];
+  const toInsert = entries.filter(e => {
+    const normalized = e.phoneNumber.replace(/\D/g, "");
+    if (seenInBatch.has(normalized) || existingPhones.has(normalized)) {
+      dupePhones.push(e.phoneNumber);
+      return false;
+    }
+    seenInBatch.add(normalized);
+    return true;
+  }).map(e => ({ ...e, phoneNumber: e.phoneNumber.replace(/\D/g, "") }));
+
+  if (toInsert.length > 0) {
+    await db.insert(callerIds).values(toInsert);
+  }
+  return { count: toInsert.length, duplicatesOmitted: dupePhones.length, duplicatePhones: dupePhones.slice(0, 50) };
 }
 
 export async function getCallerIds(userId: number) {

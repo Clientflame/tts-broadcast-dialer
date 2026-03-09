@@ -127,3 +127,8 @@
 - [x] Check dupes within the uploaded CSV (intra-file dedup)
 - [x] Check dupes against existing contacts in the same contact list (inter-list dedup)
 - [x] Show dupe count in upload result feedback to user
+- [x] Cross-list dedup - check for duplicates across ALL contact lists on import
+- [x] DNC auto-check on import - flag/remove contacts whose phone numbers are on the DNC list
+- [x] Import preview step - show summary (row count, dupe count, DNC count, column mapping) before committing
+- [x] Duplicate caller ID detection - prevent adding caller IDs that already exist
+- [x] Bulk delete caller IDs - select multiple and delete at once

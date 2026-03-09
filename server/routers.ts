@@ -257,8 +257,14 @@ export const appRouter = router({
         ...c, listId: input.listId, userId: ctx.user.id,
       })) as any;
       const result = await db.bulkCreateContacts(contactData);
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contacts.import", resource: "contacts", resourceId: input.listId, details: { count: result.count } });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contacts.import", resource: "contacts", resourceId: input.listId, details: { count: result.count, dupes: result.duplicatesOmitted, dnc: result.dncOmitted } });
       return result;
+    }),
+    previewImport: protectedProcedure.input(z.object({
+      listId: z.number(),
+      phoneNumbers: z.array(z.string()).min(1).max(10000),
+    })).mutation(async ({ ctx, input }) => {
+      return db.previewImport(input.phoneNumbers, ctx.user.id, input.listId);
     }),
   }),
 
@@ -520,6 +526,9 @@ export const appRouter = router({
       label: z.string().max(255).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCallerId({ ...input, userId: ctx.user.id });
+      if (result.duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: `Caller ID ${input.phoneNumber} already exists` });
+      }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.create", resource: "callerId", resourceId: result.id });
       return result;
     }),
@@ -531,7 +540,7 @@ export const appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       const data = input.entries.map(e => ({ ...e, userId: ctx.user.id }));
       const result = await db.bulkCreateCallerIds(data);
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.bulkCreate", resource: "callerId", details: { count: result.count } });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.bulkCreate", resource: "callerId", details: { count: result.count, dupes: result.duplicatesOmitted } });
       return result;
     }),
     update: protectedProcedure.input(z.object({

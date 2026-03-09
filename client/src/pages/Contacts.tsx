@@ -12,7 +12,26 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit } from "lucide-react";
+import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit, AlertTriangle, ShieldX, Copy, FileText } from "lucide-react";
+
+type ParsedContact = {
+  phoneNumber: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  company?: string;
+  state?: string;
+  databaseName?: string;
+};
+
+type PreviewData = {
+  totalRows: number;
+  intraFileDupes: number;
+  sameListDupes: number;
+  crossListDupes: number;
+  dncMatches: number;
+  willImport: number;
+};
 
 export default function Contacts() {
   const [selectedListId, setSelectedListId] = useState<number | null>(null);
@@ -20,11 +39,17 @@ export default function Contacts() {
   const [newListName, setNewListName] = useState("");
   const [newListDesc, setNewListDesc] = useState("");
   const [addContactOpen, setAddContactOpen] = useState(false);
-  const [importOpen, setImportOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
   const [contactForm, setContactForm] = useState({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "", state: "", databaseName: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Import preview state
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [parsedContacts, setParsedContacts] = useState<ParsedContact[]>([]);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
 
   const utils = trpc.useUtils();
   const lists = trpc.contactLists.list.useQuery();
@@ -47,15 +72,16 @@ export default function Contacts() {
 
   const importContacts = trpc.contacts.import.useMutation({
     onSuccess: (data: any) => {
-      utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setImportOpen(false);
-      if (data.duplicatesOmitted > 0) {
-        toast.success(`Imported ${data.count} contacts (${data.duplicatesOmitted} duplicate${data.duplicatesOmitted > 1 ? 's' : ''} omitted)`);
-      } else {
-        toast.success(`Imported ${data.count} contacts`);
-      }
+      utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setPreviewOpen(false); setParsedContacts([]); setPreviewData(null);
+      const parts: string[] = [`Imported ${data.count} contacts`];
+      if (data.duplicatesOmitted > 0) parts.push(`${data.duplicatesOmitted} duplicate${data.duplicatesOmitted > 1 ? 's' : ''} omitted`);
+      if (data.dncOmitted > 0) parts.push(`${data.dncOmitted} DNC match${data.dncOmitted > 1 ? 'es' : ''} omitted`);
+      toast.success(parts.join(" · "));
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const previewImport = trpc.contacts.previewImport.useMutation();
 
   const deleteContactsMut = trpc.contacts.delete.useMutation({
     onSuccess: () => { utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setSelectedContacts([]); toast.success("Contacts deleted"); },
@@ -76,11 +102,11 @@ export default function Contacts() {
     );
   }, [contacts.data, searchQuery]);
 
-  const handleCSVImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCSVFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedListId) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const text = ev.target?.result as string;
       const lines = text.split("\n").filter(l => l.trim());
       if (lines.length < 2) { toast.error("CSV must have a header row and at least one data row"); return; }
@@ -93,6 +119,16 @@ export default function Contacts() {
       const companyIdx = headers.findIndex(h => h.includes("company") || h.includes("org"));
       const stateIdx = headers.findIndex(h => h === "state" || h.includes("state"));
       const dbNameIdx = headers.findIndex(h => h.includes("database") || h === "db" || h === "database name");
+
+      // Build column mapping for display
+      const mapping: Record<string, string> = { phone: headers[phoneIdx] };
+      if (firstIdx >= 0) mapping.firstName = headers[firstIdx];
+      if (lastIdx >= 0) mapping.lastName = headers[lastIdx];
+      if (emailIdx >= 0) mapping.email = headers[emailIdx];
+      if (companyIdx >= 0) mapping.company = headers[companyIdx];
+      if (stateIdx >= 0) mapping.state = headers[stateIdx];
+      if (dbNameIdx >= 0) mapping.databaseName = headers[dbNameIdx];
+      setColumnMapping(mapping);
 
       const parsed = lines.slice(1).map(line => {
         const cols = line.split(",").map(c => c.trim().replace(/^['"]|['"]$/g, ""));
@@ -108,11 +144,31 @@ export default function Contacts() {
       }).filter(c => c.phoneNumber);
 
       if (parsed.length === 0) { toast.error("No valid contacts found in CSV"); return; }
-      importContacts.mutate({ listId: selectedListId, contacts: parsed });
+
+      setParsedContacts(parsed);
+      setPreviewLoading(true);
+      setPreviewOpen(true);
+
+      try {
+        const preview = await previewImport.mutateAsync({
+          listId: selectedListId,
+          phoneNumbers: parsed.map(c => c.phoneNumber),
+        });
+        setPreviewData(preview);
+      } catch (err: any) {
+        toast.error("Preview failed: " + err.message);
+      } finally {
+        setPreviewLoading(false);
+      }
     };
     reader.readAsText(file);
     e.target.value = "";
-  }, [selectedListId, importContacts]);
+  }, [selectedListId, previewImport]);
+
+  const confirmImport = () => {
+    if (!selectedListId || parsedContacts.length === 0) return;
+    importContacts.mutate({ listId: selectedListId, contacts: parsedContacts });
+  };
 
   const handleExportCSV = useCallback(() => {
     if (!contacts.data?.length) return;
@@ -199,7 +255,7 @@ export default function Contacts() {
                     <div className="flex items-center gap-2">
                       <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>
                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="h-3.5 w-3.5 mr-1" />Import CSV</Button>
-                      <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
+                      <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVFile} />
                       <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!contacts.data?.length}><Download className="h-3.5 w-3.5 mr-1" />Export</Button>
                       {selectedContacts.length > 0 && (
                         <Button variant="destructive" size="sm" onClick={() => deleteContactsMut.mutate({ ids: selectedContacts })}>
@@ -285,6 +341,112 @@ export default function Contacts() {
               <Button variant="outline" onClick={() => { setAddContactOpen(false); resetContactForm(); }}>Cancel</Button>
               <Button onClick={() => createContact.mutate({ listId: selectedListId!, phoneNumber: contactForm.phoneNumber, firstName: contactForm.firstName || undefined, lastName: contactForm.lastName || undefined, email: contactForm.email || undefined, company: contactForm.company || undefined, state: contactForm.state || undefined, databaseName: contactForm.databaseName || undefined })} disabled={!contactForm.phoneNumber || createContact.isPending}>
                 {createContact.isPending ? "Adding..." : "Add Contact"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Import Preview Dialog */}
+        <Dialog open={previewOpen} onOpenChange={(open) => { if (!open) { setPreviewOpen(false); setParsedContacts([]); setPreviewData(null); } }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Import Preview
+              </DialogTitle>
+            </DialogHeader>
+
+            {previewLoading ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3" />
+                Analyzing CSV for duplicates and DNC matches...
+              </div>
+            ) : previewData ? (
+              <div className="space-y-4">
+                {/* Column Mapping */}
+                <div className="rounded-lg border p-3 bg-muted/30">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Column Mapping</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(columnMapping).map(([field, header]) => (
+                      <Badge key={field} variant="outline" className="text-xs">
+                        {field} ← {header}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Stats Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border p-3 text-center">
+                    <p className="text-2xl font-bold">{previewData.totalRows}</p>
+                    <p className="text-xs text-muted-foreground">Total Rows in CSV</p>
+                  </div>
+                  <div className="rounded-lg border p-3 text-center bg-green-500/10">
+                    <p className="text-2xl font-bold text-green-600">{previewData.willImport}</p>
+                    <p className="text-xs text-muted-foreground">Will Be Imported</p>
+                  </div>
+                </div>
+
+                {/* Dedup & DNC breakdown */}
+                {(previewData.intraFileDupes > 0 || previewData.sameListDupes > 0 || previewData.crossListDupes > 0 || previewData.dncMatches > 0) && (
+                  <div className="rounded-lg border p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Contacts to be omitted:</p>
+                    {previewData.intraFileDupes > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2">
+                          <Copy className="h-3.5 w-3.5 text-amber-500" />
+                          Duplicate within CSV
+                        </span>
+                        <Badge variant="secondary">{previewData.intraFileDupes}</Badge>
+                      </div>
+                    )}
+                    {previewData.sameListDupes > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2">
+                          <Copy className="h-3.5 w-3.5 text-amber-500" />
+                          Already in this list
+                        </span>
+                        <Badge variant="secondary">{previewData.sameListDupes}</Badge>
+                      </div>
+                    )}
+                    {previewData.crossListDupes > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2">
+                          <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
+                          Exists in other lists
+                        </span>
+                        <Badge variant="secondary">{previewData.crossListDupes}</Badge>
+                      </div>
+                    )}
+                    {previewData.dncMatches > 0 && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2">
+                          <ShieldX className="h-3.5 w-3.5 text-red-500" />
+                          On DNC List
+                        </span>
+                        <Badge variant="destructive">{previewData.dncMatches}</Badge>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {previewData.willImport === 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-center text-sm text-amber-700 dark:text-amber-400">
+                    All contacts are duplicates or on the DNC list. Nothing to import.
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setPreviewOpen(false); setParsedContacts([]); setPreviewData(null); }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={confirmImport}
+                disabled={!previewData || previewData.willImport === 0 || importContacts.isPending}
+              >
+                {importContacts.isPending ? "Importing..." : `Import ${previewData?.willImport ?? 0} Contacts`}
               </Button>
             </DialogFooter>
           </DialogContent>
