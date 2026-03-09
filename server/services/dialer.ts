@@ -1,5 +1,6 @@
 import { getAMIClient } from "./ami";
 import { generatePersonalizedTTS } from "./tts";
+import { initPacing, getCurrentConcurrent, recordCallResult, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import * as db from "../db";
 import type { Campaign, CallLog, Contact } from "../../drizzle/schema";
 
@@ -11,6 +12,7 @@ interface ActiveCampaign {
   callerIds: Array<{ id: number; phoneNumber: string; label: string | null }>;
   callerIdIndex: number;
   usePersonalizedTTS: boolean;
+  pacingConfig: PacingConfig;
 }
 
 const activeCampaigns = new Map<number, ActiveCampaign>();
@@ -28,7 +30,7 @@ export async function getDialerLiveStats(userId: number) {
   let activeCalls = 0;
   let leadsInHopper = 0;
   let concurrentLimit = 0;
-  const campaignDetails: Array<{ id: number; name: string; activeCalls: number; pending: number; maxConcurrent: number }> = [];
+  const campaignDetails: Array<{ id: number; name: string; activeCalls: number; pending: number; maxConcurrent: number; pacing: any }> = [];
 
   for (const campaignId of activeIds) {
     const active = activeCampaigns.get(campaignId);
@@ -37,18 +39,29 @@ export async function getDialerLiveStats(userId: number) {
     const stats = await db.getCampaignStats(campaignId);
     const pendingCalls = await db.getPendingCallLogs(campaignId);
     const activeCallCount = await db.getActiveCallCount(campaignId);
-    const maxConcurrent = active.campaign.maxConcurrentCalls || 1;
+    const effectiveConcurrent = getCurrentConcurrent(campaignId, active.pacingConfig);
+    const pacingInfo = getPacingStats(campaignId, active.pacingConfig);
 
     activeCalls += activeCallCount;
     leadsInHopper += pendingCalls.length;
-    concurrentLimit += maxConcurrent;
+    concurrentLimit += effectiveConcurrent;
 
     campaignDetails.push({
       id: campaignId,
       name: active.campaign.name,
       activeCalls: activeCallCount,
       pending: pendingCalls.length,
-      maxConcurrent,
+      maxConcurrent: effectiveConcurrent,
+      pacing: pacingInfo ? {
+        mode: pacingInfo.mode,
+        currentConcurrent: pacingInfo.currentConcurrent,
+        windowAnswerRate: pacingInfo.windowAnswerRate,
+        windowDropRate: pacingInfo.windowDropRate,
+        windowBusyRate: pacingInfo.windowBusyRate,
+        avgAnswerRate: pacingInfo.avgAnswerRate,
+        avgCallDuration: pacingInfo.avgCallDuration,
+        recentAdjustments: pacingInfo.recentAdjustments,
+      } : null,
     });
   }
 
@@ -129,6 +142,18 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     }
   }
 
+  // Build pacing config
+  const pacingConfig: PacingConfig = {
+    mode: ((campaign as any).pacingMode as "fixed" | "adaptive" | "predictive") || "fixed",
+    fixedConcurrent: campaign.maxConcurrentCalls || 1,
+    targetDropRate: (campaign as any).pacingTargetDropRate ?? 3,
+    minConcurrent: (campaign as any).pacingMinConcurrent ?? 1,
+    maxConcurrent: (campaign as any).pacingMaxConcurrent ?? 10,
+  };
+
+  // Initialize pacing engine
+  initPacing(campaignId, pacingConfig);
+
   const active: ActiveCampaign = {
     campaign: updatedCampaign,
     intervalId: null,
@@ -137,6 +162,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     callerIds: callerIdPool,
     callerIdIndex: 0,
     usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
+    pacingConfig,
   };
 
   activeCampaigns.set(campaignId, active);
@@ -175,9 +201,9 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
     return;
   }
 
-  // Check concurrent call limit
+  // Check concurrent call limit (pacing-aware)
   const activeCount = await db.getActiveCallCount(campaignId);
-  const maxConcurrent = campaign.maxConcurrentCalls || 1;
+  const maxConcurrent = getCurrentConcurrent(campaignId, active.pacingConfig);
 
   if (activeCount >= maxConcurrent) return;
 
@@ -355,6 +381,7 @@ function stopCampaignInternal(campaignId: number): void {
   if (active?.intervalId) {
     clearInterval(active.intervalId);
   }
+  cleanupPacing(campaignId);
   activeCampaigns.delete(campaignId);
 }
 
@@ -406,16 +433,25 @@ export function setupAMIEventHandlers(): void {
     if (!callLog) return;
 
     const dialStatus = event.DialStatus;
+    const active = activeCampaigns.get(callLog.campaignId);
     if (dialStatus === "ANSWER") {
       await db.updateCallLog(callLog.id, { status: "answered", answeredAt: Date.now() });
+      // Record for pacing
+      if (active) {
+        const ringTime = callLog.startedAt ? Math.floor((Date.now() - callLog.startedAt) / 1000) : undefined;
+        recordCallResult(callLog.campaignId, active.pacingConfig, "answered", undefined, ringTime);
+      }
     } else if (dialStatus === "BUSY") {
       await db.updateCallLog(callLog.id, { status: "busy", endedAt: Date.now() });
+      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "busy");
       await updateCampaignCounts(callLog.campaignId, callLog.userId);
     } else if (dialStatus === "NOANSWER") {
       await db.updateCallLog(callLog.id, { status: "no-answer", endedAt: Date.now() });
+      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "no-answer");
       await updateCampaignCounts(callLog.campaignId, callLog.userId);
     } else if (dialStatus === "CANCEL" || dialStatus === "CONGESTION" || dialStatus === "CHANUNAVAIL") {
       await db.updateCallLog(callLog.id, { status: "failed", errorMessage: dialStatus, endedAt: Date.now() });
+      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "failed");
       await updateCampaignCounts(callLog.campaignId, callLog.userId);
     }
   });
@@ -428,9 +464,16 @@ export function setupAMIEventHandlers(): void {
     if (callLog.status === "answered") {
       const duration = callLog.answeredAt ? Math.floor((Date.now() - callLog.answeredAt) / 1000) : 0;
       await db.updateCallLog(callLog.id, { status: "completed", duration, endedAt: Date.now() });
+      // Record call duration for predictive pacing
+      const active = activeCampaigns.get(callLog.campaignId);
+      if (active && duration > 0) {
+        recordCallResult(callLog.campaignId, active.pacingConfig, "answered", duration);
+      }
       await updateCampaignCounts(callLog.campaignId, callLog.userId);
     } else if (callLog.status === "dialing" || callLog.status === "ringing") {
       await db.updateCallLog(callLog.id, { status: "no-answer", endedAt: Date.now() });
+      const active = activeCampaigns.get(callLog.campaignId);
+      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "no-answer");
       await updateCampaignCounts(callLog.campaignId, callLog.userId);
     }
   });

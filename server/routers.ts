@@ -319,6 +319,10 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
+      pacingTargetDropRate: z.number().min(1).max(20).optional(),
+      pacingMinConcurrent: z.number().min(1).max(50).optional(),
+      pacingMaxConcurrent: z.number().min(1).max(100).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -351,6 +355,10 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
+      pacingTargetDropRate: z.number().min(1).max(20).optional(),
+      pacingMinConcurrent: z.number().min(1).max(50).optional(),
+      pacingMaxConcurrent: z.number().min(1).max(100).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id, ctx.user.id);

@@ -111,14 +111,33 @@ export default function Home() {
               <div className="mt-4 border-t pt-4">
                 <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Active Campaign Breakdown</h4>
                 <div className="space-y-2">
-                  {dialerLive.data.campaigns.map(c => (
-                    <div key={c.id} className="flex items-center justify-between text-sm p-2 rounded bg-muted/30">
-                      <span className="font-medium">{c.name}</span>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span><PhoneCall className="h-3 w-3 inline mr-1" />{c.activeCalls} calling</span>
-                        <span><Timer className="h-3 w-3 inline mr-1" />{c.pending} pending</span>
-                        <span><Zap className="h-3 w-3 inline mr-1" />{c.maxConcurrent} max</span>
+                  {dialerLive.data.campaigns.map((c: any) => (
+                    <div key={c.id} className="text-sm p-3 rounded bg-muted/30 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{c.name}</span>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span><PhoneCall className="h-3 w-3 inline mr-1" />{c.activeCalls} calling</span>
+                          <span><Timer className="h-3 w-3 inline mr-1" />{c.pending} pending</span>
+                          <span><Zap className="h-3 w-3 inline mr-1" />{c.maxConcurrent} max</span>
+                        </div>
                       </div>
+                      {c.pacing && c.pacing.mode !== "fixed" && (
+                        <div className="flex items-center gap-3 text-xs border-t pt-2">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 font-medium capitalize">
+                            {c.pacing.mode} Pacing
+                          </span>
+                          <span className="text-muted-foreground">Answer: {Math.round(c.pacing.windowAnswerRate)}%</span>
+                          <span className="text-muted-foreground">Drop: {Math.round(c.pacing.windowDropRate)}%</span>
+                          {c.pacing.avgCallDuration > 0 && (
+                            <span className="text-muted-foreground">Avg: {c.pacing.avgCallDuration}s</span>
+                          )}
+                          {c.pacing.recentAdjustments?.length > 0 && (
+                            <span className={`text-xs ${c.pacing.recentAdjustments[0].includes("Increased") ? "text-green-500" : c.pacing.recentAdjustments[0].includes("Decreased") ? "text-amber-500" : "text-muted-foreground"}`}>
+                              {c.pacing.recentAdjustments[0]}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -75,3 +75,8 @@
 - [x] Whitelist sandbox IP in FreePBX hosts.allow
 - [ ] Disable FreePBX Responsive Firewall permanently or whitelist production IP
 - [ ] Publish and verify Quick Test works from production deployment
+- [ ] Whitelist production server IP on FreePBX firewall trusted zone
+- [x] Call Pacing / Predictive Dialing - dynamically adjust concurrent calls based on answer rates
+- [x] Pacing engine with Fixed/Adaptive/Predictive modes and rolling window stats
+- [x] Pacing controls in campaign creation form (mode, target drop rate, min/max concurrent)
+- [x] Live pacing stats on Dashboard (answer rate, drop rate, adjustments)

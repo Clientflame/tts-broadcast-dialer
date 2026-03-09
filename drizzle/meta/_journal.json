@@ -50,6 +50,13 @@
       "when": 1773031008948,
       "tag": "0006_supreme_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1773063384867,
+      "tag": "0007_mysterious_the_fury",
+      "breakpoints": true
     }
   ]
 }

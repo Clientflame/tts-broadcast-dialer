@@ -145,6 +145,11 @@ export const campaigns = mysqlTable("campaigns", {
   usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
+  // Call pacing
+  pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
+  pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
+  pacingMinConcurrent: int("pacingMinConcurrent").default(1).notNull(),
+  pacingMaxConcurrent: int("pacingMaxConcurrent").default(10).notNull(),
   status: mysqlEnum("status", [
     "draft",
     "scheduled",

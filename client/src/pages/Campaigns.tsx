@@ -54,6 +54,8 @@ export default function Campaigns() {
     targetStates: [] as string[], useGeoCallerIds: false,
     usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
     useDidRotation: false,
+    pacingMode: "fixed" as "fixed" | "adaptive" | "predictive",
+    pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
   });
   const messageRef = useRef<HTMLTextAreaElement>(null);
 
@@ -105,6 +107,8 @@ export default function Campaigns() {
     targetStates: [], useGeoCallerIds: false,
     usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
     useDidRotation: false,
+    pacingMode: "fixed" as "fixed" | "adaptive" | "predictive",
+    pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
   });
 
   const MERGE_FIELDS = [
@@ -279,6 +283,13 @@ export default function Campaigns() {
               <CardContent className="space-y-3 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Voice</span><span className="capitalize">{c.voice || "alloy"}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Concurrent Calls</span><span>{c.maxConcurrentCalls}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Pacing Mode</span><span className="capitalize">{(c as any).pacingMode || "fixed"}</span></div>
+                {(c as any).pacingMode && (c as any).pacingMode !== "fixed" && (
+                  <>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Target Drop Rate</span><span>{(c as any).pacingTargetDropRate || 3}%</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Pacing Range</span><span>{(c as any).pacingMinConcurrent || 1} - {(c as any).pacingMaxConcurrent || 10}</span></div>
+                  </>
+                )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}</span></div>
@@ -502,7 +513,63 @@ export default function Campaigns() {
                   <div>
                     <Label>Max Concurrent Calls</Label>
                     <Input type="number" min={1} max={50} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
-                    <p className="text-xs text-muted-foreground mt-1">Number of simultaneous outbound calls (1-50)</p>
+                    <p className="text-xs text-muted-foreground mt-1">Base number of simultaneous outbound calls (1-50)</p>
+                  </div>
+
+                  {/* Call Pacing Mode */}
+                  <div className="p-4 rounded-lg border space-y-4">
+                    <div>
+                      <Label className="text-base font-semibold">Call Pacing Mode</Label>
+                      <p className="text-xs text-muted-foreground">Controls how concurrent call volume is managed during the campaign</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(["fixed", "adaptive", "predictive"] as const).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={`p-3 rounded-lg border text-center transition-colors ${
+                            form.pacingMode === mode
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border hover:border-primary/50"
+                          }`}
+                          onClick={() => setForm(p => ({ ...p, pacingMode: mode }))}
+                        >
+                          <div className="font-medium capitalize text-sm">{mode}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {mode === "fixed" && "Static call limit"}
+                            {mode === "adaptive" && "Adjusts to answer rate"}
+                            {mode === "predictive" && "AI-optimized pacing"}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    {form.pacingMode !== "fixed" && (
+                      <div className="space-y-3 pt-2 border-t">
+                        <div>
+                          <Label>Target Drop Rate: {form.pacingTargetDropRate}%</Label>
+                          <Input type="range" min={1} max={10} step={1} value={form.pacingTargetDropRate}
+                            onChange={e => setForm(p => ({ ...p, pacingTargetDropRate: parseInt(e.target.value) }))} className="mt-1" />
+                          <div className="flex justify-between text-xs text-muted-foreground"><span>1% (conservative)</span><span>10% (aggressive)</span></div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>Min Concurrent</Label>
+                            <Input type="number" min={1} max={50} value={form.pacingMinConcurrent}
+                              onChange={e => setForm(p => ({ ...p, pacingMinConcurrent: parseInt(e.target.value) || 1 }))} />
+                          </div>
+                          <div>
+                            <Label>Max Concurrent</Label>
+                            <Input type="number" min={1} max={100} value={form.pacingMaxConcurrent}
+                              onChange={e => setForm(p => ({ ...p, pacingMaxConcurrent: parseInt(e.target.value) || 10 }))} />
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {form.pacingMode === "adaptive" 
+                            ? "Adaptive mode adjusts concurrent calls based on real-time answer and drop rates within a 60-second rolling window."
+                            : "Predictive mode uses historical answer rates and call duration to calculate optimal call volume, overcommitting slightly to maximize throughput."}
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
@@ -627,6 +694,10 @@ export default function Campaigns() {
                     messageText: form.usePersonalizedTTS ? form.messageText : undefined,
                     ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
                     useDidRotation: form.useDidRotation ? 1 : 0,
+                    pacingMode: form.pacingMode,
+                    pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
+                    pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
+                    pacingMaxConcurrent: form.pacingMode !== "fixed" ? form.pacingMaxConcurrent : undefined,
                   })}
                   disabled={!form.name || !form.contactListId || (form.usePersonalizedTTS && !form.messageText) || createCampaign.isPending}
                 >
