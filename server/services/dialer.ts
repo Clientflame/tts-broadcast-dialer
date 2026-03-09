@@ -1,8 +1,8 @@
-import { getAMIClient } from "./ami";
 import { generatePersonalizedTTS } from "./tts";
-import { initPacing, getCurrentConcurrent, recordCallResult, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
+import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
+import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import * as db from "../db";
-import type { Campaign, CallLog, Contact } from "../../drizzle/schema";
+import type { Campaign, CallLog } from "../../drizzle/schema";
 
 interface ActiveCampaign {
   campaign: Campaign;
@@ -36,7 +36,6 @@ export async function getDialerLiveStats(userId: number) {
     const active = activeCampaigns.get(campaignId);
     if (!active) continue;
 
-    const stats = await db.getCampaignStats(campaignId);
     const pendingCalls = await db.getPendingCallLogs(campaignId);
     const activeCallCount = await db.getActiveCallCount(campaignId);
     const effectiveConcurrent = getCurrentConcurrent(campaignId, active.pacingConfig);
@@ -79,7 +78,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status === "running") throw new Error("Campaign is already running");
 
-  // Get audio file - PBX-side approach: just store the S3 URL, FreePBX will download it
+  // Get audio file - store the S3 URL, PBX agent will download it
   let audioS3Url: string | null = null;
   let audioName: string | null = null;
   if (campaign.audioFileId) {
@@ -87,14 +86,13 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     if (!audioFile || !audioFile.s3Url) throw new Error("Audio file not ready");
     audioS3Url = audioFile.s3Url;
     audioName = `campaign_${campaignId}_${audioFile.id}`;
-    console.log(`[Dialer] Audio ready for PBX-side fetch: ${audioName}`);
+    console.log(`[Dialer] Audio ready: ${audioName}`);
   }
 
   // Get contacts and filter out DNC numbers
   const allContacts = await db.getActiveContactsForCampaign(campaign.contactListId);
   if (allContacts.length === 0) throw new Error("No active contacts in the list");
 
-  // Filter out DNC numbers
   const dncNumbers = await db.getDncPhoneNumbers(userId);
   const contactsList = allContacts.filter(c => {
     const normalized = c.phoneNumber.replace(/\D/g, "");
@@ -118,7 +116,6 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   await db.bulkCreateCallLogs(callLogData);
 
-  // Update campaign
   await db.updateCampaign(campaignId, userId, {
     status: "running",
     totalContacts: contactsList.length,
@@ -137,8 +134,6 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     callerIdPool = await db.getActiveCallerIds(userId);
     if (callerIdPool.length > 0) {
       console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs`);
-    } else {
-      console.log(`[Dialer] DID rotation enabled but no active caller IDs found, using campaign caller ID`);
     }
   }
 
@@ -151,8 +146,8 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     maxConcurrent: (campaign as any).pacingMaxConcurrent ?? 10,
   };
 
-  // Initialize pacing engine
   initPacing(campaignId, pacingConfig);
+  registerPacingConfig(campaignId, pacingConfig);
 
   const active: ActiveCampaign = {
     campaign: updatedCampaign,
@@ -167,7 +162,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   activeCampaigns.set(campaignId, active);
 
-  // Start the dialing loop
+  // Start the enqueue loop - enqueues calls into call_queue for PBX agent
   active.intervalId = setInterval(() => {
     processCampaignCalls(campaignId, userId).catch(err => {
       console.error(`[Dialer] Error processing campaign ${campaignId}:`, err);
@@ -218,15 +213,15 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
     return;
   }
 
-  // Dial next batch
+  // Enqueue next batch into call_queue for PBX agent
   const slotsAvailable = maxConcurrent - activeCount;
   const callsToDial = pendingCalls.slice(0, slotsAvailable);
 
   for (const callLog of callsToDial) {
     try {
-      await dialContact(callLog, active, userId);
+      await enqueueContact(callLog, active, userId);
     } catch (err) {
-      console.error(`[Dialer] Failed to dial ${callLog.phoneNumber}:`, err);
+      console.error(`[Dialer] Failed to enqueue ${callLog.phoneNumber}:`, err);
       await db.updateCallLog(callLog.id, {
         status: "failed",
         errorMessage: (err as Error).message,
@@ -237,22 +232,17 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
   }
 }
 
-async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: number): Promise<void> {
-  const ami = getAMIClient();
-
+async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: number): Promise<void> {
   // Update status to dialing
   await db.updateCallLog(callLog.id, {
     status: "dialing",
     startedAt: Date.now(),
   });
 
-  const callId = `broadcast-${callLog.campaignId}-${callLog.id}-${Date.now()}`;
   const phoneNumber = callLog.phoneNumber.replace(/[^0-9+]/g, "");
-
-  // Build the channel - use the outbound trunk
   const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
 
-  // Determine caller ID - use DID rotation if available, otherwise campaign caller ID
+  // Determine caller ID
   let callerIdStr: string | undefined;
   let callerIdNumber: string | undefined;
   if (active.callerIds.length > 0) {
@@ -260,7 +250,6 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
     active.callerIdIndex++;
     callerIdStr = `"${did.label || "Broadcast"}" <${did.phoneNumber}>`;
     callerIdNumber = did.phoneNumber;
-    // Update the DID usage count
     db.incrementCallerIdUsage(did.id).catch(err => console.error("[Dialer] Failed to update DID usage:", err));
   } else if (active.campaign.callerIdNumber) {
     callerIdStr = `"${active.campaign.callerIdName || "Broadcast"}" <${active.campaign.callerIdNumber}>`;
@@ -268,17 +257,16 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
   }
 
   const variables: Record<string, string> = {
-    CALLID: callId,
+    CALLID: `broadcast-${callLog.campaignId}-${callLog.id}-${Date.now()}`,
   };
 
-  // Handle personalized TTS - generate unique audio per contact
+  // Handle personalized TTS
   if (active.usePersonalizedTTS && active.campaign.messageText) {
     try {
-      // Fetch the contact details for merge fields
       const contact = await db.getContact(callLog.contactId, userId);
       const speed = parseFloat(active.campaign.ttsSpeed || "1.0");
 
-      console.log(`[Dialer] Generating personalized TTS for contact ${callLog.contactId} (${callLog.phoneNumber})`);
+      console.log(`[Dialer] Generating personalized TTS for contact ${callLog.contactId}`);
 
       const personalizedResult = await generatePersonalizedTTS({
         messageTemplate: active.campaign.messageText,
@@ -297,54 +285,42 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
         contactId: callLog.contactId,
       });
 
-      // PBX-side approach: pass S3 URL directly, FreePBX downloads & converts
       const personalizedAudioName = `personalized_${callLog.campaignId}_${callLog.contactId}`;
       variables.AUDIO_URL = personalizedResult.s3Url;
       variables.AUDIO_NAME = personalizedAudioName;
-      console.log(`[Dialer] Personalized TTS ready for ${callLog.phoneNumber}: "${personalizedResult.renderedText.substring(0, 80)}..."`);
     } catch (err) {
       console.error(`[Dialer] Personalized TTS failed for contact ${callLog.contactId}:`, err);
-      // Fall back to static audio if available
       if (active.audioS3Url && active.audioName) {
         variables.AUDIO_URL = active.audioS3Url;
         variables.AUDIO_NAME = active.audioName;
       }
     }
   } else if (active.audioS3Url && active.audioName) {
-    // Static campaign audio - pass S3 URL for PBX-side fetch
     variables.AUDIO_URL = active.audioS3Url;
     variables.AUDIO_NAME = active.audioName;
   }
 
-  try {
-    const result = await ami.originate({
-      channel,
-      context: "tts-broadcast",
-      exten: "s",
-      priority: "1",
-      callerId: callerIdStr,
-      timeout: 30000,
-      variables,
-      async: true,
-    });
+  // Enqueue into call_queue for PBX agent to pick up
+  await db.enqueueCall({
+    userId,
+    campaignId: callLog.campaignId,
+    callLogId: callLog.id,
+    phoneNumber,
+    channel,
+    context: "tts-broadcast",
+    callerIdStr,
+    audioUrl: variables.AUDIO_URL || null,
+    audioName: variables.AUDIO_NAME || null,
+    variables,
+    status: "pending",
+    priority: 5, // Campaign calls = normal priority
+  });
 
-    await db.updateCallLog(callLog.id, {
-      asteriskCallId: callId,
-      asteriskChannel: channel,
-      callerIdUsed: callerIdNumber,
-    });
-
-    if (result.Response === "Error") {
-      throw new Error(result.Message || "Originate failed");
-    }
-  } catch (err) {
-    await db.updateCallLog(callLog.id, {
-      status: "failed",
-      errorMessage: (err as Error).message,
-      endedAt: Date.now(),
-    });
-    await updateCampaignCounts(callLog.campaignId, userId);
-  }
+  await db.updateCallLog(callLog.id, {
+    asteriskCallId: variables.CALLID,
+    asteriskChannel: channel,
+    callerIdUsed: callerIdNumber,
+  });
 }
 
 async function completeCampaign(campaignId: number, userId: number): Promise<void> {
@@ -382,6 +358,7 @@ function stopCampaignInternal(campaignId: number): void {
     clearInterval(active.intervalId);
   }
   cleanupPacing(campaignId);
+  unregisterPacingConfig(campaignId);
   activeCampaigns.delete(campaignId);
 }
 
@@ -411,80 +388,4 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
   } catch {
     return true;
   }
-}
-
-// Set up AMI event listeners for call tracking
-export function setupAMIEventHandlers(): void {
-  const ami = getAMIClient();
-
-  ami.on("event:Newstate", async (event) => {
-    if (event.ChannelStateDesc === "Ringing" && event.Channel?.includes("broadcast")) {
-      // Find call log by channel
-      const callLog = await db.getCallLogByChannel(event.Channel);
-      if (callLog) {
-        await db.updateCallLog(callLog.id, { status: "ringing" });
-      }
-    }
-  });
-
-  ami.on("event:DialEnd", async (event) => {
-    if (!event.DestChannel) return;
-    const callLog = await db.getCallLogByChannel(event.DestChannel);
-    if (!callLog) return;
-
-    const dialStatus = event.DialStatus;
-    const active = activeCampaigns.get(callLog.campaignId);
-    if (dialStatus === "ANSWER") {
-      await db.updateCallLog(callLog.id, { status: "answered", answeredAt: Date.now() });
-      // Record for pacing
-      if (active) {
-        const ringTime = callLog.startedAt ? Math.floor((Date.now() - callLog.startedAt) / 1000) : undefined;
-        recordCallResult(callLog.campaignId, active.pacingConfig, "answered", undefined, ringTime);
-      }
-    } else if (dialStatus === "BUSY") {
-      await db.updateCallLog(callLog.id, { status: "busy", endedAt: Date.now() });
-      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "busy");
-      await updateCampaignCounts(callLog.campaignId, callLog.userId);
-    } else if (dialStatus === "NOANSWER") {
-      await db.updateCallLog(callLog.id, { status: "no-answer", endedAt: Date.now() });
-      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "no-answer");
-      await updateCampaignCounts(callLog.campaignId, callLog.userId);
-    } else if (dialStatus === "CANCEL" || dialStatus === "CONGESTION" || dialStatus === "CHANUNAVAIL") {
-      await db.updateCallLog(callLog.id, { status: "failed", errorMessage: dialStatus, endedAt: Date.now() });
-      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "failed");
-      await updateCampaignCounts(callLog.campaignId, callLog.userId);
-    }
-  });
-
-  ami.on("event:Hangup", async (event) => {
-    if (!event.Channel) return;
-    const callLog = await db.getCallLogByChannel(event.Channel);
-    if (!callLog) return;
-
-    if (callLog.status === "answered") {
-      const duration = callLog.answeredAt ? Math.floor((Date.now() - callLog.answeredAt) / 1000) : 0;
-      await db.updateCallLog(callLog.id, { status: "completed", duration, endedAt: Date.now() });
-      // Record call duration for predictive pacing
-      const active = activeCampaigns.get(callLog.campaignId);
-      if (active && duration > 0) {
-        recordCallResult(callLog.campaignId, active.pacingConfig, "answered", duration);
-      }
-      await updateCampaignCounts(callLog.campaignId, callLog.userId);
-    } else if (callLog.status === "dialing" || callLog.status === "ringing") {
-      await db.updateCallLog(callLog.id, { status: "no-answer", endedAt: Date.now() });
-      const active = activeCampaigns.get(callLog.campaignId);
-      if (active) recordCallResult(callLog.campaignId, active.pacingConfig, "no-answer");
-      await updateCampaignCounts(callLog.campaignId, callLog.userId);
-    }
-  });
-
-  ami.on("event:UserEvent", async (event) => {
-    if (event.UserEvent === "BroadcastDTMF" && event.CallID) {
-      const parts = event.CallID.split("-");
-      const callLogId = parseInt(parts[2]);
-      if (!isNaN(callLogId)) {
-        await db.updateCallLog(callLogId, { dtmfResponse: event.Result });
-      }
-    }
-  });
 }

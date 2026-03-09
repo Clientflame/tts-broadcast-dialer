@@ -931,3 +931,146 @@ export async function getContact(id: number, userId: number) {
   const result = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.userId, userId))).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
+
+// ─── Call Queue (PBX Agent Polling) ─────────────────────────────────────────
+import { callQueue, InsertCallQueueItem, pbxAgents, InsertPbxAgent } from "../drizzle/schema";
+import { lt, isNull, asc } from "drizzle-orm";
+
+export async function enqueueCall(data: InsertCallQueueItem) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(callQueue).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function claimPendingCalls(agentId: string, limit: number) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get pending calls ordered by priority then creation time
+  const pending = await db.select().from(callQueue)
+    .where(eq(callQueue.status, "pending"))
+    .orderBy(asc(callQueue.priority), asc(callQueue.createdAt))
+    .limit(limit);
+
+  if (pending.length === 0) return [];
+
+  const ids = pending.map(c => c.id);
+  const now = Date.now();
+  await db.update(callQueue)
+    .set({ status: "claimed", claimedBy: agentId, claimedAt: now })
+    .where(and(inArray(callQueue.id, ids), eq(callQueue.status, "pending")));
+
+  // Return the claimed items with updated status
+  return db.select().from(callQueue)
+    .where(and(inArray(callQueue.id, ids), eq(callQueue.claimedBy, agentId)));
+}
+
+export async function updateCallQueueItem(id: number, data: Partial<InsertCallQueueItem>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callQueue).set(data).where(eq(callQueue.id, id));
+}
+
+export async function getCallQueueItem(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(callQueue).where(eq(callQueue.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getCallQueueStats() {
+  const db = await getDb();
+  if (!db) return { pending: 0, claimed: 0, dialing: 0, completed: 0, failed: 0 };
+  const result = await db.select({
+    status: callQueue.status,
+    count: count(),
+  }).from(callQueue).groupBy(callQueue.status);
+  const stats: Record<string, number> = {};
+  for (const row of result) {
+    stats[row.status] = row.count;
+  }
+  return {
+    pending: stats["pending"] || 0,
+    claimed: stats["claimed"] || 0,
+    dialing: stats["dialing"] || 0,
+    completed: stats["completed"] || 0,
+    failed: stats["failed"] || 0,
+  };
+}
+
+// Release stale claimed calls (agent crashed without reporting)
+export async function releaseStaleClaimedCalls(staleThresholdMs: number = 120000) {
+  const db = await getDb();
+  if (!db) return;
+  const cutoff = Date.now() - staleThresholdMs;
+  await db.update(callQueue)
+    .set({ status: "pending", claimedBy: null, claimedAt: null })
+    .where(and(eq(callQueue.status, "claimed"), lt(callQueue.claimedAt, cutoff)));
+}
+
+// ─── PBX Agents ─────────────────────────────────────────────────────────────
+export async function upsertPbxAgent(data: { agentId: string; apiKey: string; name?: string; ipAddress?: string; maxCalls?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(pbxAgents).values({
+    agentId: data.agentId,
+    apiKey: data.apiKey,
+    name: data.name,
+    ipAddress: data.ipAddress,
+    maxCalls: data.maxCalls || 5,
+    status: "online",
+    lastHeartbeat: Date.now(),
+  }).onDuplicateKeyUpdate({
+    set: {
+      lastHeartbeat: Date.now(),
+      status: "online",
+      ipAddress: data.ipAddress,
+    },
+  });
+}
+
+export async function getPbxAgentByApiKey(apiKey: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(pbxAgents).where(eq(pbxAgents.apiKey, apiKey)).limit(1);
+  return result[0];
+}
+
+export async function updatePbxAgentHeartbeat(agentId: string, activeCalls?: number) {
+  const db = await getDb();
+  if (!db) return;
+  const data: Partial<InsertPbxAgent> = { lastHeartbeat: Date.now(), status: "online" };
+  if (activeCalls !== undefined) data.activeCalls = activeCalls;
+  await db.update(pbxAgents).set(data).where(eq(pbxAgents.agentId, agentId));
+}
+
+export async function getPbxAgents() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(pbxAgents).orderBy(desc(pbxAgents.lastHeartbeat));
+}
+
+export async function registerPbxAgent(data: { agentId: string; name: string; apiKey: string; status: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(pbxAgents).values({
+    agentId: data.agentId,
+    name: data.name,
+    apiKey: data.apiKey,
+    status: data.status || "offline",
+    maxCalls: 5,
+  });
+  return { id: Number(result[0].insertId), agentId: data.agentId, name: data.name };
+}
+
+export async function deletePbxAgent(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(pbxAgents).where(eq(pbxAgents.id, id));
+}
+
+export async function deletePbxAgentByAgentId(agentId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(pbxAgents).where(eq(pbxAgents.agentId, agentId));
+}

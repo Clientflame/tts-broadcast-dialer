@@ -6,7 +6,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import { generateTTS, TTS_VOICES, generateVoiceSample } from "./services/tts";
-import { getAMIStatus, getAMIClient } from "./services/ami";
+// AMI is now handled by the PBX agent on the FreePBX server
+// import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
 import { invokeLLM } from "./_core/llm";
 import bcrypt from "bcryptjs";
@@ -141,7 +142,19 @@ export const appRouter = router({
       return db.getDashboardStats(ctx.user.id);
     }),
     amiStatus: protectedProcedure.query(async () => {
-      return getAMIStatus();
+      const agents = await db.getPbxAgents();
+      const onlineAgents = agents.filter((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+      });
+      return {
+        connected: onlineAgents.length > 0,
+        agents: agents.length,
+        onlineAgents: onlineAgents.length,
+        message: onlineAgents.length > 0
+          ? `${onlineAgents.length} PBX agent(s) online`
+          : "No PBX agents online",
+      };
     }),
     activeCampaigns: protectedProcedure.query(async () => {
       return { ids: getActiveCampaignIds() };
@@ -746,26 +759,31 @@ Return ONLY the message text, nothing else.`;
       const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
 
-      // PBX-side approach: pass the S3 URL directly to FreePBX via AMI variables
-      // The dialplan uses inline System(curl/ffmpeg) to download & convert audio on the PBX
-      const ami = getAMIClient();
+      // Queue-based approach: enqueue the call for the PBX agent to pick up
+      // The PBX agent polls /api/pbx/poll, originates via local AMI, and reports back
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
       const audioName = `quicktest_${audioFile.id}`;
 
-      console.log(`[QuickTest] Initiating call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...`);
+      console.log(`[QuickTest] Enqueuing call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...`);
 
-      const originateResult = await ami.originate({
-        channel, context: "tts-broadcast", exten: "s", priority: "1", timeout: 30000,
+      await db.enqueueCall({
+        userId: ctx.user.id,
+        phoneNumber,
+        channel,
+        context: "tts-broadcast",
+        audioUrl: audioFile.s3Url,
+        audioName,
         variables: {
           AUDIO_URL: audioFile.s3Url,
           AUDIO_NAME: audioName,
         },
-        async: true,
+        status: "pending",
+        priority: 1, // Quick test = highest priority
       });
 
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });
-      return { success: originateResult.Response !== "Error", message: originateResult.Message || "Call queued" };
+      return { success: true, message: "Call queued - PBX agent will dial shortly" };
     }),
   }),
 
@@ -1010,18 +1028,117 @@ Return ONLY the message text, nothing else.`;
     }),
   }),
 
+  pbxAgent: router({
+    // List all registered PBX agents
+    list: protectedProcedure.query(async () => {
+      return db.getPbxAgents();
+    }),
+    // Register a new PBX agent and generate API key
+    register: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(100),
+    })).mutation(async ({ input }) => {
+      const crypto = await import("crypto");
+      const apiKey = `pbx_${crypto.randomBytes(32).toString("hex")}`;
+      const agentId = `agent_${crypto.randomBytes(8).toString("hex")}`;
+      const result = await db.registerPbxAgent({
+        agentId,
+        name: input.name,
+        apiKey,
+        status: "offline",
+      });
+      return { ...result, apiKey }; // Only returned once at creation
+    }),
+    // Delete a PBX agent
+    delete: protectedProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ input }) => {
+      await db.deletePbxAgent(input.id);
+      return { success: true };
+    }),
+    // Get call queue stats
+    queueStats: protectedProcedure.query(async () => {
+      return db.getCallQueueStats();
+    }),
+    // Get recent queue items
+    recentQueue: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(100).optional(),
+    })).query(async ({ input }) => {
+      const dbInst = await db.getDb();
+      if (!dbInst) return [];
+      const { callQueue } = await import("../drizzle/schema");
+      const { desc } = await import("drizzle-orm");
+      return dbInst.select().from(callQueue).orderBy(desc(callQueue.createdAt)).limit(input.limit || 20);
+    }),
+  }),
+
   freepbx: router({
     status: protectedProcedure.query(async () => {
-      return getAMIStatus();
+      const agents = await db.getPbxAgents();
+      const onlineAgents = agents.filter((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+      });
+      return {
+        connected: onlineAgents.length > 0,
+        agents: agents.length,
+        onlineAgents: onlineAgents.length,
+        message: onlineAgents.length > 0
+          ? `${onlineAgents.length} PBX agent(s) online`
+          : "No PBX agents online - install the PBX agent on your FreePBX server",
+      };
     }),
     testConnection: protectedProcedure.mutation(async () => {
-      try {
-        const ami = getAMIClient();
-        await ami.connect();
-        return { success: true, message: "Connected to FreePBX AMI successfully" };
-      } catch (err) {
-        return { success: false, message: (err as Error).message };
+      const agents = await db.getPbxAgents();
+      if (agents.length === 0) {
+        return { success: false, message: "No PBX agents registered. Go to PBX Agent settings to register one." };
       }
+      const onlineAgents = agents.filter((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+      });
+      if (onlineAgents.length === 0) {
+        return { success: false, message: "PBX agent registered but not online. Check the agent service on your FreePBX server." };
+      }
+      return { success: true, message: `${onlineAgents.length} PBX agent(s) connected and ready` };
+    }),
+
+    listAgents: protectedProcedure.query(async () => {
+      return db.getPbxAgents();
+    }),
+
+    registerAgent: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1).max(100),
+        maxCalls: z.number().int().min(1).max(50).default(5),
+      }))
+      .mutation(async ({ input }) => {
+        const crypto = await import("crypto");
+        const agentId = `agent-${crypto.randomBytes(4).toString("hex")}`;
+        const apiKey = `pbx-${crypto.randomBytes(32).toString("hex")}`;
+        await db.registerPbxAgent({
+          agentId,
+          name: input.name,
+          apiKey,
+          status: "offline",
+        });
+        // Also update maxCalls
+        const agents = await db.getPbxAgents();
+        const agent = agents.find((a: any) => a.agentId === agentId);
+        if (agent) {
+          await db.updatePbxAgentHeartbeat(agentId); // just to ensure it exists
+        }
+        return { agentId, apiKey, name: input.name };
+      }),
+
+    deleteAgent: protectedProcedure
+      .input(z.object({ agentId: z.string() }))
+      .mutation(async ({ input }) => {
+        await db.deletePbxAgentByAgentId(input.agentId);
+        return { success: true };
+      }),
+
+    queueStats: protectedProcedure.query(async () => {
+      return db.getCallQueueStats();
     }),
   }),
 });

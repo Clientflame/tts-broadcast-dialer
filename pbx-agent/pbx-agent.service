@@ -1,0 +1,23 @@
+[Unit]
+Description=PBX Agent for AI TTS Broadcast Dialer
+After=network.target asterisk.service
+Wants=asterisk.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/pbx-agent
+ExecStart=/usr/bin/python3 /opt/pbx-agent/pbx_agent.py
+Restart=always
+RestartSec=5
+Environment=PBX_AGENT_API_URL=https://YOUR-APP-DOMAIN.manus.space/api/pbx
+Environment=PBX_AGENT_API_KEY=YOUR-API-KEY-HERE
+Environment=AMI_HOST=127.0.0.1
+Environment=AMI_PORT=5038
+Environment=AMI_USER=broadcast_dialer
+Environment=AMI_SECRET=Br0adcast!D1aler2024
+Environment=POLL_INTERVAL=3
+Environment=MAX_CONCURRENT=5
+
+[Install]
+WantedBy=multi-user.target

@@ -324,3 +324,45 @@ export const callerIdRegions = mysqlTable("caller_id_regions", {
 
 export type CallerIdRegion = typeof callerIdRegions.$inferSelect;
 export type InsertCallerIdRegion = typeof callerIdRegions.$inferInsert;
+// ─── Call Queue (PBX Agent Polling) ──────────────────────────────────────
+export const callQueue = mysqlTable("call_queue", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  campaignId: int("campaignId"),
+  callLogId: int("callLogId"),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  channel: varchar("channel", { length: 255 }).notNull(),
+  context: varchar("context", { length: 100 }).default("tts-broadcast").notNull(),
+  callerIdStr: varchar("callerIdStr", { length: 255 }),
+  audioUrl: text("audioUrl"),
+  audioName: varchar("audioName", { length: 255 }),
+  variables: json("variables").$type<Record<string, string>>(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // pending, claimed, dialing, completed, failed
+  priority: int("priority").default(5).notNull(), // 1=highest, 10=lowest; quicktest=1
+  claimedBy: varchar("claimedBy", { length: 100 }), // PBX agent ID
+  claimedAt: bigint("claimedAt", { mode: "number" }),
+  result: varchar("result", { length: 50 }), // answered, busy, no-answer, failed, congestion
+  resultDetails: json("resultDetails").$type<Record<string, any>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CallQueueItem = typeof callQueue.$inferSelect;
+export type InsertCallQueueItem = typeof callQueue.$inferInsert;
+
+// ─── PBX Agents ──────────────────────────────────────────────────────────
+export const pbxAgents = mysqlTable("pbx_agents", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: varchar("agentId", { length: 100 }).notNull(),
+  name: varchar("name", { length: 255 }),
+  apiKey: varchar("apiKey", { length: 255 }).notNull(),
+  lastHeartbeat: bigint("lastHeartbeat", { mode: "number" }),
+  status: varchar("status", { length: 20 }).default("offline").notNull(), // online, offline
+  activeCalls: int("activeCalls").default(0),
+  maxCalls: int("maxCalls").default(5),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PbxAgent = typeof pbxAgents.$inferSelect;
+export type InsertPbxAgent = typeof pbxAgents.$inferInsert;

@@ -185,12 +185,12 @@ export default function Home() {
             <CardHeader><CardTitle className="text-base">FreePBX Connection</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Host</span>
-                <span className="text-sm font-mono">{amiStatus.data?.host ?? "\u2014"}</span>
+                <span className="text-sm text-muted-foreground">PBX Agents</span>
+                <span className="text-sm font-mono">{amiStatus.data?.agents ?? 0} registered</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">AMI Port</span>
-                <span className="text-sm font-mono">{amiStatus.data?.port ?? "\u2014"}</span>
+                <span className="text-sm text-muted-foreground">Online</span>
+                <span className="text-sm font-mono">{amiStatus.data?.onlineAgents ?? 0} agent(s)</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>

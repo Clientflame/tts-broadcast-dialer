@@ -80,3 +80,14 @@
 - [x] Pacing engine with Fixed/Adaptive/Predictive modes and rolling window stats
 - [x] Pacing controls in campaign creation form (mode, target drop rate, min/max concurrent)
 - [x] Live pacing stats on Dashboard (answer rate, drop rate, adjustments)
+- [x] PBX-side polling architecture - replace outbound AMI with PBX agent that polls web app
+- [x] Create API endpoints for PBX agent: fetch pending calls, report call results, heartbeat
+- [x] Build Python PBX agent script with local AMI and HTTPS polling
+- [x] Update dialer engine to queue calls instead of originating via AMI
+- [x] Update Quick Test to use the new queue-based approach
+- [x] Remove outbound AMI connection dependency
+- [ ] Deploy PBX agent to FreePBX as systemd service
+- [ ] Test end-to-end Quick Test and campaign calls with new architecture
+- [x] PBX Agent management UI - register/delete agents, view status, copy API key
+- [x] tRPC endpoints for agent registration, deletion, listing, and queue stats
+- [x] FreePBX Integration page redesigned with agent management and installation guide

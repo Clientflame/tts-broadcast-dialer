@@ -108,17 +108,16 @@ describe("dashboard.amiStatus", () => {
     await expect(caller.dashboard.amiStatus()).rejects.toThrow();
   });
 
-  it("returns AMI status for authenticated users", async () => {
+  it("returns PBX agent status for authenticated users", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const status = await caller.dashboard.amiStatus();
     expect(status).toBeDefined();
     expect(status).toHaveProperty("connected");
-    expect(status).toHaveProperty("host");
-    expect(status).toHaveProperty("port");
+    expect(status).toHaveProperty("agents");
+    expect(status).toHaveProperty("onlineAgents");
+    expect(status).toHaveProperty("message");
     expect(typeof status.connected).toBe("boolean");
-    expect(status.host).toBe("45.77.75.198");
-    expect(status.port).toBe(parseInt(process.env.FREEPBX_AMI_PORT || "25038"));
   });
 });
 
@@ -128,8 +127,9 @@ describe("freepbx.status", () => {
     const caller = appRouter.createCaller(ctx);
     const status = await caller.freepbx.status();
     expect(status).toHaveProperty("connected");
-    expect(status).toHaveProperty("host");
-    expect(status).toHaveProperty("port");
+    expect(status).toHaveProperty("agents");
+    expect(status).toHaveProperty("onlineAgents");
+    expect(status).toHaveProperty("message");
   });
 });
 
@@ -304,5 +304,74 @@ describe("dnc - input validation", () => {
         expect(e.code).not.toBe("BAD_REQUEST");
       }
     }
+  });
+});
+
+describe("freepbx.listAgents", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.listAgents()).rejects.toThrow();
+  });
+
+  it("returns an array for authenticated users", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const agents = await caller.freepbx.listAgents();
+    expect(Array.isArray(agents)).toBe(true);
+  });
+});
+
+describe("freepbx.registerAgent", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 5 })).rejects.toThrow();
+  });
+
+  it("rejects empty agent name", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.registerAgent({ name: "", maxCalls: 5 })).rejects.toThrow();
+  });
+
+  it("rejects maxCalls above 50", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 51 })).rejects.toThrow();
+  });
+
+  it("rejects maxCalls below 1", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 0 })).rejects.toThrow();
+  });
+});
+
+describe("freepbx.deleteAgent", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.deleteAgent({ agentId: "agent-test" })).rejects.toThrow();
+  });
+});
+
+describe("freepbx.queueStats", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.queueStats()).rejects.toThrow();
+  });
+
+  it("returns queue statistics for authenticated users", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const stats = await caller.freepbx.queueStats();
+    expect(stats).toBeDefined();
+    expect(stats).toHaveProperty("pending");
+    expect(stats).toHaveProperty("claimed");
+    expect(stats).toHaveProperty("completed");
+    expect(stats).toHaveProperty("failed");
+    expect(typeof stats.pending).toBe("number");
   });
 });

@@ -326,10 +326,11 @@ export function getAMIStatus(): { connected: boolean; host: string; port: number
   };
 }
 
-// Auto-connect on module load if credentials are available
-if (process.env.FREEPBX_AMI_PASSWORD) {
-  setTimeout(() => {
-    console.log("[AMI] Auto-connecting to FreePBX at", process.env.FREEPBX_HOST || "45.77.75.198");
-    ensureAMIConnected();
-  }, 2000);
-}
+// AMI auto-connect disabled - PBX agent handles AMI locally on the FreePBX server
+// The web app no longer needs a direct AMI connection
+// if (process.env.FREEPBX_AMI_PASSWORD) {
+//   setTimeout(() => {
+//     console.log("[AMI] Auto-connecting to FreePBX at", process.env.FREEPBX_HOST || "45.77.75.198");
+//     ensureAMIConnected();
+//   }, 2000);
+// }
