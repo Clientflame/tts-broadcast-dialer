@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM contacts WHERE userId IN (901, 902, 903, 904); DELETE FROM contact_lists WHERE userId IN (901, 902, 903, 904); DELETE FROM caller_ids WHERE userId IN (901, 902, 903, 904);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute DELETE FROM contacts WHERE userId IN (901, 902, 903, 904); DELETE FROM contact_lists WHERE userId IN (901, 902, 903, 904); DELETE FROM caller_ids WHERE userId IN (901, 902, 903, 904);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 87
+}

@@ -139,3 +139,11 @@
 - [x] Auto-disable DIDs that fail consecutive checks (3 consecutive failures threshold)
 - [x] Health check UI - status indicators, manual check trigger, reset button
 - [x] Vitest tests for health check logic (8 tests)
+- [x] Quick call test - select which caller ID to use instead of random
+- [x] Bulk delete Call Scripts - select multiple and delete at once
+- [x] Bulk delete Contacts - already had bulk delete (checkbox + delete button)
+- [x] Bulk delete Campaigns - select multiple and delete at once (skips running campaigns)
+- [x] Fix caller ID health check - fixed PJSIP channel format for health check calls
+- [x] Call Scripts - add Updated timestamp column to scripts table
+- [x] DNC List - show total number count (prominent red card with count)
+- [x] DNC List - ability to un-DNC (remove) numbers with prominent Un-DNC buttons (single + bulk)

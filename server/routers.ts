@@ -416,6 +416,18 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.delete", resource: "campaign", resourceId: input.id });
       return { success: true };
     }),
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+      let deleted = 0;
+      const skipped: number[] = [];
+      for (const id of input.ids) {
+        const campaign = await db.getCampaign(id, ctx.user.id);
+        if (campaign?.status === "running") { skipped.push(id); continue; }
+        await db.deleteCampaign(id, ctx.user.id);
+        deleted++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.bulkDelete", resource: "campaign", details: { deleted, skipped: skipped.length } });
+      return { success: true, deleted, skipped: skipped.length };
+    }),
     start: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       await startCampaign(input.id, ctx.user.id);
       return { success: true };
@@ -596,14 +608,20 @@ export const appRouter = router({
       // Queue health check calls via the call queue (PBX agent will pick them up)
       let queued = 0;
       for (const cid of callerIdsToCheck) {
+        // Queue a health check call - PBX agent will detect context="health-check"
+        // and perform a SIP OPTIONS or short test call instead of playing audio
         await db.enqueueCall({
           phoneNumber: cid.phoneNumber,
-          channel: `SIP/vitel-outbound/${cid.phoneNumber}`,
+          channel: `PJSIP/${cid.phoneNumber}@vitel-outbound`,
           context: "health-check",
           callerIdStr: cid.phoneNumber,
           audioUrl: "",
           audioName: "health-check",
-          variables: { healthCheckCallerIdId: String(cid.id), healthCheck: "true" },
+          variables: {
+            healthCheckCallerIdId: String(cid.id),
+            healthCheck: "true",
+            CALLER_ID: cid.phoneNumber,
+          },
           priority: 1,
           userId: ctx.user.id,
         });
@@ -830,6 +848,7 @@ Return ONLY the message text, nothing else.`;
     dial: protectedProcedure.input(z.object({
       phoneNumber: z.string().min(1).max(20),
       audioFileId: z.number(),
+      callerIdId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
       const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
@@ -840,7 +859,15 @@ Return ONLY the message text, nothing else.`;
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
       const audioName = `quicktest_${audioFile.id}`;
 
-      console.log(`[QuickTest] Enqueuing call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...`);
+      // Resolve caller ID if specified
+      let callerIdStr: string | undefined;
+      if (input.callerIdId) {
+        const callerIdList = await db.getCallerIds(ctx.user.id);
+        const selectedCid = callerIdList.find(c => c.id === input.callerIdId);
+        if (selectedCid) callerIdStr = selectedCid.phoneNumber;
+      }
+
+      console.log(`[QuickTest] Enqueuing call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...${callerIdStr ? ` CallerID: ${callerIdStr}` : ''}`);
 
       await db.enqueueCall({
         userId: ctx.user.id,
@@ -849,9 +876,11 @@ Return ONLY the message text, nothing else.`;
         context: "tts-broadcast",
         audioUrl: audioFile.s3Url,
         audioName,
+        callerIdStr,
         variables: {
           AUDIO_URL: audioFile.s3Url,
           AUDIO_NAME: audioName,
+          ...(callerIdStr ? { CALLER_ID: callerIdStr } : {}),
         },
         status: "pending",
         priority: 1, // Quick test = highest priority
@@ -1179,6 +1208,13 @@ Return ONLY the message text, nothing else.`;
       await db.deleteCallScript(input.id, ctx.user.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.delete", resource: "callScript", resourceId: input.id });
       return { success: true };
+    }),
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+      for (const id of input.ids) {
+        await db.deleteCallScript(id, ctx.user.id);
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.bulkDelete", resource: "callScript", details: { count: input.ids.length } });
+      return { success: true, deleted: input.ids.length };
     }),
     preview: protectedProcedure.input(z.object({
       segments: z.array(z.object({

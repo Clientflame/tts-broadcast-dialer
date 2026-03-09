@@ -34,6 +34,13 @@ describe("contact import dedup", () => {
   let caller: ReturnType<typeof appRouter.createCaller>;
   let testListId: number;
   const uid = 901;
+  const ts = Date.now().toString().slice(-5);
+  // Unique phone numbers per test run
+  const p1 = `201${ts}01`, p2 = `201${ts}02`, p3 = `201${ts}03`;
+  const p10 = `201${ts}10`, p11 = `201${ts}11`;
+  const p20 = `201${ts}20`, p30 = `201${ts}30`;
+  const p40 = `201${ts}40`, p41 = `201${ts}41`;
+  const p50 = `201${ts}50`;
 
   beforeAll(async () => {
     const { ctx } = createAuthContext(uid);
@@ -46,9 +53,9 @@ describe("contact import dedup", () => {
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550001", firstName: "Alice" },
-        { phoneNumber: "2015550002", firstName: "Bob" },
-        { phoneNumber: "2015550003", firstName: "Charlie" },
+        { phoneNumber: p1, firstName: "Alice" },
+        { phoneNumber: p2, firstName: "Bob" },
+        { phoneNumber: p3, firstName: "Charlie" },
       ],
     });
 
@@ -61,9 +68,9 @@ describe("contact import dedup", () => {
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550010", firstName: "Dave" },
-        { phoneNumber: "2015550010", firstName: "Dave Duplicate" },
-        { phoneNumber: "2015550011", firstName: "Eve" },
+        { phoneNumber: p10, firstName: "Dave" },
+        { phoneNumber: p10, firstName: "Dave Duplicate" },
+        { phoneNumber: p11, firstName: "Eve" },
       ],
     });
 
@@ -72,12 +79,11 @@ describe("contact import dedup", () => {
   });
 
   it("should omit contacts that already exist in the same list", async () => {
-    // 2015550001 was imported in the first test
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550001", firstName: "Alice Again" }, // dupe
-        { phoneNumber: "2015550020", firstName: "Frank" }, // new
+        { phoneNumber: p1, firstName: "Alice Again" }, // dupe
+        { phoneNumber: p20, firstName: "Frank" }, // new
       ],
     });
 
@@ -86,12 +92,11 @@ describe("contact import dedup", () => {
   });
 
   it("should normalize phone numbers for comparison (leading 1)", async () => {
-    // 2015550002 exists, 12015550002 should be treated as dupe
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "12015550002", firstName: "Bob With Country Code" },
-        { phoneNumber: "2015550030", firstName: "Grace" },
+        { phoneNumber: `1${p2}`, firstName: "Bob With Country Code" },
+        { phoneNumber: p30, firstName: "Grace" },
       ],
     });
 
@@ -103,8 +108,8 @@ describe("contact import dedup", () => {
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550001", firstName: "Alice Triple" },
-        { phoneNumber: "2015550002", firstName: "Bob Triple" },
+        { phoneNumber: p1, firstName: "Alice Triple" },
+        { phoneNumber: p2, firstName: "Bob Triple" },
       ],
     });
 
@@ -116,10 +121,10 @@ describe("contact import dedup", () => {
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550001", firstName: "Existing Dupe" }, // same-list dupe
-        { phoneNumber: "2015550040", firstName: "New Contact" }, // new
-        { phoneNumber: "2015550040", firstName: "Intra Dupe" }, // intra-file dupe
-        { phoneNumber: "2015550041", firstName: "Another New" }, // new
+        { phoneNumber: p1, firstName: "Existing Dupe" }, // same-list dupe
+        { phoneNumber: p40, firstName: "New Contact" }, // new
+        { phoneNumber: p40, firstName: "Intra Dupe" }, // intra-file dupe
+        { phoneNumber: p41, firstName: "Another New" }, // new
       ],
     });
 
@@ -131,7 +136,7 @@ describe("contact import dedup", () => {
     const result = await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "2015550050", firstName: "No DNC" },
+        { phoneNumber: p50, firstName: "No DNC" },
       ],
     });
     expect(result.dncOmitted).toBe(0);
@@ -143,6 +148,10 @@ describe("contact import preview", () => {
   let caller: ReturnType<typeof appRouter.createCaller>;
   let testListId: number;
   const uid = 902;
+  const ts2 = Date.now().toString().slice(-5);
+  const pp1 = `301${ts2}01`, pp2 = `301${ts2}02`;
+  const pp3 = `301${ts2}03`, pp4 = `301${ts2}04`;
+  const pp10 = `301${ts2}10`, pp11 = `301${ts2}11`;
 
   beforeAll(async () => {
     const { ctx } = createAuthContext(uid);
@@ -153,8 +162,8 @@ describe("contact import preview", () => {
     await caller.contacts.import({
       listId: testListId,
       contacts: [
-        { phoneNumber: "3015551001" },
-        { phoneNumber: "3015551002" },
+        { phoneNumber: pp1 },
+        { phoneNumber: pp2 },
       ],
     });
   });
@@ -163,23 +172,23 @@ describe("contact import preview", () => {
     const preview = await caller.contacts.previewImport({
       listId: testListId,
       phoneNumbers: [
-        "3015551001", // same-list dupe
-        "3015551003", // new
-        "3015551003", // intra-file dupe
-        "3015551004", // new
+        pp1, // same-list dupe
+        pp3, // new
+        pp3, // intra-file dupe
+        pp4, // new
       ],
     });
 
     expect(preview.totalRows).toBe(4);
     expect(preview.intraFileDupes).toBe(1);
     expect(preview.sameListDupes).toBe(1);
-    expect(preview.willImport).toBe(2); // 3015551003 + 3015551004
+    expect(preview.willImport).toBe(2);
   });
 
   it("should report zero for clean import", async () => {
     const preview = await caller.contacts.previewImport({
       listId: testListId,
-      phoneNumbers: ["3015551010", "3015551011"],
+      phoneNumbers: [pp10, pp11],
     });
 
     expect(preview.totalRows).toBe(2);
@@ -194,6 +203,12 @@ describe("cross-list dedup", () => {
   let listA: number;
   let listB: number;
   const uid = 903;
+  // Use timestamp-based phone numbers to avoid stale data from previous runs
+  const ts = Date.now().toString().slice(-6);
+  const phoneA1 = `401${ts}01`;
+  const phoneA2 = `401${ts}02`;
+  const phoneNew = `401${ts}99`;
+  const phoneNew2 = `401${ts}88`;
 
   beforeAll(async () => {
     const { ctx } = createAuthContext(uid);
@@ -205,7 +220,7 @@ describe("cross-list dedup", () => {
     // Seed list A
     await caller.contacts.import({
       listId: listA,
-      contacts: [{ phoneNumber: "4015551001" }, { phoneNumber: "4015551002" }],
+      contacts: [{ phoneNumber: phoneA1 }, { phoneNumber: phoneA2 }],
     });
   });
 
@@ -213,12 +228,12 @@ describe("cross-list dedup", () => {
     const result = await caller.contacts.import({
       listId: listB,
       contacts: [
-        { phoneNumber: "4015551001" }, // exists in list A
-        { phoneNumber: "4015551099" }, // new
+        { phoneNumber: phoneA1 }, // exists in list A
+        { phoneNumber: phoneNew }, // new
       ],
     });
 
-    expect(result.count).toBe(1); // only 4015551099
+    expect(result.count).toBe(1); // only phoneNew
     expect(result.crossListDupes).toBe(1);
     expect(result.duplicatesOmitted).toBe(1);
   });
@@ -226,10 +241,10 @@ describe("cross-list dedup", () => {
   it("should show cross-list dupes in preview", async () => {
     const preview = await caller.contacts.previewImport({
       listId: listB,
-      phoneNumbers: ["4015551002", "4015551088"],
+      phoneNumbers: [phoneA2, phoneNew2],
     });
 
-    expect(preview.crossListDupes).toBe(1); // 4015551002 in list A
+    expect(preview.crossListDupes).toBe(1); // phoneA2 in list A
     expect(preview.willImport).toBe(1);
   });
 });

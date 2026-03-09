@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Play, Pause, Loader2, ScrollText, GripVertical,
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
@@ -330,6 +331,7 @@ export default function Scripts() {
   const [callbackNumber, setCallbackNumber] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
   const scripts = trpc.callScripts.list.useQuery();
   const audioFiles = trpc.audio.list.useQuery();
@@ -355,6 +357,14 @@ export default function Scripts() {
     onSuccess: () => {
       scripts.refetch();
       toast.success("Script deleted");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const bulkDeleteScripts = trpc.callScripts.bulkDelete.useMutation({
+    onSuccess: (r) => {
+      scripts.refetch();
+      setSelectedIds([]);
+      toast.success(`Deleted ${r.deleted} script(s)`);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -497,9 +507,18 @@ export default function Scripts() {
               Build multi-segment call scripts mixing TTS and recorded audio. Scripts are personalized per contact at dial time.
             </p>
           </div>
+          <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={() => {
+              if (confirm(`Delete ${selectedIds.length} script(s)?`)) bulkDeleteScripts.mutate({ ids: selectedIds });
+            }} disabled={bulkDeleteScripts.isPending}>
+              <Trash2 className="h-4 w-4 mr-1" /> Delete {selectedIds.length}
+            </Button>
+          )}
           <Button onClick={() => { resetForm(); setShowCreate(true); }}>
             <Plus className="h-4 w-4 mr-2" /> New Script
           </Button>
+          </div>
         </div>
 
         {/* Scripts Table */}
@@ -529,11 +548,21 @@ export default function Scripts() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={scripts.data && selectedIds.length === scripts.data.length && scripts.data.length > 0}
+                        onCheckedChange={() => {
+                          if (selectedIds.length === (scripts.data?.length || 0)) setSelectedIds([]);
+                          else setSelectedIds((scripts.data || []).map((s: any) => s.id));
+                        }}
+                      />
+                    </TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Segments</TableHead>
                     <TableHead>Callback #</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
+                    <TableHead>Updated</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -544,6 +573,12 @@ export default function Scripts() {
                     const recCount = segs.filter((s: any) => s.type === "recorded").length;
                     return (
                       <TableRow key={script.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.includes(script.id)}
+                            onCheckedChange={() => setSelectedIds(prev => prev.includes(script.id) ? prev.filter(i => i !== script.id) : [...prev, script.id])}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{script.name}</TableCell>
                         <TableCell>
                           <div className="flex gap-1">
@@ -565,6 +600,9 @@ export default function Scripts() {
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {new Date(script.createdAt).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {script.updatedAt ? new Date(script.updatedAt).toLocaleDateString() : "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">

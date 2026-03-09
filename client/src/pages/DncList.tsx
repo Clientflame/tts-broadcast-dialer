@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { Ban, Plus, Upload, Trash2, Search, Download, AlertTriangle } from "lucide-react";
+import { Ban, Plus, Upload, Trash2, Search, Download, AlertTriangle, Undo2, ShieldOff } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ export default function DncList() {
   const utils = trpc.useUtils();
 
   const entries = dncQuery.data || [];
+  const totalCount = dncCountQuery.data?.count ?? 0;
 
   const handleAdd = async () => {
     if (!newPhone.trim()) return;
@@ -55,21 +56,23 @@ export default function DncList() {
     }
   };
 
-  const handleRemove = async (id: number) => {
+  const handleUnDnc = async (id: number, phoneNumber: string) => {
+    if (!confirm(`Remove ${phoneNumber} from DNC list? This number will be eligible for dialing again.`)) return;
     try {
       await removeMutation.mutateAsync({ id });
-      toast.success("Number removed from DNC list");
+      toast.success(`${phoneNumber} removed from DNC list (un-DNC'd)`);
       utils.dnc.invalidate();
     } catch {
       toast.error("Failed to remove number");
     }
   };
 
-  const handleBulkRemove = async () => {
+  const handleBulkUnDnc = async () => {
     if (selectedIds.length === 0) return;
+    if (!confirm(`Remove ${selectedIds.length} number(s) from DNC list? These numbers will be eligible for dialing again.`)) return;
     try {
       await bulkRemoveMutation.mutateAsync({ ids: selectedIds });
-      toast.success(`Removed ${selectedIds.length} numbers from DNC list`);
+      toast.success(`Removed ${selectedIds.length} numbers from DNC list (un-DNC'd)`);
       setSelectedIds([]);
       utils.dnc.invalidate();
     } catch {
@@ -161,10 +164,17 @@ export default function DncList() {
               Manage numbers that should never be dialed. DNC numbers are automatically filtered from all campaigns.
             </p>
           </div>
-          <Badge variant="outline" className="text-lg px-4 py-2">
-            <Ban className="mr-2 h-4 w-4" />
-            {dncCountQuery.data?.count ?? 0} numbers
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Card className="border-red-500/30 bg-red-500/5 px-5 py-3">
+              <div className="flex items-center gap-2">
+                <Ban className="h-5 w-5 text-red-500" />
+                <div>
+                  <p className="text-2xl font-bold text-red-500">{totalCount.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Total DNC Numbers</p>
+                </div>
+              </div>
+            </Card>
+          </div>
         </div>
 
         {/* Warning Banner */}
@@ -176,6 +186,7 @@ export default function DncList() {
               <p className="text-muted-foreground mt-1">
                 Numbers on this list will be automatically excluded from all broadcast campaigns before dialing begins.
                 Ensure compliance with TCPA, FCC regulations, and your state's telemarketing laws.
+                You can <strong>un-DNC</strong> numbers by selecting them and clicking "Un-DNC Selected" to make them eligible for dialing again.
               </p>
             </div>
           </CardContent>
@@ -271,8 +282,8 @@ export default function DncList() {
           </Button>
 
           {selectedIds.length > 0 && (
-            <Button variant="destructive" onClick={handleBulkRemove}>
-              <Trash2 className="mr-2 h-4 w-4" />Remove {selectedIds.length} Selected
+            <Button variant="secondary" onClick={handleBulkUnDnc} disabled={bulkRemoveMutation.isPending}>
+              <ShieldOff className="mr-2 h-4 w-4" />Un-DNC {selectedIds.length} Selected
             </Button>
           )}
         </div>
@@ -284,6 +295,7 @@ export default function DncList() {
             <CardDescription>
               {entries.length} number{entries.length !== 1 ? "s" : ""} shown
               {search ? ` matching "${search}"` : ""}
+              {totalCount > 0 && !search ? ` of ${totalCount.toLocaleString()} total` : ""}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -311,7 +323,7 @@ export default function DncList() {
                       <th className="pb-3 pr-4">Source</th>
                       <th className="pb-3 pr-4">Added By</th>
                       <th className="pb-3 pr-4">Date Added</th>
-                      <th className="pb-3 w-20">Actions</th>
+                      <th className="pb-3 w-24">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -324,7 +336,7 @@ export default function DncList() {
                           />
                         </td>
                         <td className="py-3 pr-4 font-mono font-medium">{entry.phoneNumber}</td>
-                        <td className="py-3 pr-4 text-sm text-muted-foreground">{entry.reason || "—"}</td>
+                        <td className="py-3 pr-4 text-sm text-muted-foreground">{entry.reason || "\u2014"}</td>
                         <td className="py-3 pr-4">
                           <Badge variant={
                             entry.source === "complaint" ? "destructive" :
@@ -334,18 +346,21 @@ export default function DncList() {
                             {entry.source}
                           </Badge>
                         </td>
-                        <td className="py-3 pr-4 text-sm">{entry.addedBy || "—"}</td>
+                        <td className="py-3 pr-4 text-sm">{entry.addedBy || "\u2014"}</td>
                         <td className="py-3 pr-4 text-sm text-muted-foreground">
                           {new Date(entry.createdAt).toLocaleDateString()}
                         </td>
                         <td className="py-3">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemove(entry.id)}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleUnDnc(entry.id, entry.phoneNumber)}
                             disabled={removeMutation.isPending}
+                            title="Remove from DNC list (un-DNC)"
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <Undo2 className="h-3 w-3 mr-1" />
+                            Un-DNC
                           </Button>
                         </td>
                       </tr>

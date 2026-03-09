@@ -203,6 +203,7 @@ export default function Audio() {
   const [speed, setSpeed] = useState(1.0);
   const [testPhone, setTestPhone] = useState("");
   const [testAudioId, setTestAudioId] = useState<number | null>(null);
+  const [testCallerId, setTestCallerId] = useState<number | undefined>(undefined);
 
   const speedLabel = useMemo(() => {
     if (speed === 1.0) return "Normal";
@@ -212,6 +213,8 @@ export default function Audio() {
 
   const utils = trpc.useUtils();
   const audioFiles = trpc.audio.list.useQuery();
+  const callerIdsQuery = trpc.callerIds.list.useQuery();
+  const activeCallerIds = (callerIdsQuery.data || []).filter(c => c.isActive === 1);
 
   const generateTTS = trpc.audio.generate.useMutation({
     onSuccess: () => {
@@ -295,11 +298,25 @@ export default function Audio() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label>Caller ID (optional)</Label>
+                    <Select value={testCallerId?.toString() || "auto"} onValueChange={v => setTestCallerId(v === "auto" ? undefined : parseInt(v))}>
+                      <SelectTrigger><SelectValue placeholder="Auto (random)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">Auto (random rotation)</SelectItem>
+                        {activeCallerIds.map(c => (
+                          <SelectItem key={c.id} value={c.id.toString()}>
+                            {c.phoneNumber}{c.label ? ` - ${c.label}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setQuickTestOpen(false)}>Cancel</Button>
                   <Button
-                    onClick={() => { if (testPhone && testAudioId) quickTestMut.mutate({ phoneNumber: testPhone, audioFileId: testAudioId }); }}
+                    onClick={() => { if (testPhone && testAudioId) quickTestMut.mutate({ phoneNumber: testPhone, audioFileId: testAudioId, callerIdId: testCallerId }); }}
                     disabled={!testPhone || !testAudioId || quickTestMut.isPending}
                   >
                     {quickTestMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Calling...</> : <><PhoneCall className="h-4 w-4 mr-2" />Call Now</>}

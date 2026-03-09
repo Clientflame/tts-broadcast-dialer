@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2,
@@ -585,6 +586,7 @@ export default function Campaigns() {
   const [detailId, setDetailId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM });
   const [editForm, setEditForm] = useState<FormState>({ ...DEFAULT_FORM });
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const editMessageRef = useRef<HTMLTextAreaElement>(null);
 
@@ -630,6 +632,17 @@ export default function Campaigns() {
 
   const deleteCampaign = trpc.campaigns.delete.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setDetailId(null); toast.success("Campaign deleted"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkDeleteCampaigns = trpc.campaigns.bulkDelete.useMutation({
+    onSuccess: (r) => {
+      utils.campaigns.list.invalidate();
+      setSelectedCampaignIds([]);
+      let msg = `Deleted ${r.deleted} campaign(s)`;
+      if (r.skipped > 0) msg += ` (${r.skipped} running campaigns skipped)`;
+      toast.success(msg);
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -938,6 +951,13 @@ export default function Campaigns() {
             <p className="text-muted-foreground mt-1">Create and manage broadcast calling campaigns</p>
           </div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            {selectedCampaignIds.length > 0 && (
+              <Button variant="destructive" className="mr-2" onClick={() => {
+                if (confirm(`Delete ${selectedCampaignIds.length} campaign(s)? Running campaigns will be skipped.`)) bulkDeleteCampaigns.mutate({ ids: selectedCampaignIds });
+              }} disabled={bulkDeleteCampaigns.isPending}>
+                <Trash2 className="h-4 w-4 mr-1" /> Delete {selectedCampaignIds.length}
+              </Button>
+            )}
             <DialogTrigger asChild>
               <Button><Plus className="h-4 w-4 mr-2" />New Campaign</Button>
             </DialogTrigger>
@@ -974,8 +994,14 @@ export default function Campaigns() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {campaigns.data.map(campaign => (
-              <Card key={campaign.id} className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => setDetailId(campaign.id)}>
-                <CardHeader className="pb-3">
+              <Card key={campaign.id} className="cursor-pointer hover:border-primary/50 transition-colors relative" onClick={() => setDetailId(campaign.id)}>
+                <div className="absolute top-3 left-3 z-10" onClick={e => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedCampaignIds.includes(campaign.id)}
+                    onCheckedChange={() => setSelectedCampaignIds(prev => prev.includes(campaign.id) ? prev.filter(i => i !== campaign.id) : [...prev, campaign.id])}
+                  />
+                </div>
+                <CardHeader className="pb-3 pl-10">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base truncate">{campaign.name}</CardTitle>
                     <div className="flex items-center gap-1">

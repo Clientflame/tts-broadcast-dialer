@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM contacts WHERE userId = 903; DELETE FROM contact_lists WHERE userId = 903;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute DELETE FROM contacts WHERE userId = 903; DELETE FROM contact_lists WHERE userId = 903;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 145
+}
