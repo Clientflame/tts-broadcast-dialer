@@ -86,6 +86,7 @@ type FormState = {
   targetStates: string[]; useGeoCallerIds: boolean;
   usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
   useDidRotation: boolean;
+  scriptId: number; callbackNumber: string;
   pacingMode: "fixed" | "adaptive" | "predictive";
   pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
 };
@@ -98,7 +99,7 @@ const DEFAULT_FORM: FormState = {
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-  useDidRotation: false,
+  useDidRotation: false, scriptId: 0, callbackNumber: "",
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
 };
 
@@ -152,13 +153,14 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
-function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates }: {
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   messageRef: React.RefObject<HTMLTextAreaElement | null>;
   contactLists: any;
   readyAudioFiles: any[];
   templates: any;
+  scripts: any;
 }) {
   const insertMergeField = (fieldKey: string) => {
     const textarea = messageRef.current;
@@ -263,16 +265,56 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
             </Select>
           </div>
 
-          {/* Personalized TTS Toggle */}
-          <div className="flex items-center justify-between p-3 rounded-lg border border-primary/20 bg-primary/5">
-            <div>
-              <Label className="text-base font-semibold">Personalized TTS Messages</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Generate unique audio per contact with merge fields (name, caller ID, etc.)</p>
+          {/* Audio Mode Selection */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Audio Source</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <button type="button" onClick={() => setForm(p => ({ ...p, usePersonalizedTTS: false, scriptId: 0 }))}
+                className={`p-3 rounded-lg border text-left transition-colors ${!form.usePersonalizedTTS && !form.scriptId ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/50'}`}>
+                <div className="text-sm font-medium">Static Audio</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Pre-recorded file</div>
+              </button>
+              <button type="button" onClick={() => setForm(p => ({ ...p, usePersonalizedTTS: true, scriptId: 0 }))}
+                className={`p-3 rounded-lg border text-left transition-colors ${form.usePersonalizedTTS && !form.scriptId ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/50'}`}>
+                <div className="text-sm font-medium">Personalized TTS</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Single TTS with merge fields</div>
+              </button>
+              <button type="button" onClick={() => setForm(p => ({ ...p, usePersonalizedTTS: false, scriptId: -1 }))}
+                className={`p-3 rounded-lg border text-left transition-colors ${form.scriptId ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/50'}`}>
+                <div className="text-sm font-medium">Call Script</div>
+                <div className="text-xs text-muted-foreground mt-0.5">Multi-segment TTS + audio</div>
+              </button>
             </div>
-            <Switch checked={form.usePersonalizedTTS} onCheckedChange={v => setForm(p => ({ ...p, usePersonalizedTTS: v }))} />
           </div>
 
-          {form.usePersonalizedTTS ? (
+          {/* Call Script Selection */}
+          {form.scriptId !== 0 && !form.usePersonalizedTTS && (
+            <div className="space-y-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
+              <div>
+                <Label>Select Call Script *</Label>
+                <Select value={form.scriptId > 0 ? String(form.scriptId) : ""} onValueChange={v => setForm(p => ({ ...p, scriptId: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue placeholder="Choose a call script" /></SelectTrigger>
+                  <SelectContent>
+                    {(scripts || []).filter((s: any) => s.status === 'active').map((s: any) => {
+                      const segs = s.segments || [];
+                      const ttsCount = segs.filter((seg: any) => seg.type === 'tts').length;
+                      const recCount = segs.filter((seg: any) => seg.type === 'recorded').length;
+                      return <SelectItem key={s.id} value={String(s.id)}>{s.name} ({ttsCount} TTS, {recCount} recorded)</SelectItem>;
+                    })}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Scripts contain ordered TTS and recorded segments. TTS segments support merge fields for personalization.</p>
+              </div>
+              <div>
+                <Label>Callback Number</Label>
+                <Input value={form.callbackNumber} onChange={e => setForm(p => ({ ...p, callbackNumber: e.target.value }))}
+                  placeholder="e.g. 4075551234" className="font-mono" />
+                <p className="text-xs text-muted-foreground mt-0.5">Used for {'{'}{'{'} callback_number {'}'}{'}'}  merge field (spoken as digits in TTS)</p>
+              </div>
+            </div>
+          )}
+
+          {!form.scriptId && form.usePersonalizedTTS ? (
             <div className="space-y-3">
               {/* Message Template */}
               <div>
@@ -319,7 +361,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 </div>
               </div>
             </div>
-          ) : (
+          ) : !form.scriptId ? (
             <>
               {/* Static Audio File */}
               <div>
@@ -340,7 +382,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 onProviderChange={p => setForm(prev => ({ ...prev, ttsProvider: p }))}
               />
             </>
-          )}
+          ) : null}
 
           {/* DID Rotation */}
           <div className="flex items-center justify-between p-3 rounded-lg border">
@@ -552,6 +594,7 @@ export default function Campaigns() {
   const contactLists = trpc.contactLists.list.useQuery();
   const audioFiles = trpc.audio.list.useQuery();
   const templates = trpc.templates.list.useQuery();
+  const callScripts = trpc.callScripts.list.useQuery();
   const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
   const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
 
@@ -628,6 +671,8 @@ export default function Campaigns() {
       pacingTargetDropRate: (c as any).pacingTargetDropRate || 3,
       pacingMinConcurrent: (c as any).pacingMinConcurrent || 1,
       pacingMaxConcurrent: (c as any).pacingMaxConcurrent || 10,
+      scriptId: (c as any).scriptId || 0,
+      callbackNumber: (c as any).callbackNumber || "",
     });
     setEditOpen(true);
   };
@@ -664,6 +709,8 @@ export default function Campaigns() {
       pacingTargetDropRate: editForm.pacingMode !== "fixed" ? editForm.pacingTargetDropRate : undefined,
       pacingMinConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMinConcurrent : undefined,
       pacingMaxConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMaxConcurrent : undefined,
+      scriptId: editForm.scriptId || undefined,
+      callbackNumber: editForm.callbackNumber || undefined,
     });
   };
 
@@ -697,6 +744,8 @@ export default function Campaigns() {
       pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
       pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
       pacingMaxConcurrent: form.pacingMode !== "fixed" ? form.pacingMaxConcurrent : undefined,
+      scriptId: form.scriptId || undefined,
+      callbackNumber: form.callbackNumber || undefined,
     });
   };
 
@@ -862,6 +911,7 @@ export default function Campaigns() {
               contactLists={contactLists.data}
               readyAudioFiles={readyAudioFiles}
               templates={templates.data}
+              scripts={callScripts.data}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -900,6 +950,7 @@ export default function Campaigns() {
                 contactLists={contactLists.data}
                 readyAudioFiles={readyAudioFiles}
                 templates={templates.data}
+                scripts={callScripts.data}
               />
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setCreateOpen(false); setForm({ ...DEFAULT_FORM }); }}>Cancel</Button>

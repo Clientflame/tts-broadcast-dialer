@@ -1,0 +1,1 @@
+ALTER TABLE `call_queue` ADD `audioUrls` json;

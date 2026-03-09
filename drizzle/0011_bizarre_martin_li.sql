@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `callbackNumber` varchar(20);

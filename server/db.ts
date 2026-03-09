@@ -16,6 +16,7 @@ import {
   userGroups, InsertUserGroup,
   userGroupMemberships, InsertUserGroupMembership,
   localAuth, InsertLocalAuth,
+  callScripts, InsertCallScript,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1075,4 +1076,48 @@ export async function deletePbxAgentByAgentId(agentId: string) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(pbxAgents).where(eq(pbxAgents.agentId, agentId));
+}
+
+// ─── Call Scripts ──────────────────────────────────────────────────────────
+export async function createCallScript(data: InsertCallScript) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(callScripts).values(data);
+  return { id: Number(result[0].insertId) };
+}
+
+export async function getCallScripts(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(callScripts).where(eq(callScripts.userId, userId)).orderBy(desc(callScripts.createdAt));
+}
+
+export async function getCallScript(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(callScripts)
+    .where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function getCallScriptById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(callScripts)
+    .where(eq(callScripts.id, id))
+    .limit(1);
+  return result[0];
+}
+
+export async function updateCallScript(id: number, userId: number, data: Partial<InsertCallScript>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callScripts).set(data).where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)));
+}
+
+export async function deleteCallScript(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(callScripts).where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)));
 }

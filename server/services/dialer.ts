@@ -1,9 +1,10 @@
 import { generatePersonalizedTTS, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./tts";
+import { generateScriptAudio } from "./script-audio";
 import { notifyOwner } from "../_core/notification";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import * as db from "../db";
-import type { Campaign, CallLog } from "../../drizzle/schema";
+import type { Campaign, CallLog, ScriptSegment } from "../../drizzle/schema";
 
 interface ActiveCampaign {
   campaign: Campaign;
@@ -14,6 +15,9 @@ interface ActiveCampaign {
   callerIdIndex: number;
   usePersonalizedTTS: boolean;
   pacingConfig: PacingConfig;
+  // Script-based campaigns
+  scriptSegments: ScriptSegment[] | null;
+  callbackNumber: string | null;
 }
 
 const activeCampaigns = new Map<number, ActiveCampaign>();
@@ -150,6 +154,17 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   initPacing(campaignId, pacingConfig);
   registerPacingConfig(campaignId, pacingConfig);
 
+  // Load call script if campaign uses one
+  let scriptSegments: ScriptSegment[] | null = null;
+  const callbackNumber = (campaign as any).callbackNumber || null;
+  if ((campaign as any).scriptId) {
+    const script = await db.getCallScriptById((campaign as any).scriptId);
+    if (script && script.segments) {
+      scriptSegments = script.segments;
+      console.log(`[Dialer] Script loaded: "${script.name}" with ${scriptSegments.length} segments`);
+    }
+  }
+
   const active: ActiveCampaign = {
     campaign: updatedCampaign,
     intervalId: null,
@@ -159,6 +174,8 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     callerIdIndex: 0,
     usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
     pacingConfig,
+    scriptSegments,
+    callbackNumber,
   };
 
   activeCampaigns.set(campaignId, active);
@@ -281,8 +298,54 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
     CALLID: `broadcast-${callLog.campaignId}-${callLog.id}-${Date.now()}`,
   };
 
-  // Handle personalized TTS
-  if (active.usePersonalizedTTS && active.campaign.messageText) {
+  // Track multi-segment audio URLs for script-based campaigns
+  let audioUrls: string[] | null = null;
+
+  // Priority 1: Script-based campaigns (mixed TTS + recorded segments)
+  if (active.scriptSegments && active.scriptSegments.length > 0) {
+    try {
+      const contact = await db.getContact(callLog.contactId, userId);
+      console.log(`[Dialer] Generating script audio for contact ${callLog.contactId} (${active.scriptSegments.length} segments)`);
+
+      const scriptResult = await generateScriptAudio({
+        segments: active.scriptSegments,
+        contactData: {
+          firstName: contact?.firstName,
+          lastName: contact?.lastName,
+          phoneNumber: callLog.phoneNumber,
+          company: contact?.company,
+          state: contact?.state,
+          databaseName: contact?.databaseName,
+        },
+        callbackNumber: active.callbackNumber,
+        campaignId: callLog.campaignId,
+        contactId: callLog.contactId,
+      });
+
+      if (scriptResult.success && scriptResult.audioUrls.length > 0) {
+        audioUrls = scriptResult.audioUrls;
+        // Use first URL as the primary audioUrl for backward compatibility
+        variables.AUDIO_URL = scriptResult.audioUrls[0];
+        variables.AUDIO_NAME = `script_${callLog.campaignId}_${callLog.contactId}`;
+        console.log(`[Dialer] Script audio generated: ${scriptResult.audioUrls.length} segments for contact ${callLog.contactId}`);
+      } else {
+        console.error(`[Dialer] Script audio generation failed:`, scriptResult.errors);
+        // Fall back to static audio if available
+        if (active.audioS3Url && active.audioName) {
+          variables.AUDIO_URL = active.audioS3Url;
+          variables.AUDIO_NAME = active.audioName;
+        }
+      }
+    } catch (err) {
+      console.error(`[Dialer] Script audio failed for contact ${callLog.contactId}:`, err);
+      if (active.audioS3Url && active.audioName) {
+        variables.AUDIO_URL = active.audioS3Url;
+        variables.AUDIO_NAME = active.audioName;
+      }
+    }
+  }
+  // Priority 2: Personalized TTS (single message template)
+  else if (active.usePersonalizedTTS && active.campaign.messageText) {
     try {
       const contact = await db.getContact(callLog.contactId, userId);
       const speed = parseFloat(active.campaign.ttsSpeed || "1.0");
@@ -321,7 +384,9 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
         variables.AUDIO_NAME = active.audioName;
       }
     }
-  } else if (active.audioS3Url && active.audioName) {
+  }
+  // Priority 3: Static pre-recorded audio
+  else if (active.audioS3Url && active.audioName) {
     variables.AUDIO_URL = active.audioS3Url;
     variables.AUDIO_NAME = active.audioName;
   }
@@ -336,6 +401,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
     context: "tts-broadcast",
     callerIdStr,
     audioUrl: variables.AUDIO_URL || null,
+    audioUrls: audioUrls, // multi-segment audio URLs for PBX agent to concatenate
     audioName: variables.AUDIO_NAME || null,
     variables,
     status: "pending",

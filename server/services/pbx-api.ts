@@ -52,6 +52,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         context: c.context,
         callerIdStr: c.callerIdStr,
         audioUrl: c.audioUrl,
+        audioUrls: c.audioUrls || null, // ordered list of audio URLs for multi-segment scripts
         audioName: c.audioName,
         variables: c.variables || {},
         priority: c.priority,

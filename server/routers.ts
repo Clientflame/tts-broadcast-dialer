@@ -10,6 +10,8 @@ import { generateTTS, TTS_VOICES, generateVoiceSample, GOOGLE_TTS_VOICES, genera
 // import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
 import { invokeLLM } from "./_core/llm";
+import { generateScriptPreview } from "./services/script-audio";
+import type { ScriptSegment } from "../drizzle/schema";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
 
@@ -352,6 +354,8 @@ export const appRouter = router({
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
       pacingMaxConcurrent: z.number().min(1).max(100).optional(),
+      scriptId: z.number().optional(),
+      callbackNumber: z.string().max(20).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -389,6 +393,8 @@ export const appRouter = router({
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
       pacingMaxConcurrent: z.number().min(1).max(100).optional(),
+      scriptId: z.number().optional(),
+      callbackNumber: z.string().max(20).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id, ctx.user.id);
@@ -1044,6 +1050,106 @@ Return ONLY the message text, nothing else.`;
         { key: "settings.view", label: "View Settings", category: "System" },
         { key: "settings.manage", label: "Manage Settings", category: "System" },
       ];
+    }),
+  }),
+
+  // ─── Call Scripts ────────────────────────────────────────────────────────
+  callScripts: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getCallScripts(ctx.user.id);
+    }),
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+      const script = await db.getCallScript(input.id, ctx.user.id);
+      if (!script) throw new TRPCError({ code: "NOT_FOUND" });
+      return script;
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      callbackNumber: z.string().max(20).optional(),
+      segments: z.array(z.object({
+        id: z.string(),
+        type: z.enum(["tts", "recorded"]),
+        position: z.number(),
+        text: z.string().optional(),
+        voice: z.string().optional(),
+        provider: z.enum(["openai", "google"]).optional(),
+        speed: z.string().optional(),
+        audioFileId: z.number().optional(),
+        audioName: z.string().optional(),
+        audioUrl: z.string().optional(),
+      })).min(1).max(20),
+    })).mutation(async ({ ctx, input }) => {
+      // Validate max 2 recorded segments
+      const recordedCount = input.segments.filter(s => s.type === "recorded").length;
+      if (recordedCount > 2) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Maximum 2 recorded audio segments allowed per script" });
+      }
+      const result = await db.createCallScript({
+        userId: ctx.user.id,
+        name: input.name,
+        description: input.description || null,
+        callbackNumber: input.callbackNumber || null,
+        segments: input.segments as ScriptSegment[],
+        status: "active",
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.create", resource: "callScript", resourceId: result.id });
+      return result;
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      callbackNumber: z.string().max(20).optional(),
+      segments: z.array(z.object({
+        id: z.string(),
+        type: z.enum(["tts", "recorded"]),
+        position: z.number(),
+        text: z.string().optional(),
+        voice: z.string().optional(),
+        provider: z.enum(["openai", "google"]).optional(),
+        speed: z.string().optional(),
+        audioFileId: z.number().optional(),
+        audioName: z.string().optional(),
+        audioUrl: z.string().optional(),
+      })).min(1).max(20).optional(),
+      status: z.enum(["draft", "active", "archived"]).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      if (data.segments) {
+        const recordedCount = data.segments.filter(s => s.type === "recorded").length;
+        if (recordedCount > 2) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Maximum 2 recorded audio segments allowed per script" });
+        }
+      }
+      await db.updateCallScript(id, ctx.user.id, data as any);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteCallScript(input.id, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.delete", resource: "callScript", resourceId: input.id });
+      return { success: true };
+    }),
+    preview: protectedProcedure.input(z.object({
+      segments: z.array(z.object({
+        id: z.string(),
+        type: z.enum(["tts", "recorded"]),
+        position: z.number(),
+        text: z.string().optional(),
+        voice: z.string().optional(),
+        provider: z.enum(["openai", "google"]).optional(),
+        speed: z.string().optional(),
+        audioFileId: z.number().optional(),
+        audioName: z.string().optional(),
+        audioUrl: z.string().optional(),
+      })).min(1).max(20),
+      callbackNumber: z.string().optional(),
+    })).mutation(async ({ input }) => {
+      const result = await generateScriptPreview({
+        segments: input.segments as ScriptSegment[],
+        callbackNumber: input.callbackNumber,
+      });
+      return result;
     }),
   }),
 

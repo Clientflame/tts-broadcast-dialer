@@ -112,3 +112,14 @@
 - [x] Update TTS service to support Google TTS API
 - [x] Improve TTS provider selection UX - provider badges in audio table, toggle buttons in voice selectors
 - [x] Owner notifications - campaign completion (with stats), agent offline detection (2-min heartbeat threshold)
+- [x] Call Script Builder - mixed TTS/recorded audio segments per call
+- [x] Call scripts database schema (scripts table with ordered segments)
+- [x] Multi-segment audio generation (PBX agent concatenates TTS + recorded segments via audioUrls array)
+- [x] Merge fields: {{first_name}}, {{last_name}}, {{callback_number}} in TTS segments
+- [x] tRPC endpoints for script CRUD and audio preview
+- [x] Update dialer engine to generate multi-segment audio per contact using scripts
+- [x] Script Builder UI (add TTS segments, add recorded audio, reorder, drag up/down)
+- [x] Integrate script selection into Campaign create/edit forms (3-way audio source toggle)
+- [x] Max 2 recorded audio segments per script (enforced in UI and backend)
+- [x] Callback number field on campaigns for {{callback_number}} merge field
+- [x] Vitest tests for call scripts CRUD (9 tests)

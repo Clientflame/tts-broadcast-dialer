@@ -145,6 +145,9 @@ export const campaigns = mysqlTable("campaigns", {
   usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
+  // Call Script (mixed TTS + recorded segments)
+  scriptId: int("scriptId"),
+  callbackNumber: varchar("callbackNumber", { length: 20 }),
   // Call pacing
   pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
   pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
@@ -335,6 +338,7 @@ export const callQueue = mysqlTable("call_queue", {
   context: varchar("context", { length: 100 }).default("tts-broadcast").notNull(),
   callerIdStr: varchar("callerIdStr", { length: 255 }),
   audioUrl: text("audioUrl"),
+  audioUrls: json("audioUrls").$type<string[]>(), // ordered list of audio URLs for multi-segment scripts
   audioName: varchar("audioName", { length: 255 }),
   variables: json("variables").$type<Record<string, string>>(),
   status: varchar("status", { length: 20 }).default("pending").notNull(), // pending, claimed, dialing, completed, failed
@@ -366,3 +370,38 @@ export const pbxAgents = mysqlTable("pbx_agents", {
 
 export type PbxAgent = typeof pbxAgents.$inferSelect;
 export type InsertPbxAgent = typeof pbxAgents.$inferInsert;
+
+// ─── Call Scripts (Mixed TTS + Recorded Audio) ─────────────────────────────
+export type ScriptSegment = {
+  id: string;           // unique segment ID (uuid)
+  type: "tts" | "recorded";
+  position: number;     // order in the script (0-based)
+  // TTS segment fields
+  text?: string;        // TTS text with merge fields: {{first_name}}, {{last_name}}, {{callback_number}}
+  voice?: string;       // TTS voice ID (OpenAI or Google)
+  provider?: "openai" | "google"; // TTS provider
+  speed?: string;       // TTS speed (e.g., "1.0")
+  // Recorded segment fields
+  audioFileId?: number; // reference to audio_files table
+  audioName?: string;   // display name of the recorded audio
+  audioUrl?: string;    // S3 URL of the recorded audio
+};
+
+export const callScripts = mysqlTable("call_scripts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  callbackNumber: varchar("callbackNumber", { length: 20 }),
+  segments: json("segments").$type<ScriptSegment[]>().notNull(),
+  // Constraints
+  maxRecordedSegments: int("maxRecordedSegments").default(2).notNull(),
+  // Metadata
+  estimatedDuration: int("estimatedDuration"), // estimated total duration in seconds
+  status: mysqlEnum("status", ["draft", "active", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CallScript = typeof callScripts.$inferSelect;
+export type InsertCallScript = typeof callScripts.$inferInsert;
