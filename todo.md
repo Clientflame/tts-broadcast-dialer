@@ -86,9 +86,16 @@
 - [x] Update dialer engine to queue calls instead of originating via AMI
 - [x] Update Quick Test to use the new queue-based approach
 - [x] Remove outbound AMI connection dependency
-- [ ] Deploy PBX agent to FreePBX as systemd service
-- [ ] Test end-to-end Quick Test and campaign calls with new architecture
+- [x] Deploy PBX agent to FreePBX as systemd service
+- [x] Test end-to-end Quick Test and campaign calls with new architecture
 - [x] PBX Agent management UI - register/delete agents, view status, copy API key
 - [x] tRPC endpoints for agent registration, deletion, listing, and queue stats
 - [x] FreePBX Integration page redesigned with agent management and installation guide
 - [x] Improved one-click copy-to-clipboard button for PBX agent API key with visual feedback
+- [x] Register PBX agent in web app and get API key
+- [x] SSH into FreePBX and deploy PBX agent service
+- [x] Verify PBX agent shows online in web app
+- [x] Fix AMI event monitor not catching OriginateResponse/Hangup events (ActionID-based matching)
+- [x] Fix call queue re-polling same call (ActionID matching + proper result reporting)
+- [x] Fix PBX agent AMI banner read bug (_read_banner method added)
+- [x] Fix User-Agent header for Cloudflare compatibility

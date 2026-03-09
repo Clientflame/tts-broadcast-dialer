@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, status, result FROM call_queue ORDER BY id DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, status, result FROM call_queue ORDER BY id DESC;",
+  "rows": [
+    {
+      "id": "2",
+      "status": "completed",
+      "result": "answered"
+    },
+    {
+      "id": "1",
+      "status": "failed",
+      "result": "failed"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tresult\n2\tcompleted\tanswered\n1\tfailed\tfailed\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

@@ -1,0 +1,31 @@
+{
+  "query": "SELECT * FROM call_queue ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT * FROM call_queue ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "1",
+      "campaignId": "NULL",
+      "callLogId": "NULL",
+      "phoneNumber": "4074551177",
+      "channel": "PJSIP/4074551177@vitel-outbound",
+      "context": "tts-broadcast",
+      "callerIdStr": "NULL",
+      "audioUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3",
+      "audioName": "quicktest_1",
+      "variables": "{\"AUDIO_NAME\": \"quicktest_1\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\"}",
+      "status": "claimed",
+      "priority": "1",
+      "claimedBy": "agent-5041b2f9",
+      "claimedAt": "1773070231973",
+      "result": "NULL",
+      "resultDetails": "NULL",
+      "createdAt": "2026-03-09 15:02:15",
+      "updatedAt": "2026-03-09 15:30:31"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tcampaignId\tcallLogId\tphoneNumber\tchannel\tcontext\tcallerIdStr\taudioUrl\taudioName\tvariables\tstatus\tpriority\tclaimedBy\tclaimedAt\tresult\tresultDetails\tcreatedAt\tupdatedAt\n1\t1\tNULL\tNULL\t4074551177\tPJSIP/4074551177@vitel-outbound\ttts-broadcast\tNULL\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\tquicktest_1\t{\"AUDIO_NAME\": \"quicktest_1\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/xRwScwl_y161e5NKjKoAb-Test_Audio.mp3\"}\tclaimed\t1\tagent-5041b2f9\t1773070231973\tNULL\tNULL\t2026-03-09 15:02:15\t2026-03-09 15:30:31\n",
+  "stderr": "",
+  "execution_time_ms": 64
+}

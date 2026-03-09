@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, status, result, phoneNumber FROM call_queue;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, status, result, phoneNumber FROM call_queue;",
+  "rows": [
+    {
+      "id": "1",
+      "status": "completed",
+      "result": "answered",
+      "phoneNumber": "4074551177"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tresult\tphoneNumber\n1\tcompleted\tanswered\t4074551177\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

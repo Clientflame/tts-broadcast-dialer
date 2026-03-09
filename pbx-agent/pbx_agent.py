@@ -18,6 +18,7 @@ import logging
 import hashlib
 import subprocess
 import threading
+import queue
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
@@ -48,7 +49,7 @@ logging.basicConfig(
 log = logging.getLogger("pbx-agent")
 
 # ─── Active call tracking ───────────────────────────────────────────────────
-active_calls = {}  # channel -> { queue_id, start_time, phone_number }
+active_calls = {}  # queue_id -> { channel, start_time, phone_number }
 active_calls_lock = threading.Lock()
 
 
@@ -59,6 +60,7 @@ def api_request(endpoint, method="GET", data=None):
     headers = {
         "Authorization": f"Bearer {CONFIG['api_key']}",
         "Content-Type": "application/json",
+        "User-Agent": "PBX-Agent/1.0",
     }
 
     body = None
@@ -84,13 +86,28 @@ def api_request(endpoint, method="GET", data=None):
 
 # ─── AMI Connection ─────────────────────────────────────────────────────────
 class AMIConnection:
-    """Simple AMI client for local Asterisk connection."""
+    """
+    AMI client with a dedicated reader thread.
+    
+    Architecture:
+    - A single reader thread continuously reads from the socket and dispatches
+      messages to either the action_response queue (for command responses) or
+      the event_queue (for async events like OriginateResponse, Hangup).
+    - send_action() sends a command and waits on action_response queue.
+    - The event monitor reads from event_queue.
+    
+    This prevents the race condition where events get consumed by send_action.
+    """
 
     def __init__(self):
         self.sock = None
         self.connected = False
-        self.lock = threading.Lock()
+        self.send_lock = threading.Lock()
         self._recv_buffer = ""
+        self.action_response = queue.Queue()
+        self.event_queue = queue.Queue()
+        self._reader_thread = None
+        self._waiting_for_response = False
 
     def connect(self):
         """Connect and authenticate to AMI."""
@@ -99,11 +116,18 @@ class AMIConnection:
             self.sock.settimeout(10)
             self.sock.connect((CONFIG["ami_host"], CONFIG["ami_port"]))
 
-            # Read banner
-            banner = self._read_response()
+            # Read banner (single line, not terminated by blank line)
+            banner = self._read_line()
             if not banner:
                 raise Exception("No AMI banner received")
-            log.info(f"AMI banner: {banner.get('_raw', '').strip()}")
+            log.info(f"AMI banner: {banner.strip()}")
+
+            # Start the reader thread before login so it can dispatch the response
+            self.connected = True
+            self._reader_thread = threading.Thread(
+                target=self._reader_loop, daemon=True
+            )
+            self._reader_thread.start()
 
             # Login
             result = self.send_action({
@@ -113,7 +137,6 @@ class AMIConnection:
             })
 
             if result and result.get("Response") == "Success":
-                self.connected = True
                 log.info("AMI authenticated successfully")
                 return True
             else:
@@ -136,57 +159,139 @@ class AMIConnection:
                 pass
             self.sock = None
 
-    def send_action(self, action):
-        """Send an AMI action and read the response."""
-        with self.lock:
-            if not self.sock:
-                return None
-            try:
-                # Build the AMI message
-                lines = []
-                for key, value in action.items():
-                    if key == "Variable" and isinstance(value, dict):
-                        # Send each variable on its own line
-                        for vk, vv in value.items():
-                            lines.append(f"Variable: {vk}={vv}")
-                    else:
-                        lines.append(f"{key}: {value}")
-                msg = "\r\n".join(lines) + "\r\n\r\n"
-                self.sock.sendall(msg.encode("utf-8"))
-                return self._read_response()
-            except Exception as e:
-                log.error(f"AMI send error: {e}")
-                self.connected = False
-                return None
-
-    def _read_response(self):
-        """Read a single AMI response (up to blank line)."""
+    def _read_line(self):
+        """Read a single line from the socket (for banner)."""
         try:
-            data = {}
-            raw_lines = []
             while True:
                 chunk = self.sock.recv(4096).decode("utf-8")
                 if not chunk:
                     return None
                 self._recv_buffer += chunk
-                while "\r\n" in self._recv_buffer:
+                if "\r\n" in self._recv_buffer:
                     line, self._recv_buffer = self._recv_buffer.split("\r\n", 1)
-                    raw_lines.append(line)
-                    if line == "":
-                        # End of response
-                        data["_raw"] = "\r\n".join(raw_lines)
-                        return data
-                    if ": " in line:
-                        key, value = line.split(": ", 1)
-                        data[key] = value
+                    return line
         except socket.timeout:
             return None
         except Exception as e:
-            log.error(f"AMI read error: {e}")
+            log.error(f"AMI read line error: {e}")
             return None
 
+    def _reader_loop(self):
+        """
+        Dedicated reader thread: reads all AMI messages and dispatches them.
+        Action responses go to action_response queue.
+        Events go to event_queue.
+        """
+        log.info("AMI reader thread started")
+        self.sock.settimeout(1)  # Short timeout for responsive shutdown
+
+        while self.connected:
+            try:
+                msg = self._read_message()
+                if msg is None:
+                    continue
+
+                # Determine if this is an event or a response
+                if "Event" in msg:
+                    self.event_queue.put(msg)
+                elif "Response" in msg:
+                    # If someone is waiting for a response, send it there
+                    if self._waiting_for_response:
+                        self.action_response.put(msg)
+                    else:
+                        # Unsolicited response (shouldn't happen often)
+                        log.debug(f"Unsolicited response: {msg.get('Response')}")
+                else:
+                    # Unknown message type
+                    log.debug(f"Unknown AMI message: {msg}")
+
+            except Exception as e:
+                if self.connected:
+                    log.error(f"Reader thread error: {e}")
+                time.sleep(0.1)
+
+        log.info("AMI reader thread stopped")
+
+    def _read_message(self):
+        """Read a single AMI message (terminated by blank line)."""
+        data = {}
+        raw_lines = []
+
+        # First check if we already have a complete message in the buffer
+        while True:
+            if "\r\n" in self._recv_buffer:
+                line, self._recv_buffer = self._recv_buffer.split("\r\n", 1)
+                raw_lines.append(line)
+                if line == "":
+                    # End of message
+                    if not data:
+                        # Empty message, skip
+                        raw_lines = []
+                        continue
+                    data["_raw"] = "\r\n".join(raw_lines)
+                    return data
+                if ": " in line:
+                    key, value = line.split(": ", 1)
+                    data[key] = value
+            else:
+                # Need more data from socket
+                try:
+                    chunk = self.sock.recv(4096).decode("utf-8")
+                    if not chunk:
+                        return None
+                    self._recv_buffer += chunk
+                except socket.timeout:
+                    # If we have partial data, keep waiting; otherwise return None
+                    if raw_lines:
+                        continue
+                    return None
+                except Exception:
+                    return None
+
+    def send_action(self, action):
+        """Send an AMI action and wait for the response."""
+        with self.send_lock:
+            if not self.sock:
+                return None
+            try:
+                # Drain any stale responses
+                while not self.action_response.empty():
+                    try:
+                        self.action_response.get_nowait()
+                    except queue.Empty:
+                        break
+
+                # Build the AMI message
+                lines = []
+                for key, value in action.items():
+                    if key == "Variable" and isinstance(value, dict):
+                        for vk, vv in value.items():
+                            lines.append(f"Variable: {vk}={vv}")
+                    else:
+                        lines.append(f"{key}: {value}")
+                msg = "\r\n".join(lines) + "\r\n\r\n"
+
+                self._waiting_for_response = True
+                self.sock.sendall(msg.encode("utf-8"))
+
+                # Wait for response (up to 10 seconds)
+                try:
+                    result = self.action_response.get(timeout=10)
+                    return result
+                except queue.Empty:
+                    log.error("Timeout waiting for AMI response")
+                    return None
+                finally:
+                    self._waiting_for_response = False
+
+            except Exception as e:
+                log.error(f"AMI send error: {e}")
+                self._waiting_for_response = False
+                self.connected = False
+                return None
+
     def originate(self, channel, context, exten, priority, variables=None,
-                  caller_id=None, timeout=30000, async_mode=True):
+                  caller_id=None, timeout=30000, async_mode=True, action_id=None):
         """Originate a call."""
         action = {
             "Action": "Originate",
@@ -197,6 +302,8 @@ class AMIConnection:
             "Timeout": str(timeout),
             "Async": "true" if async_mode else "false",
         }
+        if action_id:
+            action["ActionID"] = action_id
         if caller_id:
             action["CallerID"] = caller_id
         if variables:
@@ -226,7 +333,7 @@ def prepare_audio(audio_url, audio_name):
     tmp_path = os.path.join(audio_dir, f"{audio_name}_tmp.mp3")
     try:
         log.info(f"Downloading audio: {audio_url[:80]}...")
-        req = Request(audio_url)
+        req = Request(audio_url, headers={"User-Agent": "PBX-Agent/1.0"})
         with urlopen(req, timeout=30) as resp:
             with open(tmp_path, "wb") as f:
                 f.write(resp.read())
@@ -289,7 +396,8 @@ def process_call(ami, call_data):
             report_result(queue_id, "failed", {"error": "Audio preparation failed"})
             return
 
-    # Originate the call
+    # Originate the call with ActionID for reliable event matching
+    action_id = f"call-{queue_id}"
     result = ami.originate(
         channel=channel,
         context=context,
@@ -299,16 +407,19 @@ def process_call(ami, call_data):
         caller_id=caller_id,
         timeout=30000,
         async_mode=True,
+        action_id=action_id,
     )
 
     if result and result.get("Response") != "Error":
         log.info(f"Call {queue_id} originated to {phone_number}")
         with active_calls_lock:
-            active_calls[channel] = {
-                "queue_id": queue_id,
+            active_calls[queue_id] = {
+                "channel": channel,
+                "action_id": action_id,
                 "start_time": time.time(),
                 "phone_number": phone_number,
                 "campaign_id": call_data.get("campaignId"),
+                "actual_channel": None,  # Will be set from OriginateResponse
             }
     else:
         error_msg = result.get("Message", "Unknown AMI error") if result else "No AMI response"
@@ -332,100 +443,140 @@ def report_result(queue_id, result, details=None):
 
 # ─── AMI Event Monitor ──────────────────────────────────────────────────────
 def monitor_ami_events(ami):
-    """Background thread to monitor AMI events for call status updates."""
+    """Background thread to process AMI events from the event queue."""
     log.info("AMI event monitor started")
 
     while ami.connected:
         try:
-            response = ami._read_response()
-            if not response:
-                time.sleep(0.1)
+            # Block for up to 1 second waiting for events
+            try:
+                event_data = ami.event_queue.get(timeout=1)
+            except queue.Empty:
                 continue
 
-            event = response.get("Event", "")
+            event = event_data.get("Event", "")
 
             if event == "OriginateResponse":
-                channel = response.get("Channel", "")
-                reason = response.get("Reason", "")
-                response_val = response.get("Response", "")
+                channel = event_data.get("Channel", "")
+                reason = event_data.get("Reason", "")
+                response_val = event_data.get("Response", "")
+                action_id = event_data.get("ActionID", "")
+                uniqueid = event_data.get("Uniqueid", "")
 
-                # Find the matching active call
-                base_channel = channel.split(";")[0] if ";" in channel else channel
+                log.info(f"OriginateResponse: channel={channel}, reason={reason}, response={response_val}, actionId={action_id}")
+
+                # Match by ActionID (most reliable) or fall back to channel matching
+                matched_queue_id = None
                 with active_calls_lock:
-                    call_info = None
-                    for ch, info in list(active_calls.items()):
-                        if ch in channel or channel.startswith(ch.split("@")[0]):
-                            call_info = info
-                            break
+                    # First try ActionID match (format: call-{queue_id})
+                    if action_id and action_id.startswith("call-"):
+                        try:
+                            qid = int(action_id.split("-", 1)[1])
+                            if qid in active_calls:
+                                matched_queue_id = qid
+                        except (ValueError, IndexError):
+                            pass
 
-                if call_info:
-                    queue_id = call_info["queue_id"]
-                    duration = time.time() - call_info["start_time"]
+                    # Fallback: match by trunk name in channel
+                    if matched_queue_id is None:
+                        trunk = CONFIG["trunk_name"]
+                        if trunk in channel:
+                            # Find any active call using this trunk
+                            for qid, info in list(active_calls.items()):
+                                if trunk in info["channel"]:
+                                    matched_queue_id = qid
+                                    break
 
-                    if response_val == "Success":
-                        log.info(f"Call {queue_id} answered (reason: {reason})")
-                        report_result(queue_id, "answered", {
-                            "duration": int(duration),
-                            "answeredAt": int(time.time() * 1000),
-                            "asteriskChannel": channel,
-                        })
-                    else:
-                        # Map reason codes
-                        reason_map = {
-                            "1": "no-answer",
-                            "3": "no-answer",
-                            "5": "busy",
-                            "8": "congestion",
-                        }
-                        status = reason_map.get(reason, "failed")
-                        log.info(f"Call {queue_id} {status} (reason: {reason})")
-                        report_result(queue_id, status, {
-                            "duration": int(duration),
-                            "reason": reason,
-                        })
-
-                    # Remove from active calls
+                if matched_queue_id is not None:
                     with active_calls_lock:
-                        for ch in list(active_calls.keys()):
-                            if active_calls[ch]["queue_id"] == queue_id:
-                                del active_calls[ch]
-                                break
+                        call_info = active_calls.get(matched_queue_id)
+                    if call_info:
+                        duration = time.time() - call_info["start_time"]
+
+                        if response_val == "Success":
+                            log.info(f"Call {matched_queue_id} answered (reason: {reason})")
+                            # Store the actual channel for Hangup matching
+                            with active_calls_lock:
+                                if matched_queue_id in active_calls:
+                                    active_calls[matched_queue_id]["answered"] = True
+                                    active_calls[matched_queue_id]["answered_at"] = time.time()
+                                    active_calls[matched_queue_id]["actual_channel"] = channel
+                        else:
+                            # Call failed (no answer, busy, congestion)
+                            reason_map = {
+                                "1": "no-answer",
+                                "3": "no-answer",
+                                "5": "busy",
+                                "8": "congestion",
+                            }
+                            status = reason_map.get(reason, "failed")
+                            log.info(f"Call {matched_queue_id} {status} (reason: {reason})")
+                            report_result(matched_queue_id, status, {
+                                "duration": int(duration),
+                                "reason": reason,
+                            })
+                            with active_calls_lock:
+                                active_calls.pop(matched_queue_id, None)
+                else:
+                    log.warning(f"OriginateResponse for unknown channel: {channel} (actionId={action_id})")
 
             elif event == "Hangup":
-                channel = response.get("Channel", "")
-                cause = response.get("Cause", "")
-                cause_txt = response.get("Cause-txt", "")
+                channel = event_data.get("Channel", "")
+                cause = event_data.get("Cause", "")
+                cause_txt = event_data.get("Cause-txt", "")
 
+                log.info(f"Hangup: channel={channel}, cause={cause} ({cause_txt})")
+
+                # Match by actual_channel (set from OriginateResponse) or trunk name
+                matched_queue_id = None
                 with active_calls_lock:
-                    call_info = None
-                    matched_ch = None
-                    for ch, info in active_calls.items():
-                        if ch in channel or channel.startswith(ch.split("@")[0]):
-                            call_info = info
-                            matched_ch = ch
+                    for qid, info in list(active_calls.items()):
+                        actual_ch = info.get("actual_channel", "")
+                        # Match exact channel or base channel (strip ;1, ;2 suffixes)
+                        base_event_ch = channel.split(";")[0]
+                        base_actual_ch = actual_ch.split(";")[0] if actual_ch else ""
+                        if (actual_ch and (base_actual_ch == base_event_ch or actual_ch in channel or channel in actual_ch)):
+                            matched_queue_id = qid
+                            break
+                        # Fallback: trunk name match when only one active call
+                        trunk = CONFIG["trunk_name"]
+                        if trunk in channel and trunk in info["channel"]:
+                            matched_queue_id = qid
                             break
 
-                if call_info and matched_ch:
-                    queue_id = call_info["queue_id"]
-                    duration = time.time() - call_info["start_time"]
-
-                    log.info(f"Call {queue_id} hung up (cause: {cause} - {cause_txt})")
-                    report_result(queue_id, "completed", {
-                        "duration": int(duration),
-                        "hangupCause": cause,
-                        "hangupCauseText": cause_txt,
-                    })
-
+                if matched_queue_id is not None:
                     with active_calls_lock:
-                        if matched_ch in active_calls:
-                            del active_calls[matched_ch]
+                        call_info = active_calls.pop(matched_queue_id, None)
 
-        except socket.timeout:
-            continue
+                    if call_info:
+                        duration = time.time() - call_info["start_time"]
+                        was_answered = call_info.get("answered", False)
+
+                        if was_answered:
+                            log.info(f"Call {matched_queue_id} completed (duration: {int(duration)}s)")
+                            report_result(matched_queue_id, "answered", {
+                                "duration": int(duration),
+                                "answeredAt": int(call_info.get("answered_at", time.time()) * 1000),
+                                "hangupCause": cause,
+                                "hangupCauseText": cause_txt,
+                                "asteriskChannel": channel,
+                            })
+                        else:
+                            log.info(f"Call {matched_queue_id} hung up before answer (cause: {cause})")
+                            report_result(matched_queue_id, "failed", {
+                                "duration": int(duration),
+                                "hangupCause": cause,
+                                "hangupCauseText": cause_txt,
+                            })
+
+            elif event in ("Newchannel", "Newstate", "Dial", "Bridge"):
+                # Log interesting events for debugging
+                log.debug(f"Event {event}: {event_data.get('Channel', '')} {event_data.get('ChannelState', '')}")
+
         except Exception as e:
             if ami.connected:
                 log.error(f"Event monitor error: {e}")
-            time.sleep(1)
+            time.sleep(0.5)
 
     log.info("AMI event monitor stopped")
 
@@ -502,11 +653,11 @@ def main():
         # Check for stale active calls (no event received in 5 minutes)
         with active_calls_lock:
             stale_threshold = time.time() - 300
-            for ch, info in list(active_calls.items()):
+            for qid, info in list(active_calls.items()):
                 if info["start_time"] < stale_threshold:
-                    log.warning(f"Stale call detected: {ch} (queue_id: {info['queue_id']})")
-                    report_result(info["queue_id"], "failed", {"error": "Call timed out"})
-                    del active_calls[ch]
+                    log.warning(f"Stale call detected: queue_id={qid}")
+                    report_result(qid, "failed", {"error": "Call timed out"})
+                    del active_calls[qid]
 
         time.sleep(CONFIG["poll_interval"])
 

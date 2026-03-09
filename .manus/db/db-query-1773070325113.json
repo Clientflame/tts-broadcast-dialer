@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, status, phoneNumber, claimedBy, claimedAt, result, createdAt FROM call_queue ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, status, phoneNumber, claimedBy, claimedAt, result, createdAt FROM call_queue ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "status": "claimed",
+      "phoneNumber": "4074551177",
+      "claimedBy": "agent-5041b2f9",
+      "claimedAt": "1773070231973",
+      "result": "NULL",
+      "createdAt": "2026-03-09 15:02:15"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\tphoneNumber\tclaimedBy\tclaimedAt\tresult\tcreatedAt\n1\tclaimed\t4074551177\tagent-5041b2f9\t1773070231973\tNULL\t2026-03-09 15:02:15\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}
