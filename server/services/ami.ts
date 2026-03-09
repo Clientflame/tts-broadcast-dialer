@@ -50,6 +50,8 @@ class AMIClient extends EventEmitter {
 
       this.socket.on("connect", () => {
         this.connected = true;
+        // Clear the connection timeout once TCP is established
+        this.socket?.setTimeout(0);
         console.log("[AMI] Connected to", this.config.host);
       });
 
@@ -84,6 +86,16 @@ class AMIClient extends EventEmitter {
   }
 
   private processBuffer() {
+    // The AMI banner ("Asterisk Call Manager/x.x.x\r\n") is a single line
+    // terminated by \r\n, not \r\n\r\n like other messages. Handle it first.
+    const bannerMatch = this.buffer.match(/^Asterisk Call Manager\/[^\r\n]+\r\n/);
+    if (bannerMatch) {
+      console.log("[AMI] Received banner:", bannerMatch[0].trim());
+      this.buffer = this.buffer.substring(bannerMatch[0].length);
+      this.login();
+    }
+
+    // Process complete messages (terminated by \r\n\r\n)
     const messages = this.buffer.split("\r\n\r\n");
     this.buffer = messages.pop() || "";
 
@@ -91,13 +103,11 @@ class AMIClient extends EventEmitter {
       if (!msg.trim()) continue;
       const parsed = this.parseMessage(msg);
 
-      if (msg.includes("Asterisk Call Manager")) {
-        this.login();
-        continue;
-      }
-
       if (parsed.Response === "Success" && parsed.Message === "Authentication accepted") {
         this.authenticated = true;
+        // Ensure no lingering timeout kills the persistent connection
+        this.socket?.setTimeout(0);
+        console.log("[AMI] Authentication accepted");
         this.emit("authenticated");
         continue;
       }
@@ -233,23 +243,57 @@ class AMIClient extends EventEmitter {
 }
 
 let amiClient: AMIClient | null = null;
+let amiConnecting = false;
+
+function getAMIConfig(): AMIConfig {
+  return {
+    host: process.env.FREEPBX_HOST || "45.77.75.198",
+    port: parseInt(process.env.FREEPBX_AMI_PORT || "5038"),
+    username: process.env.FREEPBX_AMI_USER || "broadcast_dialer",
+    password: process.env.FREEPBX_AMI_PASSWORD || "",
+  };
+}
 
 export function getAMIClient(): AMIClient {
   if (!amiClient) {
-    amiClient = new AMIClient({
-      host: process.env.FREEPBX_HOST || "45.77.75.198",
-      port: parseInt(process.env.FREEPBX_AMI_PORT || "5038"),
-      username: process.env.FREEPBX_AMI_USER || "broadcast_dialer",
-      password: process.env.FREEPBX_AMI_PASSWORD || "",
-    });
+    amiClient = new AMIClient(getAMIConfig());
   }
   return amiClient;
 }
 
+/** Attempt to connect if not already connected (non-blocking) */
+export function ensureAMIConnected(): void {
+  if (amiConnecting) return;
+  const client = getAMIClient();
+  if (client.isConnected()) return;
+  amiConnecting = true;
+  client.connect()
+    .then(() => {
+      console.log("[AMI] Successfully connected and authenticated");
+      amiConnecting = false;
+    })
+    .catch((err) => {
+      console.error("[AMI] Connection failed:", (err as Error).message);
+      amiConnecting = false;
+    });
+}
+
 export function getAMIStatus(): { connected: boolean; host: string; port: number } {
+  // Trigger a connection attempt if not connected
+  if (!amiClient?.isConnected()) {
+    ensureAMIConnected();
+  }
   return {
     connected: amiClient?.isConnected() ?? false,
     host: process.env.FREEPBX_HOST || "45.77.75.198",
     port: parseInt(process.env.FREEPBX_AMI_PORT || "5038"),
   };
+}
+
+// Auto-connect on module load if credentials are available
+if (process.env.FREEPBX_AMI_PASSWORD) {
+  setTimeout(() => {
+    console.log("[AMI] Auto-connecting to FreePBX at", process.env.FREEPBX_HOST || "45.77.75.198");
+    ensureAMIConnected();
+  }, 2000);
 }

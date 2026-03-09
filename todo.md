@@ -19,3 +19,4 @@
 - [x] Audio library page for managing TTS files
 - [x] Settings page for FreePBX connection config
 - [x] Vitest unit tests for backend procedures
+- [x] Fix FreePBX AMI connection - ensure credentials are set and AMI connects on startup
