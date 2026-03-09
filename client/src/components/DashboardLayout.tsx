@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -41,6 +41,7 @@ const menuItems = [
   { icon: DollarSign, label: "Cost Estimator", path: "/cost-estimator" },
   { icon: Download, label: "Reports", path: "/reports" },
   { icon: Shield, label: "Audit Log", path: "/audit" },
+  { icon: UserCog, label: "User Management", path: "/users" },
   { icon: Phone, label: "FreePBX", path: "/freepbx" },
 ];
 

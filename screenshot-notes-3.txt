@@ -1,0 +1,6 @@
+Dashboard looks great:
+- FreePBX Connected (green badge) on port 25038
+- Live Dialer Status panel with Active Calls, Leads in Hopper, Concurrent Limit
+- All nav items present including User Management
+- Stats showing 2 campaigns, 1 contact list, 0 calls
+- Need to scroll down to see User Management nav item

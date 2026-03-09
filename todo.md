@@ -47,3 +47,9 @@
 - [x] AI Message Generator - draft broadcast messages from brief description using AI
 - [x] Campaign Cost Estimator - estimate costs based on trunk rates and OpenAI TTS API costs
 - [ ] Publish and whitelist production IP
+- [x] User management - admin can create/edit/disable users
+- [x] User groups with granular permissions (campaigns, contacts, audio, caller-ids, reports, admin)
+- [x] Email/password login as alternative to OAuth
+- [x] Password hashing with bcrypt and secure session management
+- [x] Permission-based UI - hide/disable features user doesn't have access to
+- [x] Permanent AMI connection solution - socat proxy on port 25038 for production stability

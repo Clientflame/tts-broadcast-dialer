@@ -18,6 +18,8 @@ import Analytics from "./pages/Analytics";
 import CostEstimator from "./pages/CostEstimator";
 import AiGenerator from "./pages/AiGenerator";
 import Reports from "./pages/Reports";
+import UserManagement from "./pages/UserManagement";
+import Login from "./pages/Login";
 
 function Router() {
   return (
@@ -36,6 +38,8 @@ function Router() {
       <Route path={"/cost-estimator"} component={CostEstimator} />
       <Route path={"/reports"} component={Reports} />
       <Route path={"/freepbx"} component={FreePBX} />
+      <Route path={"/users"} component={UserManagement} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

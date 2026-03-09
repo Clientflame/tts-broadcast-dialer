@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
@@ -9,6 +9,8 @@ import { generateTTS, TTS_VOICES, generateVoiceSample } from "./services/tts";
 import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
 import { invokeLLM } from "./_core/llm";
+import bcrypt from "bcryptjs";
+import { sdk } from "./_core/sdk";
 
 // US area code to timezone mapping (simplified)
 const AREA_CODE_TIMEZONE: Record<string, string> = {
@@ -767,6 +769,220 @@ Return ONLY the message text, nothing else.`;
       ]);
       const csv = [headers.join(","), ...rows.map((r: any[]) => r.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
       return { csv, filename: `all_campaigns_report_${new Date().toISOString().split("T")[0]}.csv` };
+    }),
+  }),
+
+  // ─── User Management (Admin) ──────────────────────────────────────────────
+  userManagement: router({
+    list: adminProcedure.query(async () => {
+      const allUsers = await db.getAllUsers();
+      // Get group memberships for each user
+      const usersWithGroups = await Promise.all(allUsers.map(async (u) => {
+        const groups = await db.getUserGroupMemberships(u.id);
+        return { ...u, groups: groups.map(g => ({ id: g.id, name: g.name })) };
+      }));
+      return usersWithGroups;
+    }),
+    updateRole: adminProcedure.input(z.object({
+      userId: z.number(),
+      role: z.enum(["user", "admin"]),
+    })).mutation(async ({ ctx, input }) => {
+      await db.updateUserRole(input.userId, input.role);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.updateRole", resource: "user", resourceId: input.userId, details: { newRole: input.role } });
+      return { success: true };
+    }),
+    addToGroup: adminProcedure.input(z.object({
+      userId: z.number(),
+      groupId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.addUserToGroup(input.userId, input.groupId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.addToGroup", resource: "user", resourceId: input.userId, details: { groupId: input.groupId } });
+      return { success: true };
+    }),
+    removeFromGroup: adminProcedure.input(z.object({
+      userId: z.number(),
+      groupId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.removeUserFromGroup(input.userId, input.groupId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.removeFromGroup", resource: "user", resourceId: input.userId, details: { groupId: input.groupId } });
+      return { success: true };
+    }),
+    getPermissions: protectedProcedure.input(z.object({ userId: z.number().optional() })).query(async ({ ctx, input }) => {
+      const targetUserId = input.userId ?? ctx.user.id;
+      // Non-admin can only check their own permissions
+      if (ctx.user.role !== "admin" && targetUserId !== ctx.user.id) {
+        throw new TRPCError({ code: "FORBIDDEN" });
+      }
+      const perms = await db.getUserPermissions(targetUserId);
+      return perms;
+    }),
+    createWithPassword: adminProcedure.input(z.object({
+      name: z.string().min(1).max(100),
+      email: z.string().email(),
+      password: z.string().min(8).max(100),
+      role: z.enum(["user", "admin"]).optional(),
+      groupIds: z.array(z.number()).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      // Check if email already exists
+      const existing = await db.getLocalAuthByEmail(input.email);
+      if (existing) throw new TRPCError({ code: "CONFLICT", message: "Email already registered" });
+      // Create user with a unique openId for local auth
+      const openId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      await db.upsertUser({ openId, name: input.name, email: input.email, loginMethod: "email", role: input.role || "user" });
+      const user = await db.getUserByOpenId(openId);
+      if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Create local auth record
+      const passwordHash = await bcrypt.hash(input.password, 12);
+      await db.createLocalAuth({ userId: user.id, email: input.email, passwordHash, isVerified: 1 });
+      // Add to groups
+      if (input.groupIds) {
+        for (const gid of input.groupIds) {
+          await db.addUserToGroup(user.id, gid);
+        }
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.create", resource: "user", resourceId: user.id, details: { email: input.email, method: "email" } });
+      return { success: true, userId: user.id };
+    }),
+  }),
+
+  // ─── User Groups ──────────────────────────────────────────────────────────
+  groups: router({
+    list: protectedProcedure.query(async () => {
+      return db.getUserGroups();
+    }),
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const group = await db.getUserGroup(input.id);
+      if (!group) throw new TRPCError({ code: "NOT_FOUND" });
+      const members = await db.getGroupMembers(input.id);
+      return { ...group, members };
+    }),
+    create: adminProcedure.input(z.object({
+      name: z.string().min(1).max(100),
+      description: z.string().max(500).optional(),
+      permissions: z.record(z.string(), z.boolean()).optional(),
+      isDefault: z.boolean().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.createUserGroup({
+        name: input.name,
+        description: input.description || null,
+        permissions: input.permissions || {},
+        isDefault: input.isDefault ? 1 : 0,
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "group.create", resource: "group", resourceId: result?.id, details: { name: input.name } });
+      return { success: true, id: result?.id };
+    }),
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(100).optional(),
+      description: z.string().max(500).optional(),
+      permissions: z.record(z.string(), z.boolean()).optional(),
+      isDefault: z.boolean().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateUserGroup(id, {
+        ...data,
+        isDefault: data.isDefault !== undefined ? (data.isDefault ? 1 : 0) : undefined,
+      } as any);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "group.update", resource: "group", resourceId: id });
+      return { success: true };
+    }),
+    remove: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteUserGroup(input.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "group.delete", resource: "group", resourceId: input.id });
+      return { success: true };
+    }),
+  }),
+
+  // ─── Local Auth (Email/Password Login) ────────────────────────────────────
+  localAuth: router({
+    login: publicProcedure.input(z.object({
+      email: z.string().email(),
+      password: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      const authRecord = await db.getLocalAuthByEmail(input.email);
+      if (!authRecord) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      const valid = await bcrypt.compare(input.password, authRecord.passwordHash);
+      if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      const user = await db.getUserById(authRecord.userId);
+      if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "User account not found" });
+      // Create session token
+      const token = await sdk.createSessionToken(user.openId, { name: user.name || "" });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
+      await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+      await db.createAuditLog({ userId: user.id, userName: user.name || undefined, action: "auth.login", resource: "user", resourceId: user.id, details: { method: "email" } });
+      return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+    }),
+    changePassword: protectedProcedure.input(z.object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(8).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      const authRecord = await db.getLocalAuthByUserId(ctx.user.id);
+      if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "No password login configured for this account" });
+      const valid = await bcrypt.compare(input.currentPassword, authRecord.passwordHash);
+      if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Current password is incorrect" });
+      const newHash = await bcrypt.hash(input.newPassword, 12);
+      await db.updateLocalAuthPassword(ctx.user.id, newHash);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "auth.changePassword", resource: "user", resourceId: ctx.user.id });
+      return { success: true };
+    }),
+    resetPasswordRequest: publicProcedure.input(z.object({
+      email: z.string().email(),
+    })).mutation(async ({ input }) => {
+      const authRecord = await db.getLocalAuthByEmail(input.email);
+      if (!authRecord) return { success: true }; // Don't reveal if email exists
+      const token = `reset_${Date.now()}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+      const expiry = Date.now() + 3600000; // 1 hour
+      await db.setResetToken(input.email, token, expiry);
+      // In production, send email with reset link. For now, log it.
+      console.log(`[Auth] Password reset token for ${input.email}: ${token}`);
+      return { success: true };
+    }),
+    resetPassword: publicProcedure.input(z.object({
+      token: z.string().min(1),
+      newPassword: z.string().min(8).max(100),
+    })).mutation(async ({ input }) => {
+      const authRecord = await db.getLocalAuthByResetToken(input.token);
+      if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or expired reset token" });
+      if (authRecord.resetTokenExpiry && authRecord.resetTokenExpiry < Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Reset token has expired" });
+      }
+      const newHash = await bcrypt.hash(input.newPassword, 12);
+      await db.updateLocalAuthPassword(authRecord.userId, newHash);
+      await db.clearResetToken(authRecord.userId);
+      return { success: true };
+    }),
+  }),
+
+  // ─── Available Permissions (reference list) ───────────────────────────────
+  permissions: router({
+    list: protectedProcedure.query(() => {
+      return [
+        { key: "campaigns.view", label: "View Campaigns", category: "Campaigns" },
+        { key: "campaigns.create", label: "Create Campaigns", category: "Campaigns" },
+        { key: "campaigns.edit", label: "Edit Campaigns", category: "Campaigns" },
+        { key: "campaigns.delete", label: "Delete Campaigns", category: "Campaigns" },
+        { key: "campaigns.start", label: "Start/Stop Campaigns", category: "Campaigns" },
+        { key: "contacts.view", label: "View Contacts", category: "Contacts" },
+        { key: "contacts.create", label: "Create Contacts", category: "Contacts" },
+        { key: "contacts.edit", label: "Edit Contacts", category: "Contacts" },
+        { key: "contacts.delete", label: "Delete Contacts", category: "Contacts" },
+        { key: "contacts.import", label: "Import Contacts", category: "Contacts" },
+        { key: "audio.view", label: "View Audio Files", category: "Audio" },
+        { key: "audio.create", label: "Generate TTS Audio", category: "Audio" },
+        { key: "audio.delete", label: "Delete Audio Files", category: "Audio" },
+        { key: "callerIds.view", label: "View Caller IDs", category: "Caller IDs" },
+        { key: "callerIds.manage", label: "Manage Caller IDs", category: "Caller IDs" },
+        { key: "dnc.view", label: "View DNC List", category: "DNC" },
+        { key: "dnc.manage", label: "Manage DNC List", category: "DNC" },
+        { key: "reports.view", label: "View Reports", category: "Reports" },
+        { key: "reports.export", label: "Export Reports", category: "Reports" },
+        { key: "auditLog.view", label: "View Audit Log", category: "System" },
+        { key: "freepbx.view", label: "View FreePBX Status", category: "System" },
+        { key: "freepbx.manage", label: "Manage FreePBX Connection", category: "System" },
+        { key: "settings.view", label: "View Settings", category: "System" },
+        { key: "settings.manage", label: "Manage Settings", category: "System" },
+      ];
     }),
   }),
 

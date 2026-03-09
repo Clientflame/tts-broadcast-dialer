@@ -118,7 +118,7 @@ describe("dashboard.amiStatus", () => {
     expect(status).toHaveProperty("port");
     expect(typeof status.connected).toBe("boolean");
     expect(status.host).toBe("45.77.75.198");
-    expect(status.port).toBe(5038);
+    expect(status.port).toBe(parseInt(process.env.FREEPBX_AMI_PORT || "25038"));
   });
 });
 

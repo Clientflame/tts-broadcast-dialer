@@ -25,6 +25,47 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// ─── User Groups ────────────────────────────────────────────────────────────
+export const userGroups = mysqlTable("user_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  permissions: json("permissions").$type<Record<string, boolean>>(),
+  isDefault: int("isDefault").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UserGroup = typeof userGroups.$inferSelect;
+export type InsertUserGroup = typeof userGroups.$inferInsert;
+
+// ─── User Group Memberships ─────────────────────────────────────────────────
+export const userGroupMemberships = mysqlTable("user_group_memberships", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  groupId: int("groupId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type UserGroupMembership = typeof userGroupMemberships.$inferSelect;
+export type InsertUserGroupMembership = typeof userGroupMemberships.$inferInsert;
+
+// ─── Local Auth (Email/Password) ────────────────────────────────────────────
+export const localAuth = mysqlTable("local_auth", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  isVerified: int("isVerified").default(0).notNull(),
+  resetToken: varchar("resetToken", { length: 255 }),
+  resetTokenExpiry: bigint("resetTokenExpiry", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LocalAuth = typeof localAuth.$inferSelect;
+export type InsertLocalAuth = typeof localAuth.$inferInsert;
+
 // ─── Contact Lists ───────────────────────────────────────────────────────────
 export const contactLists = mysqlTable("contact_lists", {
   id: int("id").autoincrement().primaryKey(),

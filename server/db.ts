@@ -13,6 +13,9 @@ import {
   contactScores, InsertContactScore,
   costSettings, InsertCostSetting,
   callerIdRegions, InsertCallerIdRegion,
+  userGroups, InsertUserGroup,
+  userGroupMemberships, InsertUserGroupMembership,
+  localAuth, InsertLocalAuth,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -760,4 +763,163 @@ export async function getCallLogsForExport(campaignId: number, userId: number) {
     endedAt: callLogs.endedAt,
   }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId)))
     .orderBy(callLogs.id);
+}
+
+// ─── User Groups ────────────────────────────────────────────────────────────
+
+export async function createUserGroup(data: InsertUserGroup) {
+  const db = await getDb();
+  if (!db) return;
+  const result = await db.insert(userGroups).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getUserGroups() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(userGroups).orderBy(userGroups.name);
+}
+
+export async function getUserGroup(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(userGroups).where(eq(userGroups.id, id)).limit(1);
+  return result[0];
+}
+
+export async function updateUserGroup(id: number, data: Partial<InsertUserGroup>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(userGroups).set(data).where(eq(userGroups.id, id));
+}
+
+export async function deleteUserGroup(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(userGroupMemberships).where(eq(userGroupMemberships.groupId, id));
+  await db.delete(userGroups).where(eq(userGroups.id, id));
+}
+
+// ─── User Group Memberships ─────────────────────────────────────────────────
+
+export async function addUserToGroup(userId: number, groupId: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Check if already a member
+  const existing = await db.select().from(userGroupMemberships)
+    .where(and(eq(userGroupMemberships.userId, userId), eq(userGroupMemberships.groupId, groupId)))
+    .limit(1);
+  if (existing.length > 0) return;
+  await db.insert(userGroupMemberships).values({ userId, groupId });
+}
+
+export async function removeUserFromGroup(userId: number, groupId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(userGroupMemberships)
+    .where(and(eq(userGroupMemberships.userId, userId), eq(userGroupMemberships.groupId, groupId)));
+}
+
+export async function getUserGroupMemberships(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const memberships = await db.select().from(userGroupMemberships)
+    .where(eq(userGroupMemberships.userId, userId));
+  if (memberships.length === 0) return [];
+  const groupIds = memberships.map(m => m.groupId);
+  const groups = await db.select().from(userGroups)
+    .where(inArray(userGroups.id, groupIds));
+  return groups;
+}
+
+export async function getGroupMembers(groupId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const memberships = await db.select().from(userGroupMemberships)
+    .where(eq(userGroupMemberships.groupId, groupId));
+  if (memberships.length === 0) return [];
+  const userIds = memberships.map(m => m.userId);
+  return db.select().from(users).where(inArray(users.id, userIds));
+}
+
+export async function getUserPermissions(userId: number): Promise<Record<string, boolean>> {
+  const groups = await getUserGroupMemberships(userId);
+  const merged: Record<string, boolean> = {};
+  for (const group of groups) {
+    const perms = group.permissions as Record<string, boolean> | null;
+    if (perms) {
+      for (const [key, value] of Object.entries(perms)) {
+        if (value) merged[key] = true; // Union of all group permissions
+      }
+    }
+  }
+  return merged;
+}
+
+// ─── User Management (Admin) ────────────────────────────────────────────────
+
+export async function getAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).orderBy(users.createdAt);
+}
+
+export async function updateUserRole(userId: number, role: "user" | "admin") {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result[0];
+}
+
+// ─── Local Auth (Email/Password) ────────────────────────────────────────────
+
+export async function createLocalAuth(data: InsertLocalAuth) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(localAuth).values(data);
+}
+
+export async function getLocalAuthByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(localAuth).where(eq(localAuth.email, email)).limit(1);
+  return result[0];
+}
+
+export async function getLocalAuthByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(localAuth).where(eq(localAuth.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function updateLocalAuthPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(localAuth).set({ passwordHash }).where(eq(localAuth.userId, userId));
+}
+
+export async function setResetToken(email: string, token: string, expiry: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(localAuth).set({ resetToken: token, resetTokenExpiry: expiry }).where(eq(localAuth.email, email));
+}
+
+export async function getLocalAuthByResetToken(token: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(localAuth).where(eq(localAuth.resetToken, token)).limit(1);
+  return result[0];
+}
+
+export async function clearResetToken(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(localAuth).set({ resetToken: null, resetTokenExpiry: null }).where(eq(localAuth.userId, userId));
 }
