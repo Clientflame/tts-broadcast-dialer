@@ -1,0 +1,1 @@
+ALTER TABLE `pbx_agents` MODIFY COLUMN `maxCalls` int DEFAULT 10;

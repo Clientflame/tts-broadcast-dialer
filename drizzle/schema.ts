@@ -369,7 +369,7 @@ export const pbxAgents = mysqlTable("pbx_agents", {
   lastHeartbeat: bigint("lastHeartbeat", { mode: "number" }),
   status: varchar("status", { length: 20 }).default("offline").notNull(), // online, offline
   activeCalls: int("activeCalls").default(0),
-  maxCalls: int("maxCalls").default(5),
+  maxCalls: int("maxCalls").default(10),
   ipAddress: varchar("ipAddress", { length: 45 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

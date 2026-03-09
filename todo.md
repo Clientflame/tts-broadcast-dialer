@@ -152,3 +152,4 @@
 - [x] Bulk delete contacts - already had checkbox selection with Delete (N) button
 - [x] Vitest tests for health check scheduler (6 tests)
 - [x] Bulk delete contact lists - checkbox selection with delete button on sidebar
+- [x] Make PBX agent max concurrent calls adjustable (10-100 range, slider UI on each agent)

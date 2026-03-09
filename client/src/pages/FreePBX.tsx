@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { Slider } from "@/components/ui/slider";
 import {
   Wifi, WifiOff, RefreshCw, Server, Loader2,
   CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
-  Activity, Zap
+  Activity, Zap, Gauge
 } from "lucide-react";
 
 export default function FreePBX() {
@@ -32,7 +33,7 @@ export default function FreePBX() {
       toast.success("PBX Agent registered! Copy the API key below.");
       setNewAgentKey(data.apiKey);
       setAgentName("");
-      setMaxCalls("5");
+      setMaxCalls(10);
       agents.refetch();
       amiStatus.refetch();
     },
@@ -48,9 +49,17 @@ export default function FreePBX() {
   });
 
   const [agentName, setAgentName] = useState("");
-  const [maxCalls, setMaxCalls] = useState("5");
+  const [maxCalls, setMaxCalls] = useState(10);
   const [newAgentKey, setNewAgentKey] = useState("");
   const [copied, setCopied] = useState(false);
+
+  const updateMaxCalls = trpc.freepbx.updateAgentMaxCalls.useMutation({
+    onSuccess: () => {
+      toast.success("Agent speed updated");
+      agents.refetch();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const handleRegister = () => {
     if (!agentName.trim()) {
@@ -59,7 +68,7 @@ export default function FreePBX() {
     }
     registerAgent.mutate({
       name: agentName.trim(),
-      maxCalls: parseInt(maxCalls) || 5,
+      maxCalls: maxCalls,
     });
   };
 
@@ -213,16 +222,22 @@ export default function FreePBX() {
                   onKeyDown={(e) => e.key === "Enter" && handleRegister()}
                 />
               </div>
-              <div className="w-24 space-y-1">
-                <Label htmlFor="maxCalls" className="text-xs">Max Calls</Label>
-                <Input
-                  id="maxCalls"
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={maxCalls}
-                  onChange={(e) => setMaxCalls(e.target.value)}
+              <div className="w-48 space-y-1">
+                <Label className="text-xs flex items-center justify-between">
+                  <span>Max Concurrent Calls</span>
+                  <span className="font-bold text-primary">{maxCalls}</span>
+                </Label>
+                <Slider
+                  min={10}
+                  max={100}
+                  step={5}
+                  value={[maxCalls]}
+                  onValueChange={([v]) => setMaxCalls(v)}
+                  className="mt-2"
                 />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>10</span><span>50</span><span>100</span>
+                </div>
               </div>
               <Button onClick={handleRegister} disabled={registerAgent.isPending}>
                 {registerAgent.isPending ? (
@@ -277,12 +292,12 @@ export default function FreePBX() {
                       key={agent.id}
                       className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-2.5 w-2.5 rounded-full ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
-                        <div>
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
+                        <div className="min-w-0">
                           <p className="text-sm font-medium">{agent.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            ID: {agent.agentId} · Max: {agent.maxCalls} calls
+                            ID: {agent.agentId}
                             {agent.lastHeartbeat && (
                               <> · Last seen: {new Date(agent.lastHeartbeat).toLocaleString()}</>
                             )}
@@ -292,7 +307,25 @@ export default function FreePBX() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-40">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Gauge className="h-3 w-3" />Speed</span>
+                            <span className="text-xs font-bold text-primary">{agent.maxCalls ?? 10}</span>
+                          </div>
+                          <Slider
+                            min={10}
+                            max={100}
+                            step={5}
+                            value={[agent.maxCalls ?? 10]}
+                            onValueChange={([v]) => {
+                              updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: v });
+                            }}
+                          />
+                          <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
+                            <span>10</span><span>100</span>
+                          </div>
+                        </div>
                         <Badge variant={isOnline ? "default" : "outline"}>
                           {isOnline ? "Online" : "Offline"}
                         </Badge>

@@ -1256,7 +1256,7 @@ export async function upsertPbxAgent(data: { agentId: string; apiKey: string; na
     apiKey: data.apiKey,
     name: data.name,
     ipAddress: data.ipAddress,
-    maxCalls: data.maxCalls || 5,
+    maxCalls: data.maxCalls || 10,
     status: "online",
     lastHeartbeat: Date.now(),
   }).onDuplicateKeyUpdate({
@@ -1297,7 +1297,7 @@ export async function registerPbxAgent(data: { agentId: string; name: string; ap
     name: data.name,
     apiKey: data.apiKey,
     status: data.status || "offline",
-    maxCalls: 5,
+    maxCalls: 10,
   });
   return { id: Number(result[0].insertId), agentId: data.agentId, name: data.name };
 }
@@ -1306,6 +1306,12 @@ export async function deletePbxAgent(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(pbxAgents).where(eq(pbxAgents.id, id));
+}
+
+export async function updatePbxAgentMaxCalls(agentId: string, maxCalls: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(pbxAgents).set({ maxCalls }).where(eq(pbxAgents.agentId, agentId));
 }
 
 export async function deletePbxAgentByAgentId(agentId: string) {

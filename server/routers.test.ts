@@ -174,10 +174,10 @@ describe("campaigns - input validation", () => {
     await expect(caller.campaigns.create({ name: "", contactListId: 1 })).rejects.toThrow();
   });
 
-  it("rejects concurrent calls above 50", async () => {
+  it("rejects concurrent calls above 100", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.campaigns.create({ name: "Test", contactListId: 1, maxConcurrentCalls: 51 })).rejects.toThrow();
+    await expect(caller.campaigns.create({ name: "Test", contactListId: 1, maxConcurrentCalls: 101 })).rejects.toThrow();
   });
 
   it("rejects retry attempts above 5", async () => {
@@ -335,13 +335,13 @@ describe("freepbx.registerAgent", () => {
     await expect(caller.freepbx.registerAgent({ name: "", maxCalls: 5 })).rejects.toThrow();
   });
 
-  it("rejects maxCalls above 50", async () => {
+  it("rejects maxCalls above 100", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 51 })).rejects.toThrow();
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 101 })).rejects.toThrow();
   });
 
-  it("rejects maxCalls below 1", async () => {
+  it("rejects maxCalls below 10", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 0 })).rejects.toThrow();

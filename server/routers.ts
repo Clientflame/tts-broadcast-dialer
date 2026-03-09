@@ -357,7 +357,7 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(50).optional(),
+      maxConcurrentCalls: z.number().min(1).max(100).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -396,7 +396,7 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(50).optional(),
+      maxConcurrentCalls: z.number().min(1).max(100).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -678,13 +678,12 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(50).optional(),
+      maxConcurrentCalls: z.number().min(1).max(100).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
-      useDidRotation: z.number().min(0).max(1).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createBroadcastTemplate({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "template.create", resource: "template", resourceId: result.id });
@@ -697,13 +696,12 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(50).optional(),
+      maxConcurrentCalls: z.number().min(1).max(100).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
-      useDidRotation: z.number().min(0).max(1).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       await db.updateBroadcastTemplate(id, ctx.user.id, data);
@@ -1347,7 +1345,7 @@ Return ONLY the message text, nothing else.`;
     registerAgent: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
-        maxCalls: z.number().int().min(1).max(50).default(5),
+        maxCalls: z.number().int().min(10).max(100).default(10),
       }))
       .mutation(async ({ input }) => {
         const crypto = await import("crypto");
@@ -1366,6 +1364,16 @@ Return ONLY the message text, nothing else.`;
           await db.updatePbxAgentHeartbeat(agentId); // just to ensure it exists
         }
         return { agentId, apiKey, name: input.name };
+      }),
+
+    updateAgentMaxCalls: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        maxCalls: z.number().int().min(10).max(100),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updatePbxAgentMaxCalls(input.agentId, input.maxCalls);
+        return { success: true };
       }),
 
     deleteAgent: protectedProcedure
