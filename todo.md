@@ -110,3 +110,5 @@
 - [x] Google TTS integration - add Google TTS as a voice provider alongside OpenAI
 - [x] Update Audio/TTS page to support Google TTS voice selection
 - [x] Update TTS service to support Google TTS API
+- [x] Improve TTS provider selection UX - provider badges in audio table, toggle buttons in voice selectors
+- [x] Owner notifications - campaign completion (with stats), agent offline detection (2-min heartbeat threshold)

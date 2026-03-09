@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import * as db from "../db";
 import { generatePersonalizedTTS } from "./tts";
 import { recordCallResult, getCurrentConcurrent, getPacingStats, initPacing, cleanupPacing, type PacingConfig } from "./pacing";
+import { notifyOwner } from "../_core/notification";
 
 const pbxRouter = Router();
 
@@ -149,6 +150,12 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
             cleanupPacing(queueItem.campaignId);
             activePacingConfigs.delete(queueItem.campaignId);
             console.log(`[PBX-API] Campaign ${queueItem.campaignId} completed`);
+            // Notify owner
+            const finalStats = await db.getCampaignStats(queueItem.campaignId);
+            notifyOwner({
+              title: `Campaign Completed: ${campaign.name}`,
+              content: `Campaign "${campaign.name}" has finished.\n\nResults:\n- Total: ${finalStats.total}\n- Answered: ${finalStats.answered}\n- Failed: ${finalStats.failed}\n- Busy: ${finalStats.busy}\n- No Answer: ${finalStats.noAnswer}\n\nAnswer Rate: ${finalStats.total > 0 ? Math.round((finalStats.answered / finalStats.total) * 100) : 0}%`,
+            }).catch(err => console.warn("[PBX-API] Failed to send completion notification:", err));
           }
         }
       }
@@ -225,5 +232,42 @@ async function getQueueStatsForCampaign(campaignId: number) {
   }
   return { pending: stats["pending"] || 0, claimed: stats["claimed"] || 0 };
 }
+
+// ─── Agent Offline Detection ───────────────────────────────────────────────
+// Periodically check for agents that haven't sent a heartbeat in 2+ minutes
+let offlineCheckInterval: ReturnType<typeof setInterval> | null = null;
+const notifiedOfflineAgents = new Set<string>();
+
+function startAgentOfflineMonitor() {
+  if (offlineCheckInterval) return;
+  offlineCheckInterval = setInterval(async () => {
+    try {
+      const agents = await db.getPbxAgents();
+      const now = Date.now();
+      for (const agent of agents) {
+        const lastSeen = agent.lastHeartbeat ? new Date(agent.lastHeartbeat).getTime() : 0;
+        const offlineThreshold = 120000; // 2 minutes
+        if (now - lastSeen > offlineThreshold && agent.status === "online") {
+          if (!notifiedOfflineAgents.has(agent.agentId)) {
+            notifiedOfflineAgents.add(agent.agentId);
+            notifyOwner({
+              title: `PBX Agent Offline: ${agent.name}`,
+              content: `PBX agent "${agent.name}" (${agent.agentId}) has not sent a heartbeat in over 2 minutes.\n\nLast seen: ${agent.lastHeartbeat ? new Date(agent.lastHeartbeat).toISOString() : "never"}\n\nPlease check the agent service on your FreePBX server.`,
+            }).catch(err => console.warn("[PBX-API] Failed to send offline notification:", err));
+            console.log(`[PBX-API] Agent ${agent.name} (${agent.agentId}) appears offline — notification sent`);
+          }
+        } else if (now - lastSeen <= offlineThreshold) {
+          // Agent is back online — clear the notification flag
+          notifiedOfflineAgents.delete(agent.agentId);
+        }
+      }
+    } catch (err) {
+      console.error("[PBX-API] Agent offline check error:", err);
+    }
+  }, 60000); // Check every 60 seconds
+}
+
+// Start the monitor when the module loads
+startAgentOfflineMonitor();
 
 export { pbxRouter };

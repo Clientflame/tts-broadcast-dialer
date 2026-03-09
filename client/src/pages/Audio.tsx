@@ -506,9 +506,14 @@ export default function Audio() {
                   <TableRow key={file.id}>
                     <TableCell className="font-medium">{file.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {file.voice?.startsWith("en-US-") ? file.voice.replace("en-US-", "") : file.voice}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="capitalize">
+                          {file.voice?.startsWith("en-US-") ? file.voice.replace("en-US-", "") : file.voice}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                          {file.voice?.startsWith("en-US-") ? "Google" : "OpenAI"}
+                        </Badge>
+                      </div>
                     </TableCell>
                     <TableCell>
                       {file.status === "ready" && file.s3Url ? (
