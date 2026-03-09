@@ -11,8 +11,15 @@ import { Slider } from "@/components/ui/slider";
 import {
   Wifi, WifiOff, RefreshCw, Server, Loader2,
   CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
-  Activity, Zap, Gauge
+  Activity, Zap, Gauge, AlertTriangle, RotateCcw, ShieldAlert
 } from "lucide-react";
+
+const SPEED_PRESETS = [
+  { label: "Low", value: 10, color: "text-blue-600" },
+  { label: "Medium", value: 25, color: "text-yellow-600" },
+  { label: "High", value: 50, color: "text-orange-600" },
+  { label: "Max", value: 100, color: "text-red-600" },
+];
 
 export default function FreePBX() {
   const amiStatus = trpc.freepbx.status.useQuery(undefined, { refetchInterval: 10000 });
@@ -61,6 +68,14 @@ export default function FreePBX() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const resetThrottle = trpc.freepbx.resetThrottle.useMutation({
+    onSuccess: () => {
+      toast.success("Throttle reset — agent restored to full speed");
+      agents.refetch();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const handleRegister = () => {
     if (!agentName.trim()) {
       toast.error("Please enter an agent name");
@@ -78,7 +93,6 @@ export default function FreePBX() {
       toast.success("API key copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {
-      // Fallback for older browsers / insecure contexts
       const textarea = document.createElement("textarea");
       textarea.value = text;
       textarea.style.position = "fixed";
@@ -211,18 +225,27 @@ export default function FreePBX() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Register new agent */}
-            <div className="flex gap-3 items-end p-4 rounded-lg border border-dashed">
-              <div className="flex-1 space-y-1">
-                <Label htmlFor="agentName" className="text-xs">Agent Name</Label>
-                <Input
-                  id="agentName"
-                  placeholder="e.g., pbx-server-1"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                />
+            <div className="p-4 rounded-lg border border-dashed space-y-3">
+              <div className="flex gap-3 items-end">
+                <div className="flex-1 space-y-1">
+                  <Label htmlFor="agentName" className="text-xs">Agent Name</Label>
+                  <Input
+                    id="agentName"
+                    placeholder="e.g., pbx-server-1"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleRegister()}
+                  />
+                </div>
+                <Button onClick={handleRegister} disabled={registerAgent.isPending}>
+                  {registerAgent.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <><Plus className="h-4 w-4 mr-1" />Register</>
+                  )}
+                </Button>
               </div>
-              <div className="w-48 space-y-1">
+              <div className="space-y-2">
                 <Label className="text-xs flex items-center justify-between">
                   <span>Max Concurrent Calls</span>
                   <span className="font-bold text-primary">{maxCalls}</span>
@@ -233,19 +256,22 @@ export default function FreePBX() {
                   step={5}
                   value={[maxCalls]}
                   onValueChange={([v]) => setMaxCalls(v)}
-                  className="mt-2"
                 />
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>10</span><span>50</span><span>100</span>
+                {/* Speed Presets */}
+                <div className="flex gap-2">
+                  {SPEED_PRESETS.map((p) => (
+                    <Button
+                      key={p.label}
+                      variant={maxCalls === p.value ? "default" : "outline"}
+                      size="sm"
+                      className="flex-1 text-xs h-7"
+                      onClick={() => setMaxCalls(p.value)}
+                    >
+                      {p.label} ({p.value})
+                    </Button>
+                  ))}
                 </div>
               </div>
-              <Button onClick={handleRegister} disabled={registerAgent.isPending}>
-                {registerAgent.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <><Plus className="h-4 w-4 mr-1" />Register</>
-                )}
-              </Button>
             </div>
 
             {/* Show new API key with prominent copy button */}
@@ -283,64 +309,144 @@ export default function FreePBX() {
 
             {/* Agent list */}
             {agents.data && agents.data.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {agents.data.map((agent: any) => {
                   const isOnline = agent.lastHeartbeat &&
                     Date.now() - new Date(agent.lastHeartbeat).getTime() < 30000;
+                  const isThrottled = agent.effectiveMaxCalls != null && agent.effectiveMaxCalls < (agent.maxCalls ?? 10);
+                  const effectiveSpeed = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+
                   return (
                     <div
                       key={agent.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                      className={`p-4 rounded-lg border ${isThrottled ? "border-orange-300 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20" : "bg-muted/50"}`}
                     >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">{agent.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            ID: {agent.agentId}
-                            {agent.lastHeartbeat && (
-                              <> · Last seen: {new Date(agent.lastHeartbeat).toLocaleString()}</>
-                            )}
-                            {agent.activeCalls > 0 && (
-                              <> · <span className="text-blue-600">{agent.activeCalls} active call(s)</span></>
-                            )}
-                          </p>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium flex items-center gap-2">
+                              {agent.name}
+                              {isThrottled && (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-400 text-orange-600 dark:text-orange-400">
+                                  <ShieldAlert className="h-3 w-3 mr-0.5" />Throttled
+                                </Badge>
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              ID: {agent.agentId}
+                              {agent.lastHeartbeat && (
+                                <> · Last seen: {new Date(agent.lastHeartbeat).toLocaleString()}</>
+                              )}
+                              {agent.activeCalls > 0 && (
+                                <> · <span className="text-blue-600">{agent.activeCalls} active call(s)</span></>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={isOnline ? "default" : "outline"}>
+                            {isOnline ? "Online" : "Offline"}
+                          </Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-500 hover:text-red-700"
+                            onClick={() => {
+                              if (confirm(`Remove agent "${agent.name}"?`)) {
+                                deleteAgent.mutate({ agentId: agent.agentId });
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-40">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Gauge className="h-3 w-3" />Speed</span>
-                            <span className="text-xs font-bold text-primary">{agent.maxCalls ?? 10}</span>
+
+                      {/* Speed control section */}
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Gauge className="h-3 w-3" />
+                                Max Speed
+                              </span>
+                              <span className="text-sm font-bold text-primary">
+                                {isThrottled ? (
+                                  <span className="text-orange-600 dark:text-orange-400">
+                                    {effectiveSpeed} <span className="text-xs font-normal text-muted-foreground">/ {agent.maxCalls ?? 10}</span>
+                                  </span>
+                                ) : (
+                                  agent.maxCalls ?? 10
+                                )}
+                              </span>
+                            </div>
+                            <Slider
+                              min={10}
+                              max={100}
+                              step={5}
+                              value={[agent.maxCalls ?? 10]}
+                              onValueChange={([v]) => {
+                                updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: v });
+                              }}
+                            />
                           </div>
-                          <Slider
-                            min={10}
-                            max={100}
-                            step={5}
-                            value={[agent.maxCalls ?? 10]}
-                            onValueChange={([v]) => {
-                              updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: v });
-                            }}
-                          />
-                          <div className="flex justify-between text-[9px] text-muted-foreground mt-0.5">
-                            <span>10</span><span>100</span>
+                          {/* Speed preset buttons */}
+                          <div className="flex gap-1">
+                            {SPEED_PRESETS.map((p) => (
+                              <Button
+                                key={p.label}
+                                variant={(agent.maxCalls ?? 10) === p.value ? "default" : "outline"}
+                                size="sm"
+                                className="text-[10px] h-6 px-2"
+                                onClick={() => updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: p.value })}
+                              >
+                                {p.label}
+                              </Button>
+                            ))}
                           </div>
                         </div>
-                        <Badge variant={isOnline ? "default" : "outline"}>
-                          {isOnline ? "Online" : "Offline"}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500 hover:text-red-700"
-                          onClick={() => {
-                            if (confirm(`Remove agent "${agent.name}"?`)) {
-                              deleteAgent.mutate({ agentId: agent.agentId });
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+
+                        {/* Throttle indicator */}
+                        {isThrottled && (
+                          <div className="mt-2 p-2.5 rounded bg-orange-100/80 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2">
+                                <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+                                <div>
+                                  <p className="text-xs font-medium text-orange-800 dark:text-orange-200">
+                                    Auto-Throttled: Speed reduced to {effectiveSpeed} concurrent calls
+                                  </p>
+                                  {agent.throttleReason && (
+                                    <p className="text-[11px] text-orange-700 dark:text-orange-300 mt-0.5">{agent.throttleReason}</p>
+                                  )}
+                                  {agent.throttleStartedAt && (
+                                    <p className="text-[10px] text-orange-600/70 dark:text-orange-400/70 mt-0.5">
+                                      Since: {new Date(Number(agent.throttleStartedAt)).toLocaleString()}
+                                    </p>
+                                  )}
+                                  <p className="text-[10px] text-orange-600/70 dark:text-orange-400/70">
+                                    Carrier errors: {agent.throttleCarrierErrors ?? 0} total
+                                  </p>
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0 h-7 text-xs border-orange-300 dark:border-orange-700 hover:bg-orange-200 dark:hover:bg-orange-900"
+                                onClick={() => resetThrottle.mutate({ agentId: agent.agentId })}
+                                disabled={resetThrottle.isPending}
+                              >
+                                {resetThrottle.isPending ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <><RotateCcw className="h-3 w-3 mr-1" />Reset Throttle</>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

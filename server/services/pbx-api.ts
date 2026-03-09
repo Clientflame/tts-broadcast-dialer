@@ -3,6 +3,7 @@ import * as db from "../db";
 import { generatePersonalizedTTS } from "./tts";
 import { recordCallResult, getCurrentConcurrent, getPacingStats, initPacing, cleanupPacing, type PacingConfig } from "./pacing";
 import { notifyOwner } from "../_core/notification";
+import { recordCarrierError, attemptRampUp, isCarrierError, getThrottleStatus } from "./auto-throttle";
 
 const pbxRouter = Router();
 
@@ -33,7 +34,12 @@ pbxRouter.use(authenticateAgent);
 pbxRouter.post("/poll", async (req: Request, res: Response) => {
   try {
     const agent = (req as any).pbxAgent;
-    const limit = Math.min(req.body.limit || 5, agent.maxCalls || 5);
+    // Use effectiveMaxCalls (throttled) if set, otherwise maxCalls
+    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+    // Per-campaign speed cap: if the request includes a campaignMaxCalls, cap the limit
+    const campaignMax = req.body.campaignMaxCalls || agentMax;
+    const effectiveLimit = Math.min(agentMax, campaignMax);
+    const limit = Math.min(req.body.limit || 10, effectiveLimit);
 
     // Release stale claims first (agent crashed without reporting)
     await db.releaseStaleClaimedCalls(120000);
@@ -136,6 +142,12 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
           );
         }
 
+        // Feed auto-throttle engine with carrier errors
+        if (isCarrierError(result)) {
+          const agent = (req as any).pbxAgent;
+          await recordCarrierError(agent.agentId, result);
+        }
+
         // Check if campaign is complete
         const pending = await db.getPendingCallLogs(queueItem.campaignId);
         const activeCount = await db.getActiveCallCount(queueItem.campaignId);
@@ -169,12 +181,15 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
   }
 });
 
-// ─── Heartbeat ──────────────────────────────────────────────────────────────
+// ─── Heartbeat ──────────────────────────────────────────────────────────────────
 pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
   try {
     const agent = (req as any).pbxAgent;
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
-    res.json({ status: "ok", serverTime: Date.now() });
+    // Attempt auto-throttle ramp-up on each heartbeat
+    await attemptRampUp(agent.agentId);
+    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }

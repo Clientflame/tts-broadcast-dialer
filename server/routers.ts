@@ -1386,6 +1386,30 @@ Return ONLY the message text, nothing else.`;
     queueStats: protectedProcedure.query(async () => {
       return db.getCallQueueStats();
     }),
+
+    resetThrottle: protectedProcedure
+      .input(z.object({ agentId: z.string() }))
+      .mutation(async ({ input }) => {
+        const { resetThrottle } = await import("./services/auto-throttle");
+        await resetThrottle(input.agentId);
+        return { success: true };
+      }),
+
+    getThrottleStatus: protectedProcedure
+      .input(z.object({ agentId: z.string() }))
+      .query(async ({ input }) => {
+        const { getThrottleStatus } = await import("./services/auto-throttle");
+        const agent = await db.getPbxAgentByAgentId(input.agentId);
+        const status = getThrottleStatus(input.agentId);
+        return {
+          ...status,
+          effectiveMaxCalls: agent?.effectiveMaxCalls ?? null,
+          maxCalls: agent?.maxCalls ?? 10,
+          throttleReason: agent?.throttleReason ?? null,
+          throttleStartedAt: agent?.throttleStartedAt ?? null,
+          carrierErrors: agent?.throttleCarrierErrors ?? 0,
+        };
+      }),
   }),
 });
 

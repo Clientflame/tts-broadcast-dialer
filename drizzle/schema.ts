@@ -370,6 +370,11 @@ export const pbxAgents = mysqlTable("pbx_agents", {
   status: varchar("status", { length: 20 }).default("offline").notNull(), // online, offline
   activeCalls: int("activeCalls").default(0),
   maxCalls: int("maxCalls").default(10),
+  // Auto-throttle fields
+  effectiveMaxCalls: int("effectiveMaxCalls"),  // null = use maxCalls (no throttle active)
+  throttleReason: text("throttleReason"),
+  throttleStartedAt: bigint("throttleStartedAt", { mode: "number" }),
+  throttleCarrierErrors: int("throttleCarrierErrors").default(0).notNull(),
   ipAddress: varchar("ipAddress", { length: 45 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

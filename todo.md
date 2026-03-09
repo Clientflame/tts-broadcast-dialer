@@ -153,3 +153,8 @@
 - [x] Vitest tests for health check scheduler (6 tests)
 - [x] Bulk delete contact lists - checkbox selection with delete button on sidebar
 - [x] Make PBX agent max concurrent calls adjustable (10-100 range, slider UI on each agent)
+- [x] Agent speed presets - Low(10)/Medium(25)/High(50)/Max(100) quick buttons on agent + registration
+- [x] Per-campaign speed override - slider + presets on campaign form, capped by agent max via poll endpoint
+- [x] Speed auto-throttle - tracks carrier errors in sliding window, reduces speed 50% on threshold, ramps up on heartbeat
+- [x] Throttle indicators on agent cards (orange border, badge, reason, reset button)
+- [x] Vitest tests for auto-throttle (4 tests, 89 total passing)

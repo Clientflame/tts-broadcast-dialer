@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -95,7 +96,7 @@ type FormState = {
 const DEFAULT_FORM: FormState = {
   name: "", description: "", contactListId: 0, audioFileId: 0,
   voice: "alloy", ttsProvider: "openai", callerIdNumber: "", callerIdName: "",
-  maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
+  maxConcurrentCalls: 10, retryAttempts: 0, retryDelay: 300,
   timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
@@ -418,9 +419,26 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
           </div>
           <p className="text-xs text-muted-foreground">Leave Caller ID blank to use automatic DID rotation from your Caller ID pool.</p>
           <div>
-            <Label>Max Concurrent Calls</Label>
-            <Input type="number" min={1} max={50} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
-            <p className="text-xs text-muted-foreground mt-1">Base number of simultaneous outbound calls (1-50)</p>
+            <Label className="flex items-center justify-between">
+              <span>Max Concurrent Calls</span>
+              <span className="font-bold text-primary">{form.maxConcurrentCalls}</span>
+            </Label>
+            <Slider
+              min={10}
+              max={100}
+              step={5}
+              value={[form.maxConcurrentCalls]}
+              onValueChange={([v]) => setForm(p => ({ ...p, maxConcurrentCalls: v }))}
+              className="mt-2"
+            />
+            <div className="flex gap-1.5 mt-2">
+              {[{l:"Low",v:10},{l:"Med",v:25},{l:"High",v:50},{l:"Max",v:100}].map(p => (
+                <Button key={p.l} type="button" variant={form.maxConcurrentCalls === p.v ? "default" : "outline"} size="sm" className="flex-1 text-xs h-6" onClick={() => setForm(f => ({ ...f, maxConcurrentCalls: p.v }))}>
+                  {p.l} ({p.v})
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Caps the agent speed for this campaign (10-100). Cannot exceed agent's max.</p>
           </div>
 
           {/* Call Pacing Mode */}

@@ -1320,6 +1320,32 @@ export async function deletePbxAgentByAgentId(agentId: string) {
   await db.delete(pbxAgents).where(eq(pbxAgents.agentId, agentId));
 }
 
+export async function getPbxAgentByAgentId(agentId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(pbxAgents).where(eq(pbxAgents.agentId, agentId)).limit(1);
+  return result[0];
+}
+
+export async function updateAgentThrottle(agentId: string, data: {
+  effectiveMaxCalls?: number | null;
+  throttleReason?: string | null;
+  throttleStartedAt?: number | bigint | null;
+  throttleCarrierErrors?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(pbxAgents).set(data as any).where(eq(pbxAgents.agentId, agentId));
+}
+
+export async function incrementAgentCarrierErrors(agentId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(pbxAgents).set({
+    throttleCarrierErrors: sql`${pbxAgents.throttleCarrierErrors} + 1`,
+  } as any).where(eq(pbxAgents.agentId, agentId));
+}
+
 // ─── Call Scripts ──────────────────────────────────────────────────────────
 export async function createCallScript(data: InsertCallScript) {
   const db = await getDb();
