@@ -1,12 +1,13 @@
 import { getAMIClient } from "./ami";
-import { transferAudioToFreePBX, generatePersonalizedTTS } from "./tts";
+import { generatePersonalizedTTS } from "./tts";
 import * as db from "../db";
 import type { Campaign, CallLog, Contact } from "../../drizzle/schema";
 
 interface ActiveCampaign {
   campaign: Campaign;
   intervalId: ReturnType<typeof setInterval> | null;
-  audioPath: string | null;
+  audioS3Url: string | null;
+  audioName: string | null;
   callerIds: Array<{ id: number; phoneNumber: string; label: string | null }>;
   callerIdIndex: number;
   usePersonalizedTTS: boolean;
@@ -65,22 +66,15 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status === "running") throw new Error("Campaign is already running");
 
-  // Get audio file
-  let audioPath: string | null = null;
+  // Get audio file - PBX-side approach: just store the S3 URL, FreePBX will download it
+  let audioS3Url: string | null = null;
+  let audioName: string | null = null;
   if (campaign.audioFileId) {
     const audioFile = await db.getAudioFile(campaign.audioFileId, userId);
     if (!audioFile || !audioFile.s3Url) throw new Error("Audio file not ready");
-
-    try {
-      const result = await transferAudioToFreePBX({
-        s3Url: audioFile.s3Url,
-        fileName: `campaign_${campaignId}_${audioFile.id}.mp3`,
-      });
-      audioPath = result.remotePath;
-    } catch (err) {
-      console.error("[Dialer] Audio transfer failed:", err);
-      throw new Error("Failed to transfer audio to FreePBX. Check SSH connectivity.");
-    }
+    audioS3Url = audioFile.s3Url;
+    audioName = `campaign_${campaignId}_${audioFile.id}`;
+    console.log(`[Dialer] Audio ready for PBX-side fetch: ${audioName}`);
   }
 
   // Get contacts and filter out DNC numbers
@@ -138,7 +132,8 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const active: ActiveCampaign = {
     campaign: updatedCampaign,
     intervalId: null,
-    audioPath,
+    audioS3Url,
+    audioName,
     callerIds: callerIdPool,
     callerIdIndex: 0,
     usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
@@ -276,24 +271,23 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
         contactId: callLog.contactId,
       });
 
-      // Transfer the personalized audio to FreePBX
-      const personalizedFileName = `personalized_${callLog.campaignId}_${callLog.contactId}.mp3`;
-      const transferResult = await transferAudioToFreePBX({
-        s3Url: personalizedResult.s3Url,
-        fileName: personalizedFileName,
-      });
-
-      variables.AUDIOFILE = transferResult.remotePath;
+      // PBX-side approach: pass S3 URL directly, FreePBX downloads & converts
+      const personalizedAudioName = `personalized_${callLog.campaignId}_${callLog.contactId}`;
+      variables.AUDIO_URL = personalizedResult.s3Url;
+      variables.AUDIO_NAME = personalizedAudioName;
       console.log(`[Dialer] Personalized TTS ready for ${callLog.phoneNumber}: "${personalizedResult.renderedText.substring(0, 80)}..."`);
     } catch (err) {
       console.error(`[Dialer] Personalized TTS failed for contact ${callLog.contactId}:`, err);
       // Fall back to static audio if available
-      if (active.audioPath) {
-        variables.AUDIOFILE = active.audioPath;
+      if (active.audioS3Url && active.audioName) {
+        variables.AUDIO_URL = active.audioS3Url;
+        variables.AUDIO_NAME = active.audioName;
       }
     }
-  } else if (active.audioPath) {
-    variables.AUDIOFILE = active.audioPath;
+  } else if (active.audioS3Url && active.audioName) {
+    // Static campaign audio - pass S3 URL for PBX-side fetch
+    variables.AUDIO_URL = active.audioS3Url;
+    variables.AUDIO_NAME = active.audioName;
   }
 
   try {

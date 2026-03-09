@@ -62,3 +62,7 @@
 - [x] Fix Quick Test button greyed out on Audio/TTS page (was working - needed audio files with 'ready' status)
 - [x] Improve voice samples - use tts-1-hd model, natural conversational sample text, and better descriptions
 - [x] Fix Quick Test call - replaced child_process/sshpass with native ssh2 for production-compatible audio transfer
+- [x] Move audio handling to PBX server side - deploy script on FreePBX to download/convert audio
+- [x] Fix Quick Test call - use PBX-side audio fetching instead of SSH2 transfer
+- [x] Update Asterisk dialplan to download audio from S3 URL before playback
+- [x] Update dialer engine to use PBX-side approach for campaign calls

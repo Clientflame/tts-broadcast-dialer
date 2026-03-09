@@ -737,15 +737,25 @@ Return ONLY the message text, nothing else.`;
     })).mutation(async ({ ctx, input }) => {
       const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
-      const { transferAudioToFreePBX } = await import("./services/tts");
-      const result = await transferAudioToFreePBX({ s3Url: audioFile.s3Url, fileName: `quicktest_${audioFile.id}.mp3` });
+
+      // PBX-side approach: pass the S3 URL directly to FreePBX
+      // The dialplan uses System() to call fetch-audio.sh which downloads & converts on the PBX
       const ami = getAMIClient();
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
+      const audioName = `quicktest_${audioFile.id}`;
+
+      console.log(`[QuickTest] Initiating call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...`);
+
       const originateResult = await ami.originate({
         channel, context: "tts-broadcast", exten: "s", priority: "1", timeout: 30000,
-        variables: { AUDIOFILE: result.remotePath }, async: true,
+        variables: {
+          AUDIO_URL: audioFile.s3Url,
+          AUDIO_NAME: audioName,
+        },
+        async: true,
       });
+
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });
       return { success: originateResult.Response !== "Error", message: originateResult.Message || "Call queued" };
     }),
