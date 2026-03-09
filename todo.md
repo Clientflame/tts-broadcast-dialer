@@ -1,0 +1,21 @@
+# Project TODO - AI TTS Broadcast Dialer
+
+- [x] Database schema (users, contacts, contact_lists, campaigns, call_logs, audio_files, audit_logs)
+- [x] Contact management API (CRUD, CSV import/export, bulk operations, custom fields)
+- [x] Campaign builder API (create, update, schedule, retry logic, voice selection)
+- [x] AI TTS integration (OpenAI TTS API with alloy/echo/fable/onyx/nova/shimmer voices)
+- [x] FreePBX AMI integration (connect to 45.77.75.198, originate calls, track status)
+- [x] Call result tracking (answered/busy/no-answer/failed with detailed logging)
+- [x] Campaign scheduling (timezone support, time-window restrictions, auto-retry)
+- [x] Audio file management (S3 storage for TTS-generated messages)
+- [x] Real-time campaign dashboard (active calls, completion rates, live progress)
+- [x] Security features (rate limiting, input validation, audit logging)
+- [x] Role-based access control (admin/user roles, protected routes)
+- [x] Dashboard layout with sidebar navigation
+- [x] Contacts page with CSV import/export UI
+- [x] Campaign builder page with message composer and voice preview
+- [x] Campaign detail page with live call progress
+- [x] Analytics page with call result charts
+- [x] Audio library page for managing TTS files
+- [x] Settings page for FreePBX connection config
+- [x] Vitest unit tests for backend procedures

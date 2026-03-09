@@ -21,15 +21,20 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 
 const menuItems = [
-  { icon: LayoutDashboard, label: "Page 1", path: "/" },
-  { icon: Users, label: "Page 2", path: "/some-path" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Megaphone, label: "Campaigns", path: "/campaigns" },
+  { icon: Users, label: "Contacts", path: "/contacts" },
+  { icon: Volume2, label: "Audio / TTS", path: "/audio" },
+  { icon: FileText, label: "Call Logs", path: "/call-logs" },
+  { icon: Shield, label: "Audit Log", path: "/audit" },
+  { icon: Phone, label: "FreePBX", path: "/freepbx" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -171,7 +176,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate">
-                    Navigation
+                    TTS Dialer
                   </span>
                 </div>
               ) : null}

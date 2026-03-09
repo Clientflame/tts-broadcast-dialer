@@ -5,14 +5,24 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import Campaigns from "./pages/Campaigns";
+import Contacts from "./pages/Contacts";
+import Audio from "./pages/Audio";
+import CallLogs from "./pages/CallLogs";
+import AuditLog from "./pages/AuditLog";
+import FreePBX from "./pages/FreePBX";
 
 function Router() {
-  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/campaigns"} component={Campaigns} />
+      <Route path={"/contacts"} component={Contacts} />
+      <Route path={"/audio"} component={Audio} />
+      <Route path={"/call-logs"} component={CallLogs} />
+      <Route path={"/audit"} component={AuditLog} />
+      <Route path={"/freepbx"} component={FreePBX} />
       <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
       <Route component={NotFound} />
     </Switch>
   );
