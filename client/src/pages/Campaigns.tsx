@@ -10,31 +10,48 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import {
-  Plus, Play, Pause, StopCircle, Trash2, Eye, Megaphone,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, Settings2,
+  Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  draft: "outline",
-  scheduled: "secondary",
-  running: "default",
-  paused: "secondary",
-  completed: "default",
-  cancelled: "destructive",
+  draft: "outline", scheduled: "secondary", running: "default",
+  paused: "secondary", completed: "default", cancelled: "destructive",
 };
+
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
+  "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
+  "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
+];
+
+const IVR_ACTIONS = [
+  { value: "transfer", label: "Transfer to Extension" },
+  { value: "optout", label: "Opt-Out (Add to DNC)" },
+  { value: "repeat", label: "Repeat Message" },
+  { value: "callback", label: "Request Callback" },
+  { value: "confirm", label: "Confirm / Accept" },
+];
 
 export default function Campaigns() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const [cloneId, setCloneId] = useState<number | null>(null);
+  const [cloneName, setCloneName] = useState("");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: "", description: "", contactListId: 0, audioFileId: 0,
     voice: "alloy", callerIdNumber: "", callerIdName: "",
-    maxConcurrentCalls: 1, retryAttempts: 0, retryDelay: 300,
+    maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
     timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
+    ivrEnabled: false, ivrOptions: [] as { digit: string; action: string; label: string }[],
+    abTestGroup: "", abTestVariant: "",
+    targetStates: [] as string[], useGeoCallerIds: false,
   });
 
   const [, setLocation] = useLocation();
@@ -42,11 +59,17 @@ export default function Campaigns() {
   const campaigns = trpc.campaigns.list.useQuery();
   const contactLists = trpc.contactLists.list.useQuery();
   const audioFiles = trpc.audio.list.useQuery();
+  const templates = trpc.templates.list.useQuery();
   const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
   const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
 
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); resetForm(); toast.success("Campaign created"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const cloneCampaign = trpc.campaigns.clone.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); setCloneOpen(false); setCloneName(""); toast.success("Campaign cloned"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -73,9 +96,46 @@ export default function Campaigns() {
   const resetForm = () => setForm({
     name: "", description: "", contactListId: 0, audioFileId: 0,
     voice: "alloy", callerIdNumber: "", callerIdName: "",
-    maxConcurrentCalls: 1, retryAttempts: 0, retryDelay: 300,
+    maxConcurrentCalls: 3, retryAttempts: 0, retryDelay: 300,
     timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
+    ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
+    targetStates: [], useGeoCallerIds: false,
   });
+
+  const loadTemplate = (templateId: number) => {
+    const t = templates.data?.find(t => t.id === templateId);
+    if (!t) return;
+    setForm(p => ({
+      ...p,
+      voice: t.voice || p.voice,
+      maxConcurrentCalls: t.maxConcurrentCalls ?? p.maxConcurrentCalls,
+      retryAttempts: t.retryAttempts ?? p.retryAttempts,
+      retryDelay: t.retryDelay ?? p.retryDelay,
+      timezone: t.timezone || p.timezone,
+      timeWindowStart: t.timeWindowStart || p.timeWindowStart,
+      timeWindowEnd: t.timeWindowEnd || p.timeWindowEnd,
+    }));
+    toast.success(`Template "${t.name}" loaded`);
+  };
+
+  const addIvrOption = () => {
+    if (form.ivrOptions.length >= 9) return;
+    const nextDigit = String(form.ivrOptions.length + 1);
+    setForm(p => ({ ...p, ivrOptions: [...p.ivrOptions, { digit: nextDigit, action: "confirm", label: "" }] }));
+  };
+
+  const removeIvrOption = (idx: number) => {
+    setForm(p => ({ ...p, ivrOptions: p.ivrOptions.filter((_, i) => i !== idx) }));
+  };
+
+  const toggleState = (state: string) => {
+    setForm(p => ({
+      ...p,
+      targetStates: p.targetStates.includes(state)
+        ? p.targetStates.filter(s => s !== state)
+        : [...p.targetStates, state],
+    }));
+  };
 
   const readyAudioFiles = useMemo(() => audioFiles.data?.filter(f => f.status === "ready") || [], [audioFiles.data]);
 
@@ -84,6 +144,7 @@ export default function Campaigns() {
     return Math.round((campaignStats.data.completed / campaignStats.data.total) * 100);
   }, [campaignStats.data]);
 
+  // Campaign Detail View
   if (detailId && campaignDetail.data) {
     const c = campaignDetail.data;
     const stats = campaignStats.data;
@@ -98,6 +159,10 @@ export default function Campaigns() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_COLORS[c.status] || "outline"} className="text-sm px-3 py-1">{c.status}</Badge>
+              {/* Clone button */}
+              <Button variant="outline" size="sm" onClick={() => { setCloneId(c.id); setCloneName(`${c.name} (Copy)`); setCloneOpen(true); }}>
+                <Copy className="h-4 w-4 mr-1" />Clone
+              </Button>
               {c.status === "draft" && (
                 <Button onClick={() => startCampaign.mutate({ id: c.id })} disabled={startCampaign.isPending}>
                   <Play className="h-4 w-4 mr-2" />{startCampaign.isPending ? "Starting..." : "Start"}
@@ -156,8 +221,7 @@ export default function Campaigns() {
                 </div>
                 {stats.active > 0 && (
                   <div className="flex items-center gap-2 text-sm text-primary">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    {stats.active} active call{stats.active > 1 ? "s" : ""} in progress
+                    <Loader2 className="h-4 w-4 animate-spin" />{stats.active} active call{stats.active > 1 ? "s" : ""} in progress
                   </div>
                 )}
               </CardContent>
@@ -165,7 +229,7 @@ export default function Campaigns() {
           )}
 
           {/* Campaign Settings */}
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader><CardTitle className="text-base">Configuration</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -173,7 +237,7 @@ export default function Campaigns() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Concurrent Calls</span><span>{c.maxConcurrentCalls}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "Default"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}</span></div>
               </CardContent>
             </Card>
             <Card>
@@ -185,16 +249,38 @@ export default function Campaigns() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Completed</span><span>{c.completedAt ? new Date(c.completedAt).toLocaleString() : "—"}</span></div>
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Features</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">IVR</span>
+                  <Badge variant={c.ivrEnabled ? "default" : "outline"}>{c.ivrEnabled ? "Enabled" : "Disabled"}</Badge>
+                </div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Geo Targeting</span>
+                  <Badge variant={c.useGeoCallerIds ? "default" : "outline"}>{c.useGeoCallerIds ? "Active" : "Off"}</Badge>
+                </div>
+                <div className="flex justify-between"><span className="text-muted-foreground">A/B Test</span>
+                  <span>{c.abTestGroup || "None"}{c.abTestVariant ? ` (${c.abTestVariant})` : ""}</span>
+                </div>
+                {c.targetStates && typeof c.targetStates === "string" && (
+                  <div className="flex justify-between"><span className="text-muted-foreground">Target States</span>
+                    <span className="text-right max-w-[150px] truncate">{c.targetStates || "All"}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
-          <Button variant="outline" onClick={() => setLocation(`/call-logs?campaign=${c.id}`)}>
-            <BarChart3 className="h-4 w-4 mr-2" />View Call Logs
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setLocation(`/call-logs?campaign=${c.id}`)}>
+              <BarChart3 className="h-4 w-4 mr-2" />View Call Logs
+            </Button>
+          </div>
         </div>
       </DashboardLayout>
     );
   }
 
+  // Campaign List View
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -207,14 +293,32 @@ export default function Campaigns() {
             <DialogTrigger asChild>
               <Button><Plus className="h-4 w-4 mr-2" />New Campaign</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Create Campaign</DialogTitle></DialogHeader>
+
+              {/* Template loader */}
+              {templates.data && templates.data.length > 0 && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 mb-2">
+                  <Wand2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Load from template:</span>
+                  <Select onValueChange={v => loadTemplate(parseInt(v))}>
+                    <SelectTrigger className="w-[200px] h-8"><SelectValue placeholder="Select template" /></SelectTrigger>
+                    <SelectContent>
+                      {templates.data.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <Tabs defaultValue="basic" className="w-full">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="basic">Basic Info</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-5">
+                  <TabsTrigger value="basic">Basic</TabsTrigger>
                   <TabsTrigger value="dialing">Dialing</TabsTrigger>
+                  <TabsTrigger value="ivr">IVR</TabsTrigger>
+                  <TabsTrigger value="targeting">Targeting</TabsTrigger>
                   <TabsTrigger value="schedule">Schedule</TabsTrigger>
                 </TabsList>
+
                 <TabsContent value="basic" className="space-y-4 mt-4">
                   <div><Label>Campaign Name *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. March Promo Blast" /></div>
                   <div><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Campaign description..." /></div>
@@ -239,7 +343,6 @@ export default function Campaigns() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground mt-1">Generate audio in the Audio/TTS section first</p>
                   </div>
                   <div>
                     <Label>Voice</Label>
@@ -252,36 +355,118 @@ export default function Campaigns() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {/* A/B Testing */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>A/B Test Group</Label><Input value={form.abTestGroup} onChange={e => setForm(p => ({ ...p, abTestGroup: e.target.value }))} placeholder="e.g. spring-2026" /></div>
+                    <div><Label>Variant</Label>
+                      <Select value={form.abTestVariant || "none"} onValueChange={v => setForm(p => ({ ...p, abTestVariant: v === "none" ? "" : v }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No A/B Test</SelectItem>
+                          <SelectItem value="A">Variant A</SelectItem>
+                          <SelectItem value="B">Variant B</SelectItem>
+                          <SelectItem value="C">Variant C</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </TabsContent>
+
                 <TabsContent value="dialing" className="space-y-4 mt-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div><Label>Caller ID Number</Label><Input value={form.callerIdNumber} onChange={e => setForm(p => ({ ...p, callerIdNumber: e.target.value }))} placeholder="e.g. +15551234567" /></div>
+                    <div><Label>Caller ID Number</Label><Input value={form.callerIdNumber} onChange={e => setForm(p => ({ ...p, callerIdNumber: e.target.value }))} placeholder="Leave blank for DID rotation" /></div>
                     <div><Label>Caller ID Name</Label><Input value={form.callerIdName} onChange={e => setForm(p => ({ ...p, callerIdName: e.target.value }))} placeholder="e.g. My Company" /></div>
                   </div>
+                  <p className="text-xs text-muted-foreground">Leave Caller ID blank to use automatic DID rotation from your Caller ID pool.</p>
                   <div>
                     <Label>Max Concurrent Calls</Label>
-                    <Input type="number" min={1} max={10} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
-                    <p className="text-xs text-muted-foreground mt-1">Number of simultaneous outbound calls (1-10)</p>
+                    <Input type="number" min={1} max={50} value={form.maxConcurrentCalls} onChange={e => setForm(p => ({ ...p, maxConcurrentCalls: parseInt(e.target.value) || 1 }))} />
+                    <p className="text-xs text-muted-foreground mt-1">Number of simultaneous outbound calls (1-50)</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label>Retry Attempts</Label>
-                      <Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} />
-                    </div>
-                    <div>
-                      <Label>Retry Delay (seconds)</Label>
-                      <Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} />
-                    </div>
+                    <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
+                    <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /></div>
                   </div>
                 </TabsContent>
+
+                <TabsContent value="ivr" className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base">Interactive Voice Response (IVR)</Label>
+                      <p className="text-xs text-muted-foreground mt-1">Allow callers to press keys to take actions during the broadcast</p>
+                    </div>
+                    <Switch checked={form.ivrEnabled} onCheckedChange={v => setForm(p => ({ ...p, ivrEnabled: v }))} />
+                  </div>
+                  {form.ivrEnabled && (
+                    <div className="space-y-3">
+                      {form.ivrOptions.map((opt, idx) => (
+                        <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border">
+                          <Badge variant="outline" className="w-8 h-8 flex items-center justify-center text-lg font-mono">{opt.digit}</Badge>
+                          <Select value={opt.action} onValueChange={v => {
+                            const updated = [...form.ivrOptions];
+                            updated[idx] = { ...updated[idx], action: v };
+                            setForm(p => ({ ...p, ivrOptions: updated }));
+                          }}>
+                            <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {IVR_ACTIONS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <Input placeholder="Label (e.g. Press 1 to confirm)" value={opt.label}
+                            onChange={e => {
+                              const updated = [...form.ivrOptions];
+                              updated[idx] = { ...updated[idx], label: e.target.value };
+                              setForm(p => ({ ...p, ivrOptions: updated }));
+                            }} className="flex-1" />
+                          <Button variant="ghost" size="sm" onClick={() => removeIvrOption(idx)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        </div>
+                      ))}
+                      <Button variant="outline" size="sm" onClick={addIvrOption} disabled={form.ivrOptions.length >= 9}>
+                        <Plus className="h-4 w-4 mr-1" />Add IVR Option
+                      </Button>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="targeting" className="space-y-4 mt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base">Geographic Caller ID Matching</Label>
+                      <p className="text-xs text-muted-foreground mt-1">Automatically match caller IDs to contact area codes/states</p>
+                    </div>
+                    <Switch checked={form.useGeoCallerIds} onCheckedChange={v => setForm(p => ({ ...p, useGeoCallerIds: v }))} />
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-2"><MapPin className="h-4 w-4" />Target States</Label>
+                    <p className="text-xs text-muted-foreground mb-2">Only dial contacts in selected states. Leave empty to dial all.</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto p-2 border rounded-lg">
+                      {US_STATES.map(state => (
+                        <Badge key={state} variant={form.targetStates.includes(state) ? "default" : "outline"}
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => toggleState(state)}>{state}</Badge>
+                      ))}
+                    </div>
+                    {form.targetStates.length > 0 && (
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
+                        <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [] }))}>Clear All</Button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm">
+                    <div className="flex items-center gap-2 mb-1"><Shield className="h-4 w-4 text-blue-600" /><span className="font-medium text-blue-600">TCPA Compliance</span></div>
+                    <p className="text-muted-foreground text-xs">Calls are automatically checked against TCPA time windows (8 AM - 9 PM local time) based on each contact's area code timezone. Contacts outside the allowed window are deferred until the next valid time.</p>
+                  </div>
+                </TabsContent>
+
                 <TabsContent value="schedule" className="space-y-4 mt-4">
                   <div>
                     <Label>Timezone</Label>
                     <Select value={form.timezone} onValueChange={v => setForm(p => ({ ...p, timezone: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Phoenix","UTC"].map(tz => (
-                          <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                        {["America/New_York","America/Chicago","America/Denver","America/Los_Angeles","America/Phoenix","Pacific/Honolulu","America/Anchorage","UTC"].map(tz => (
+                          <SelectItem key={tz} value={tz}>{tz.replace("America/", "").replace("_", " ")}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -290,9 +475,10 @@ export default function Campaigns() {
                     <div><Label>Window Start</Label><Input type="time" value={form.timeWindowStart} onChange={e => setForm(p => ({ ...p, timeWindowStart: e.target.value }))} /></div>
                     <div><Label>Window End</Label><Input type="time" value={form.timeWindowEnd} onChange={e => setForm(p => ({ ...p, timeWindowEnd: e.target.value }))} /></div>
                   </div>
-                  <p className="text-xs text-muted-foreground">Calls will only be placed within this time window in the selected timezone.</p>
+                  <p className="text-xs text-muted-foreground">Calls will only be placed within this time window. TCPA compliance auto-checks each contact's local time.</p>
                 </TabsContent>
               </Tabs>
+
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setCreateOpen(false); resetForm(); }}>Cancel</Button>
                 <Button
@@ -310,6 +496,12 @@ export default function Campaigns() {
                     timezone: form.timezone,
                     timeWindowStart: form.timeWindowStart,
                     timeWindowEnd: form.timeWindowEnd,
+                    ivrEnabled: form.ivrEnabled ? 1 : 0,
+                    ivrOptions: form.ivrEnabled ? form.ivrOptions : undefined,
+                    abTestGroup: form.abTestGroup || undefined,
+                    abTestVariant: form.abTestVariant || undefined,
+                    targetStates: form.targetStates.length > 0 ? form.targetStates : undefined,
+                    useGeoCallerIds: form.useGeoCallerIds ? 1 : 0,
                   })}
                   disabled={!form.name || !form.contactListId || createCampaign.isPending}
                 >
@@ -333,7 +525,13 @@ export default function Campaigns() {
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base truncate">{campaign.name}</CardTitle>
-                    <Badge variant={STATUS_COLORS[campaign.status] || "outline"}>{campaign.status}</Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={STATUS_COLORS[campaign.status] || "outline"}>{campaign.status}</Badge>
+                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => {
+                        e.stopPropagation();
+                        setCloneId(campaign.id); setCloneName(`${campaign.name} (Copy)`); setCloneOpen(true);
+                      }}><Copy className="h-3 w-3" /></Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -352,6 +550,23 @@ export default function Campaigns() {
           </div>
         )}
       </div>
+
+      {/* Clone Dialog */}
+      <Dialog open={cloneOpen} onOpenChange={setCloneOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Clone Campaign</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>New Campaign Name</Label><Input value={cloneName} onChange={e => setCloneName(e.target.value)} /></div>
+            <p className="text-sm text-muted-foreground">All settings from the original campaign will be copied. The new campaign will start in "draft" status.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloneOpen(false)}>Cancel</Button>
+            <Button onClick={() => { if (cloneId) cloneCampaign.mutate({ id: cloneId, name: cloneName }); }} disabled={!cloneName || cloneCampaign.isPending}>
+              {cloneCampaign.isPending ? "Cloning..." : "Clone Campaign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

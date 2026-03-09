@@ -174,10 +174,10 @@ describe("campaigns - input validation", () => {
     await expect(caller.campaigns.create({ name: "", contactListId: 1 })).rejects.toThrow();
   });
 
-  it("rejects concurrent calls above 10", async () => {
+  it("rejects concurrent calls above 50", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.campaigns.create({ name: "Test", contactListId: 1, maxConcurrentCalls: 11 })).rejects.toThrow();
+    await expect(caller.campaigns.create({ name: "Test", contactListId: 1, maxConcurrentCalls: 51 })).rejects.toThrow();
   });
 
   it("rejects retry attempts above 5", async () => {

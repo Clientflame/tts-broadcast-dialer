@@ -90,6 +90,16 @@ export const campaigns = mysqlTable("campaigns", {
   voice: varchar("voice", { length: 50 }).default("alloy"),
   callerIdNumber: varchar("callerIdNumber", { length: 20 }),
   callerIdName: varchar("callerIdName", { length: 100 }),
+  // IVR options
+  ivrEnabled: int("ivrEnabled").default(0).notNull(),
+  ivrOptions: json("ivrOptions").$type<Array<{ digit: string; action: string; label: string }>>(),
+  // A/B testing
+  abTestGroup: varchar("abTestGroup", { length: 50 }),
+  abTestVariant: varchar("abTestVariant", { length: 10 }),
+  // Geo targeting
+  targetStates: json("targetStates").$type<string[]>(),
+  targetAreaCodes: json("targetAreaCodes").$type<string[]>(),
+  useGeoCallerIds: int("useGeoCallerIds").default(0).notNull(),
   status: mysqlEnum("status", [
     "draft",
     "scheduled",
@@ -143,6 +153,8 @@ export const callLogs = mysqlTable("call_logs", {
   asteriskCallId: varchar("asteriskCallId", { length: 255 }),
   errorMessage: text("errorMessage"),
   dtmfResponse: varchar("dtmfResponse", { length: 10 }),
+  ivrAction: varchar("ivrAction", { length: 50 }),
+  callerIdUsed: varchar("callerIdUsed", { length: 20 }),
   startedAt: bigint("startedAt", { mode: "number" }),
   answeredAt: bigint("answeredAt", { mode: "number" }),
   endedAt: bigint("endedAt", { mode: "number" }),
@@ -218,3 +230,47 @@ export const broadcastTemplates = mysqlTable("broadcast_templates", {
 
 export type BroadcastTemplate = typeof broadcastTemplates.$inferSelect;
 export type InsertBroadcastTemplate = typeof broadcastTemplates.$inferInsert;
+
+// ─── Contact Scores ───────────────────────────────────────────────────────
+export const contactScores = mysqlTable("contact_scores", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  contactId: int("contactId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  score: int("score").default(0).notNull(),
+  totalCalls: int("totalCalls").default(0).notNull(),
+  answeredCalls: int("answeredCalls").default(0).notNull(),
+  avgDuration: int("avgDuration").default(0).notNull(),
+  lastCallResult: varchar("lastCallResult", { length: 50 }),
+  tags: json("tags").$type<string[]>(),
+  notes: text("notes"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ContactScore = typeof contactScores.$inferSelect;
+export type InsertContactScore = typeof contactScores.$inferInsert;
+
+// ─── Cost Settings ────────────────────────────────────────────────────────
+export const costSettings = mysqlTable("cost_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  trunkCostPerMinute: varchar("trunkCostPerMinute", { length: 20 }).default("0.01").notNull(),
+  ttsCostPer1kChars: varchar("ttsCostPer1kChars", { length: 20 }).default("0.015").notNull(),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  avgCallDurationSecs: int("avgCallDurationSecs").default(30).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CostSetting = typeof costSettings.$inferSelect;
+export type InsertCostSetting = typeof costSettings.$inferInsert;
+
+// ─── Caller ID Regions ────────────────────────────────────────────────────
+export const callerIdRegions = mysqlTable("caller_id_regions", {
+  id: int("id").autoincrement().primaryKey(),
+  callerIdId: int("callerIdId").notNull(),
+  state: varchar("state", { length: 50 }),
+  areaCode: varchar("areaCode", { length: 10 }),
+});
+
+export type CallerIdRegion = typeof callerIdRegions.$inferSelect;
+export type InsertCallerIdRegion = typeof callerIdRegions.$inferInsert;

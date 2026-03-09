@@ -15,6 +15,9 @@ import DncList from "./pages/DncList";
 import CallerIds from "./pages/CallerIds";
 import Templates from "./pages/Templates";
 import Analytics from "./pages/Analytics";
+import CostEstimator from "./pages/CostEstimator";
+import AiGenerator from "./pages/AiGenerator";
+import Reports from "./pages/Reports";
 
 function Router() {
   return (
@@ -29,6 +32,9 @@ function Router() {
       <Route path={"/call-logs"} component={CallLogs} />
       <Route path={"/audit"} component={AuditLog} />
       <Route path={"/dnc"} component={DncList} />
+      <Route path={"/ai-generator"} component={AiGenerator} />
+      <Route path={"/cost-estimator"} component={CostEstimator} />
+      <Route path={"/reports"} component={Reports} />
       <Route path={"/freepbx"} component={FreePBX} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />

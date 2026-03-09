@@ -8,6 +8,120 @@ import * as db from "./db";
 import { generateTTS, TTS_VOICES, generateVoiceSample } from "./services/tts";
 import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
+import { invokeLLM } from "./_core/llm";
+
+// US area code to timezone mapping (simplified)
+const AREA_CODE_TIMEZONE: Record<string, string> = {
+  "201":"America/New_York","202":"America/New_York","203":"America/New_York","205":"America/Chicago",
+  "206":"America/Los_Angeles","207":"America/New_York","208":"America/Boise","209":"America/Los_Angeles",
+  "210":"America/Chicago","212":"America/New_York","213":"America/Los_Angeles","214":"America/Chicago",
+  "215":"America/New_York","216":"America/New_York","217":"America/Chicago","218":"America/Chicago",
+  "219":"America/Chicago","224":"America/Chicago","225":"America/Chicago","228":"America/Chicago",
+  "229":"America/New_York","231":"America/New_York","234":"America/New_York","239":"America/New_York",
+  "240":"America/New_York","248":"America/New_York","251":"America/Chicago","252":"America/New_York",
+  "253":"America/Los_Angeles","254":"America/Chicago","256":"America/Chicago","260":"America/New_York",
+  "262":"America/Chicago","267":"America/New_York","269":"America/New_York","270":"America/New_York",
+  "276":"America/New_York","281":"America/Chicago","301":"America/New_York","302":"America/New_York",
+  "303":"America/Denver","304":"America/New_York","305":"America/New_York","307":"America/Denver",
+  "308":"America/Chicago","309":"America/Chicago","310":"America/Los_Angeles","312":"America/Chicago",
+  "313":"America/New_York","314":"America/Chicago","315":"America/New_York","316":"America/Chicago",
+  "317":"America/New_York","318":"America/Chicago","319":"America/Chicago","320":"America/Chicago",
+  "321":"America/New_York","323":"America/Los_Angeles","325":"America/Chicago","330":"America/New_York",
+  "331":"America/Chicago","334":"America/Chicago","336":"America/New_York","337":"America/Chicago",
+  "339":"America/New_York","347":"America/New_York","351":"America/New_York","352":"America/New_York",
+  "360":"America/Los_Angeles","361":"America/Chicago","385":"America/Denver","386":"America/New_York",
+  "401":"America/New_York","402":"America/Chicago","404":"America/New_York","405":"America/Chicago",
+  "406":"America/Denver","407":"America/New_York","408":"America/Los_Angeles","409":"America/Chicago",
+  "410":"America/New_York","412":"America/New_York","413":"America/New_York","414":"America/Chicago",
+  "415":"America/Los_Angeles","417":"America/Chicago","419":"America/New_York","423":"America/New_York",
+  "424":"America/Los_Angeles","425":"America/Los_Angeles","430":"America/Chicago","432":"America/Chicago",
+  "434":"America/New_York","435":"America/Denver","440":"America/New_York","442":"America/Los_Angeles",
+  "443":"America/New_York","469":"America/Chicago","470":"America/New_York","475":"America/New_York",
+  "478":"America/New_York","479":"America/Chicago","480":"America/Phoenix","484":"America/New_York",
+  "501":"America/Chicago","502":"America/New_York","503":"America/Los_Angeles","504":"America/Chicago",
+  "505":"America/Denver","507":"America/Chicago","508":"America/New_York","509":"America/Los_Angeles",
+  "510":"America/Los_Angeles","512":"America/Chicago","513":"America/New_York","515":"America/Chicago",
+  "516":"America/New_York","517":"America/New_York","518":"America/New_York","520":"America/Phoenix",
+  "530":"America/Los_Angeles","531":"America/Chicago","534":"America/Chicago","539":"America/Chicago",
+  "540":"America/New_York","541":"America/Los_Angeles","551":"America/New_York","559":"America/Los_Angeles",
+  "561":"America/New_York","562":"America/Los_Angeles","563":"America/Chicago","567":"America/New_York",
+  "570":"America/New_York","571":"America/New_York","573":"America/Chicago","574":"America/New_York",
+  "575":"America/Denver","580":"America/Chicago","585":"America/New_York","586":"America/New_York",
+  "601":"America/Chicago","602":"America/Phoenix","603":"America/New_York","605":"America/Chicago",
+  "606":"America/New_York","607":"America/New_York","608":"America/Chicago","609":"America/New_York",
+  "610":"America/New_York","612":"America/Chicago","614":"America/New_York","615":"America/Chicago",
+  "616":"America/New_York","617":"America/New_York","618":"America/Chicago","619":"America/Los_Angeles",
+  "620":"America/Chicago","623":"America/Phoenix","626":"America/Los_Angeles","628":"America/Los_Angeles",
+  "629":"America/Chicago","630":"America/Chicago","631":"America/New_York","636":"America/Chicago",
+  "641":"America/Chicago","646":"America/New_York","650":"America/Los_Angeles","651":"America/Chicago",
+  "657":"America/Los_Angeles","660":"America/Chicago","661":"America/Los_Angeles","662":"America/Chicago",
+  "667":"America/New_York","669":"America/Los_Angeles","678":"America/New_York","681":"America/New_York",
+  "682":"America/Chicago","701":"America/Chicago","702":"America/Los_Angeles","703":"America/New_York",
+  "704":"America/New_York","706":"America/New_York","707":"America/Los_Angeles","708":"America/Chicago",
+  "712":"America/Chicago","713":"America/Chicago","714":"America/Los_Angeles","715":"America/Chicago",
+  "716":"America/New_York","717":"America/New_York","718":"America/New_York","719":"America/Denver",
+  "720":"America/Denver","724":"America/New_York","725":"America/Los_Angeles","727":"America/New_York",
+  "731":"America/Chicago","732":"America/New_York","734":"America/New_York","737":"America/Chicago",
+  "740":"America/New_York","743":"America/New_York","747":"America/Los_Angeles","754":"America/New_York",
+  "757":"America/New_York","760":"America/Los_Angeles","762":"America/New_York","763":"America/Chicago",
+  "765":"America/New_York","769":"America/Chicago","770":"America/New_York","772":"America/New_York",
+  "773":"America/Chicago","774":"America/New_York","775":"America/Los_Angeles","779":"America/Chicago",
+  "781":"America/New_York","785":"America/Chicago","786":"America/New_York","801":"America/Denver",
+  "802":"America/New_York","803":"America/New_York","804":"America/New_York","805":"America/Los_Angeles",
+  "806":"America/Chicago","808":"Pacific/Honolulu","810":"America/New_York","812":"America/New_York",
+  "813":"America/New_York","814":"America/New_York","815":"America/Chicago","816":"America/Chicago",
+  "817":"America/Chicago","818":"America/Los_Angeles","828":"America/New_York","830":"America/Chicago",
+  "831":"America/Los_Angeles","832":"America/Chicago","843":"America/New_York","845":"America/New_York",
+  "847":"America/Chicago","848":"America/New_York","850":"America/Chicago","856":"America/New_York",
+  "857":"America/New_York","858":"America/Los_Angeles","859":"America/New_York","860":"America/New_York",
+  "862":"America/New_York","863":"America/New_York","864":"America/New_York","865":"America/New_York",
+  "870":"America/Chicago","872":"America/Chicago","878":"America/New_York","901":"America/Chicago",
+  "903":"America/Chicago","904":"America/New_York","906":"America/New_York","907":"America/Anchorage",
+  "908":"America/New_York","909":"America/Los_Angeles","910":"America/New_York","912":"America/New_York",
+  "913":"America/Chicago","914":"America/New_York","915":"America/Denver","916":"America/Los_Angeles",
+  "917":"America/New_York","918":"America/Chicago","919":"America/New_York","920":"America/Chicago",
+  "925":"America/Los_Angeles","928":"America/Phoenix","929":"America/New_York","931":"America/Chicago",
+  "936":"America/Chicago","937":"America/New_York","938":"America/Chicago","940":"America/Chicago",
+  "941":"America/New_York","947":"America/New_York","949":"America/Los_Angeles","951":"America/Los_Angeles",
+  "952":"America/Chicago","954":"America/New_York","956":"America/Chicago","959":"America/New_York",
+  "970":"America/Denver","971":"America/Los_Angeles","972":"America/Chicago","973":"America/New_York",
+  "978":"America/New_York","979":"America/Chicago","980":"America/New_York","984":"America/New_York",
+  "985":"America/Chicago","989":"America/New_York",
+};
+
+// TCPA calling windows by timezone
+const TCPA_WINDOWS: Record<string, { start: number; end: number }> = {
+  "America/New_York": { start: 8, end: 21 },
+  "America/Chicago": { start: 8, end: 21 },
+  "America/Denver": { start: 8, end: 21 },
+  "America/Los_Angeles": { start: 8, end: 21 },
+  "America/Phoenix": { start: 8, end: 21 },
+  "America/Anchorage": { start: 8, end: 21 },
+  "Pacific/Honolulu": { start: 8, end: 21 },
+  "America/Boise": { start: 8, end: 21 },
+};
+
+function getAreaCode(phone: string): string | null {
+  const digits = phone.replace(/[^0-9]/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return digits.substring(1, 4);
+  if (digits.length === 10) return digits.substring(0, 3);
+  return null;
+}
+
+function getTimezoneFromPhone(phone: string): string {
+  const areaCode = getAreaCode(phone);
+  if (areaCode && AREA_CODE_TIMEZONE[areaCode]) return AREA_CODE_TIMEZONE[areaCode];
+  return "America/New_York";
+}
+
+function isWithinTCPAWindow(phone: string): { allowed: boolean; timezone: string; localHour: number } {
+  const tz = getTimezoneFromPhone(phone);
+  const now = new Date();
+  const localTime = new Date(now.toLocaleString("en-US", { timeZone: tz }));
+  const hour = localTime.getHours();
+  const window = TCPA_WINDOWS[tz] || { start: 8, end: 21 };
+  return { allowed: hour >= window.start && hour < window.end, timezone: tz, localHour: hour };
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -117,9 +231,7 @@ export const appRouter = router({
       })).min(1).max(10000),
     })).mutation(async ({ ctx, input }) => {
       const contactData = input.contacts.map(c => ({
-        ...c,
-        listId: input.listId,
-        userId: ctx.user.id,
+        ...c, listId: input.listId, userId: ctx.user.id,
       })) as any;
       const result = await db.bulkCreateContacts(contactData);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contacts.import", resource: "contacts", resourceId: input.listId, details: { count: result.count } });
@@ -143,20 +255,11 @@ export const appRouter = router({
       speed: z.number().min(0.25).max(4.0).optional(),
     })).mutation(async ({ ctx, input }) => {
       const record = await db.createAudioFile({
-        userId: ctx.user.id,
-        name: input.name,
-        text: input.text,
-        voice: input.voice,
-        status: "generating",
+        userId: ctx.user.id, name: input.name, text: input.text, voice: input.voice, status: "generating",
       });
       generateTTS({ text: input.text, voice: input.voice, name: input.name, speed: input.speed })
         .then(async (result) => {
-          await db.updateAudioFile(record.id, {
-            s3Url: result.s3Url,
-            s3Key: result.s3Key,
-            fileSize: result.fileSize,
-            status: "ready",
-          });
+          await db.updateAudioFile(record.id, { s3Url: result.s3Url, s3Key: result.s3Key, fileSize: result.fileSize, status: "ready" });
         })
         .catch(async (err) => {
           console.error("[TTS] Generation failed:", err);
@@ -197,7 +300,14 @@ export const appRouter = router({
       voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
       callerIdNumber: z.string().max(20).optional(),
       callerIdName: z.string().max(100).optional(),
-      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      ivrEnabled: z.number().min(0).max(1).optional(),
+      ivrOptions: z.array(z.object({ digit: z.string(), action: z.string(), label: z.string() })).optional(),
+      abTestGroup: z.string().max(50).optional(),
+      abTestVariant: z.string().max(10).optional(),
+      targetStates: z.array(z.string()).optional(),
+      targetAreaCodes: z.array(z.string()).optional(),
+      useGeoCallerIds: z.number().min(0).max(1).optional(),
+      maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -219,7 +329,14 @@ export const appRouter = router({
       voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
       callerIdNumber: z.string().max(20).optional(),
       callerIdName: z.string().max(100).optional(),
-      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      ivrEnabled: z.number().min(0).max(1).optional(),
+      ivrOptions: z.array(z.object({ digit: z.string(), action: z.string(), label: z.string() })).optional(),
+      abTestGroup: z.string().max(50).optional(),
+      abTestVariant: z.string().max(10).optional(),
+      targetStates: z.array(z.string()).optional(),
+      targetAreaCodes: z.array(z.string()).optional(),
+      useGeoCallerIds: z.number().min(0).max(1).optional(),
+      maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -259,11 +376,36 @@ export const appRouter = router({
       const stats = await db.getCampaignStats(input.id);
       return { ...stats, isActive: isCampaignActive(input.id) };
     }),
+    // Campaign Cloning
+    clone: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.cloneCampaign(input.id, ctx.user.id, input.name);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clone", resource: "campaign", resourceId: result.id, details: { clonedFrom: input.id } });
+      return result;
+    }),
   }),
 
   callLogs: router({
     list: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
       return db.getCallLogs(input.campaignId, ctx.user.id);
+    }),
+    export: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
+      const logs = await db.getCallLogsForExport(input.campaignId, ctx.user.id);
+      const campaign = await db.getCampaign(input.campaignId, ctx.user.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      // Generate CSV content
+      const headers = ["ID","Phone Number","Contact Name","Status","Duration (s)","Attempt","DTMF Response","IVR Action","Caller ID Used","Error","Started At","Answered At","Ended At"];
+      const rows = logs.map(l => [
+        l.id, l.phoneNumber, l.contactName || "", l.status, l.duration ?? "", l.attempt,
+        l.dtmfResponse || "", l.ivrAction || "", l.callerIdUsed || "", l.errorMessage || "",
+        l.startedAt ? new Date(l.startedAt).toISOString() : "",
+        l.answeredAt ? new Date(l.answeredAt).toISOString() : "",
+        l.endedAt ? new Date(l.endedAt).toISOString() : "",
+      ]);
+      const csv = [headers.join(","), ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
+      return { csv, campaignName: campaign.name, totalRows: logs.length };
     }),
   }),
 
@@ -358,6 +500,20 @@ export const appRouter = router({
       await db.bulkDeleteCallerIds(input.ids, ctx.user.id);
       return { success: true };
     }),
+    // Set region mappings for geo targeting
+    setRegions: protectedProcedure.input(z.object({
+      callerIdId: z.number(),
+      regions: z.array(z.object({
+        state: z.string().optional(),
+        areaCode: z.string().optional(),
+      })),
+    })).mutation(async ({ ctx, input }) => {
+      await db.setCallerIdRegions(input.callerIdId, input.regions);
+      return { success: true };
+    }),
+    getRegions: protectedProcedure.input(z.object({ callerIdId: z.number() })).query(async ({ input }) => {
+      return db.getCallerIdRegions(input.callerIdId);
+    }),
   }),
 
   templates: router({
@@ -374,7 +530,7 @@ export const appRouter = router({
       description: z.string().optional(),
       messageText: z.string().optional(),
       voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -392,7 +548,7 @@ export const appRouter = router({
       description: z.string().optional(),
       messageText: z.string().optional(),
       voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      maxConcurrentCalls: z.number().min(1).max(50).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -419,6 +575,151 @@ export const appRouter = router({
       if (!result) throw new TRPCError({ code: "NOT_FOUND" });
       return result;
     }),
+    abTest: protectedProcedure.input(z.object({ group: z.string() })).query(async ({ ctx, input }) => {
+      return db.getABTestResults(input.group, ctx.user.id);
+    }),
+  }),
+
+  // Contact Scoring
+  scoring: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getContactScores(ctx.user.id);
+    }),
+    get: protectedProcedure.input(z.object({ contactId: z.number() })).query(async ({ ctx, input }) => {
+      return db.getContactScore(input.contactId, ctx.user.id);
+    }),
+    recalculate: protectedProcedure.input(z.object({ contactId: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.recalculateContactScore(input.contactId, ctx.user.id);
+      return { success: true };
+    }),
+    updateTags: protectedProcedure.input(z.object({
+      contactId: z.number(),
+      tags: z.array(z.string()),
+      notes: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const score = await db.getContactScore(input.contactId, ctx.user.id);
+      if (!score) throw new TRPCError({ code: "NOT_FOUND" });
+      await db.updateContactScore(score.id, { tags: input.tags, notes: input.notes });
+      return { success: true };
+    }),
+  }),
+
+  // Cost Estimator
+  costEstimator: router({
+    getSettings: protectedProcedure.query(async ({ ctx }) => {
+      const settings = await db.getCostSettings(ctx.user.id);
+      return settings || {
+        trunkCostPerMinute: "0.01",
+        ttsCostPer1kChars: "0.015",
+        currency: "USD",
+        avgCallDurationSecs: 30,
+      };
+    }),
+    updateSettings: protectedProcedure.input(z.object({
+      trunkCostPerMinute: z.string().optional(),
+      ttsCostPer1kChars: z.string().optional(),
+      currency: z.string().max(10).optional(),
+      avgCallDurationSecs: z.number().min(1).max(600).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertCostSettings(ctx.user.id, input);
+      return { success: true };
+    }),
+    estimate: protectedProcedure.input(z.object({
+      contactCount: z.number().min(1),
+      messageLength: z.number().min(1),
+      retryAttempts: z.number().min(0).max(5).optional(),
+      expectedAnswerRate: z.number().min(0).max(100).optional(),
+    })).query(async ({ ctx, input }) => {
+      const settings = await db.getCostSettings(ctx.user.id);
+      const trunkRate = parseFloat(settings?.trunkCostPerMinute ?? "0.01");
+      const ttsRate = parseFloat(settings?.ttsCostPer1kChars ?? "0.015");
+      const avgDuration = settings?.avgCallDurationSecs ?? 30;
+      const currency = settings?.currency ?? "USD";
+      const answerRate = (input.expectedAnswerRate ?? 30) / 100;
+      const totalAttempts = input.contactCount * (1 + (input.retryAttempts ?? 0));
+      const answeredCalls = Math.round(totalAttempts * answerRate);
+      // Trunk cost: per-minute billing, rounded up
+      const totalMinutes = Math.ceil((answeredCalls * avgDuration) / 60);
+      const trunkCost = totalMinutes * trunkRate;
+      // TTS cost: OpenAI charges per 1M characters for tts-1, ~$15/1M chars
+      // But we generate once and reuse, so it's just the message generation cost
+      const ttsCost = (input.messageLength / 1000) * ttsRate;
+      const totalCost = trunkCost + ttsCost;
+      return {
+        currency,
+        contactCount: input.contactCount,
+        totalAttempts,
+        expectedAnswered: answeredCalls,
+        totalMinutes,
+        trunkCost: Math.round(trunkCost * 100) / 100,
+        ttsCost: Math.round(ttsCost * 1000) / 1000,
+        totalEstimatedCost: Math.round(totalCost * 100) / 100,
+        breakdown: {
+          trunkRatePerMin: trunkRate,
+          ttsRatePer1kChars: ttsRate,
+          avgCallDurationSecs: avgDuration,
+          answerRatePercent: Math.round(answerRate * 100),
+        },
+      };
+    }),
+  }),
+
+  // Timezone & TCPA
+  timezone: router({
+    detect: protectedProcedure.input(z.object({ phoneNumber: z.string() })).query(({ input }) => {
+      const tz = getTimezoneFromPhone(input.phoneNumber);
+      const tcpa = isWithinTCPAWindow(input.phoneNumber);
+      return { ...tcpa, areaCode: getAreaCode(input.phoneNumber) };
+    }),
+    checkBatch: protectedProcedure.input(z.object({
+      phoneNumbers: z.array(z.string()).min(1).max(1000),
+    })).query(({ input }) => {
+      const results = input.phoneNumbers.map(phone => {
+        const tcpa = isWithinTCPAWindow(phone);
+        return { phoneNumber: phone, ...tcpa, areaCode: getAreaCode(phone) };
+      });
+      const callable = results.filter(r => r.allowed).length;
+      const blocked = results.filter(r => !r.allowed).length;
+      return { results, summary: { callable, blocked, total: results.length } };
+    }),
+  }),
+
+  // AI Message Generator
+  aiGenerator: router({
+    generate: protectedProcedure.input(z.object({
+      topic: z.string().min(1).max(500),
+      tone: z.enum(["professional", "friendly", "urgent", "casual", "formal"]).optional(),
+      maxLength: z.number().min(50).max(2000).optional(),
+      industry: z.string().max(100).optional(),
+      callToAction: z.string().max(200).optional(),
+    })).mutation(async ({ input }) => {
+      const prompt = `Generate a broadcast phone call script/message for the following:
+Topic: ${input.topic}
+Tone: ${input.tone || "professional"}
+Industry: ${input.industry || "general"}
+${input.callToAction ? `Call to Action: ${input.callToAction}` : ""}
+Max Length: approximately ${input.maxLength || 300} characters
+
+Requirements:
+- Write as if speaking directly to the listener on a phone call
+- Keep it concise and clear for audio delivery
+- Include a brief greeting and closing
+- Do not include stage directions or notes, just the spoken text
+- Make it sound natural, not robotic
+
+Return ONLY the message text, nothing else.`;
+
+      const result = await invokeLLM({
+        messages: [
+          { role: "system", content: "You are an expert broadcast message copywriter. Generate concise, effective phone broadcast messages." },
+          { role: "user", content: prompt },
+        ],
+      });
+      const message = typeof result.choices[0]?.message?.content === "string"
+        ? result.choices[0].message.content.trim()
+        : "";
+      return { message, charCount: message.length };
+    }),
   }),
 
   quickTest: router({
@@ -434,16 +735,38 @@ export const appRouter = router({
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
       const originateResult = await ami.originate({
-        channel,
-        context: "tts-broadcast",
-        exten: "s",
-        priority: "1",
-        timeout: 30000,
-        variables: { AUDIOFILE: result.remotePath },
-        async: true,
+        channel, context: "tts-broadcast", exten: "s", priority: "1", timeout: 30000,
+        variables: { AUDIOFILE: result.remotePath }, async: true,
       });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });
       return { success: originateResult.Response !== "Error", message: originateResult.Message || "Call queued" };
+    }),
+  }),
+
+  reports: router({
+    exportCampaign: protectedProcedure.input(z.object({ campaignId: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.campaignId, ctx.user.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+      const logs = await db.getCallLogsForExport(input.campaignId, ctx.user.id);
+      const headers = ["Contact Name","Phone","Status","Duration (s)","Timestamp","Attempt","Caller ID"];
+      const rows = logs.map((l: any) => [
+        l.contactName || "", l.phoneNumber, l.status, l.duration || 0,
+        l.startedAt ? new Date(l.startedAt).toISOString() : "", l.attemptNumber || 1, l.callerIdUsed || "",
+      ]);
+      const csv = [headers.join(","), ...rows.map((r: any[]) => r.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "reports.export", resource: "campaign", resourceId: input.campaignId });
+      return { csv, filename: `campaign_${campaign.name.replace(/[^a-zA-Z0-9]/g, "_")}_report.csv` };
+    }),
+    exportAll: protectedProcedure.mutation(async ({ ctx }) => {
+      const campaigns = await db.getCampaigns(ctx.user.id);
+      const headers = ["Campaign","Status","Total Contacts","Completed","Voice","Created","Started","Completed At"];
+      const rows = campaigns.map((c: any) => [
+        c.name, c.status, c.totalContacts, c.completedCalls, c.voice || "alloy",
+        new Date(c.createdAt).toISOString(), c.startedAt ? new Date(c.startedAt).toISOString() : "",
+        c.completedAt ? new Date(c.completedAt).toISOString() : "",
+      ]);
+      const csv = [headers.join(","), ...rows.map((r: any[]) => r.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
+      return { csv, filename: `all_campaigns_report_${new Date().toISOString().split("T")[0]}.csv` };
     }),
   }),
 

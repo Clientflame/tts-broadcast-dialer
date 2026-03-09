@@ -36,4 +36,14 @@
 - [x] TTS speed control (0.25x to 4.0x)
 - [x] Caller IDs show date added, call count, last used date
 - [x] Live Dialer Dashboard - active calls, leads in hopper, concurrent calls
-- [ ] Provide 20 feature suggestions
+- [x] Provide 20 feature suggestions
+- [x] Campaign Cloning - duplicate existing campaign with one click
+- [x] Interactive IVR - press-1-to-connect, press-2-to-opt-out during broadcast
+- [x] Geographic Targeting - filter contacts by state/area code, assign region-specific caller IDs
+- [x] Timezone Auto-Detection - detect timezone from area code, enforce TCPA calling windows
+- [x] Campaign A/B Testing - test different messages/voices, compare answer rates
+- [x] Contact Scoring - score contacts based on call history (answered, interested, callback)
+- [x] Export Call Reports - download CSV/PDF reports of campaign results
+- [x] AI Message Generator - draft broadcast messages from brief description using AI
+- [x] Campaign Cost Estimator - estimate costs based on trunk rates and OpenAI TTS API costs
+- [ ] Publish and whitelist production IP

@@ -10,6 +10,9 @@ import {
   auditLogs, InsertAuditLog,
   callerIds, InsertCallerId,
   broadcastTemplates, InsertBroadcastTemplate,
+  contactScores, InsertContactScore,
+  costSettings, InsertCostSetting,
+  callerIdRegions, InsertCallerIdRegion,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -579,4 +582,182 @@ export async function getCampaignAnalytics(campaignId: number, userId: number) {
     maxDuration: Number(durationStats?.maxDur ?? 0),
     minDuration: Number(durationStats?.minDur ?? 0),
   };
+}
+
+// ─── Contact Scores ─────────────────────────────────────────────────────────
+export async function upsertContactScore(data: InsertContactScore) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await db.select().from(contactScores)
+    .where(and(eq(contactScores.contactId, data.contactId), eq(contactScores.userId, data.userId))).limit(1);
+  if (existing.length > 0) {
+    await db.update(contactScores).set(data).where(eq(contactScores.id, existing[0].id));
+    return { id: existing[0].id };
+  }
+  const result = await db.insert(contactScores).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getContactScores(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(contactScores).where(eq(contactScores.userId, userId)).orderBy(desc(contactScores.score));
+}
+
+export async function getContactScore(contactId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(contactScores)
+    .where(and(eq(contactScores.contactId, contactId), eq(contactScores.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function updateContactScore(id: number, data: Partial<InsertContactScore>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(contactScores).set(data).where(eq(contactScores.id, id));
+}
+
+export async function recalculateContactScore(contactId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  const logs = await db.select().from(callLogs)
+    .where(and(eq(callLogs.contactId, contactId), eq(callLogs.userId, userId)));
+  const totalCalls = logs.length;
+  const answeredCalls = logs.filter(l => l.status === "answered" || l.status === "completed").length;
+  const durations = logs.filter(l => l.duration && l.duration > 0).map(l => l.duration!);
+  const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+  const lastLog = logs.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))[0];
+  // Score: 10 pts per answered, 5 pts per call, bonus for duration
+  const score = (answeredCalls * 10) + (totalCalls * 5) + Math.min(avgDuration, 50);
+  const contact = await db.select().from(contacts).where(eq(contacts.id, contactId)).limit(1);
+  const phoneNumber = contact[0]?.phoneNumber ?? "";
+  await upsertContactScore({
+    userId, contactId, phoneNumber, score, totalCalls, answeredCalls, avgDuration,
+    lastCallResult: lastLog?.status ?? null,
+  });
+}
+
+// ─── Cost Settings ──────────────────────────────────────────────────────────
+export async function getCostSettings(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(costSettings).where(eq(costSettings.userId, userId)).limit(1);
+  return result[0];
+}
+
+export async function upsertCostSettings(userId: number, data: Partial<InsertCostSetting>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await db.select().from(costSettings).where(eq(costSettings.userId, userId)).limit(1);
+  if (existing.length > 0) {
+    await db.update(costSettings).set(data).where(eq(costSettings.id, existing[0].id));
+    return { id: existing[0].id };
+  }
+  const result = await db.insert(costSettings).values({ userId, ...data } as InsertCostSetting);
+  return { id: result[0].insertId };
+}
+
+// ─── Caller ID Regions ──────────────────────────────────────────────────────
+export async function setCallerIdRegions(callerIdId: number, regions: Array<{ state?: string; areaCode?: string }>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(callerIdRegions).where(eq(callerIdRegions.callerIdId, callerIdId));
+  if (regions.length > 0) {
+    await db.insert(callerIdRegions).values(regions.map(r => ({ callerIdId, state: r.state ?? null, areaCode: r.areaCode ?? null })));
+  }
+}
+
+export async function getCallerIdRegions(callerIdId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(callerIdRegions).where(eq(callerIdRegions.callerIdId, callerIdId));
+}
+
+export async function getCallerIdsByRegion(userId: number, state?: string, areaCode?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  // Get caller IDs that match the region or have no region assigned (global)
+  const allCallerIdsList = await db.select().from(callerIds)
+    .where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1)));
+  const allRegions = await db.select().from(callerIdRegions);
+  const regionMap = new Map<number, Array<{ state: string | null; areaCode: string | null }>>();
+  for (const r of allRegions) {
+    if (!regionMap.has(r.callerIdId)) regionMap.set(r.callerIdId, []);
+    regionMap.get(r.callerIdId)!.push(r);
+  }
+  return allCallerIdsList.filter(cid => {
+    const regions = regionMap.get(cid.id);
+    if (!regions || regions.length === 0) return true; // global
+    return regions.some(r =>
+      (state && r.state && r.state.toLowerCase() === state.toLowerCase()) ||
+      (areaCode && r.areaCode && r.areaCode === areaCode)
+    );
+  });
+}
+
+// ─── Campaign Cloning ───────────────────────────────────────────────────────
+export async function cloneCampaign(id: number, userId: number, newName: string) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const original = await getCampaign(id, userId);
+  if (!original) throw new Error("Campaign not found");
+  const { id: _id, status: _status, completedCalls: _cc, answeredCalls: _ac, failedCalls: _fc,
+    startedAt: _sa, completedAt: _ca, createdAt: _cr, updatedAt: _up, ...rest } = original;
+  const result = await db.insert(campaigns).values({
+    ...rest,
+    name: newName,
+    status: "draft",
+    completedCalls: 0,
+    answeredCalls: 0,
+    failedCalls: 0,
+  });
+  return { id: result[0].insertId };
+}
+
+// ─── A/B Test Analytics ─────────────────────────────────────────────────────
+export async function getABTestResults(abTestGroup: string, userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const groupCampaigns = await db.select().from(campaigns)
+    .where(and(eq(campaigns.userId, userId), eq(campaigns.abTestGroup, abTestGroup)));
+  const results = [];
+  for (const c of groupCampaigns) {
+    const stats = await getCampaignStats(c.id);
+    results.push({
+      campaignId: c.id,
+      variant: c.abTestVariant ?? "default",
+      name: c.name,
+      voice: c.voice,
+      totalContacts: c.totalContacts,
+      completedCalls: c.completedCalls,
+      answeredCalls: c.answeredCalls,
+      failedCalls: c.failedCalls,
+      answerRate: c.totalContacts > 0 ? Math.round((c.answeredCalls / c.totalContacts) * 100) : 0,
+      stats,
+    });
+  }
+  return results;
+}
+
+// ─── Export Helpers ──────────────────────────────────────────────────────────
+export async function getCallLogsForExport(campaignId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: callLogs.id,
+    phoneNumber: callLogs.phoneNumber,
+    contactName: callLogs.contactName,
+    status: callLogs.status,
+    duration: callLogs.duration,
+    attempt: callLogs.attempt,
+    dtmfResponse: callLogs.dtmfResponse,
+    ivrAction: callLogs.ivrAction,
+    callerIdUsed: callLogs.callerIdUsed,
+    errorMessage: callLogs.errorMessage,
+    startedAt: callLogs.startedAt,
+    answeredAt: callLogs.answeredAt,
+    endedAt: callLogs.endedAt,
+  }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId)))
+    .orderBy(callLogs.id);
 }
