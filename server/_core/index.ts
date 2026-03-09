@@ -70,6 +70,14 @@ async function startServer() {
     } catch (err) {
       console.error("[Startup] Campaign recovery failed:", err);
     }
+
+    // Start the health check scheduler
+    try {
+      const { startHealthCheckScheduler } = await import("../services/health-scheduler");
+      startHealthCheckScheduler();
+    } catch (err) {
+      console.error("[Startup] Health check scheduler failed:", err);
+    }
   });
 }
 

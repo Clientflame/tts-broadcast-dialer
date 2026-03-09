@@ -411,3 +411,17 @@ export const callScripts = mysqlTable("call_scripts", {
 
 export type CallScript = typeof callScripts.$inferSelect;
 export type InsertCallScript = typeof callScripts.$inferInsert;
+
+// ─── Health Check Schedule ──────────────────────────────────────────────────
+export const healthCheckSchedule = mysqlTable("health_check_schedule", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  enabled: int("enabled").default(0).notNull(), // 0 = disabled, 1 = enabled
+  intervalHours: int("intervalHours").default(24).notNull(), // how often to run (in hours)
+  lastRunAt: timestamp("lastRunAt"),
+  nextRunAt: timestamp("nextRunAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type HealthCheckSchedule = typeof healthCheckSchedule.$inferSelect;
+export type InsertHealthCheckSchedule = typeof healthCheckSchedule.$inferInsert;

@@ -147,3 +147,7 @@
 - [x] Call Scripts - add Updated timestamp column to scripts table
 - [x] DNC List - show total number count (prominent red card with count)
 - [x] DNC List - ability to un-DNC (remove) numbers with prominent Un-DNC buttons (single + bulk)
+- [x] Scheduled auto health checks - server-side interval scheduler checks every 60s for due schedules
+- [x] Health check schedule settings UI - enable/disable, configurable interval (1h to 7 days), last/next run display
+- [x] Bulk delete contacts - already had checkbox selection with Delete (N) button
+- [x] Vitest tests for health check scheduler (6 tests)

@@ -17,6 +17,7 @@ import {
   userGroupMemberships, InsertUserGroupMembership,
   localAuth, InsertLocalAuth,
   callScripts, InsertCallScript,
+  healthCheckSchedule, InsertHealthCheckSchedule,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1355,4 +1356,51 @@ export async function deleteCallScript(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(callScripts).where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)));
+}
+
+
+// ─── Health Check Schedule ────────────────────────────────────────────────
+export async function getHealthCheckSchedule(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(healthCheckSchedule).where(eq(healthCheckSchedule.userId, userId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertHealthCheckSchedule(userId: number, data: { enabled: number; intervalHours: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getHealthCheckSchedule(userId);
+  const nextRunAt = data.enabled ? new Date(Date.now() + data.intervalHours * 60 * 60 * 1000) : null;
+  if (existing) {
+    await db.update(healthCheckSchedule)
+      .set({ enabled: data.enabled, intervalHours: data.intervalHours, nextRunAt })
+      .where(eq(healthCheckSchedule.id, existing.id));
+    return { ...existing, ...data, nextRunAt };
+  } else {
+    const result = await db.insert(healthCheckSchedule).values({ userId, enabled: data.enabled, intervalHours: data.intervalHours, nextRunAt });
+    return { id: Number(result[0].insertId), userId, ...data, nextRunAt };
+  }
+}
+
+export async function markHealthCheckRun(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const schedule = await getHealthCheckSchedule(userId);
+  if (!schedule) return;
+  const nextRunAt = new Date(Date.now() + schedule.intervalHours * 60 * 60 * 1000);
+  await db.update(healthCheckSchedule)
+    .set({ lastRunAt: new Date(), nextRunAt })
+    .where(eq(healthCheckSchedule.id, schedule.id));
+}
+
+/** Get all schedules that are due to run (enabled and nextRunAt <= now) */
+export async function getDueHealthCheckSchedules() {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.select().from(healthCheckSchedule)
+    .where(and(
+      eq(healthCheckSchedule.enabled, 1),
+      sql`${healthCheckSchedule.nextRunAt} <= NOW()`
+    ));
 }

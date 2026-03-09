@@ -634,6 +634,22 @@ export const appRouter = router({
       await db.resetCallerIdHealth(input.id, ctx.user.id);
       return { success: true };
     }),
+    // Health check schedule endpoints
+    getSchedule: protectedProcedure.query(async ({ ctx }) => {
+      const schedule = await db.getHealthCheckSchedule(ctx.user.id);
+      return schedule || { enabled: 0, intervalHours: 24, lastRunAt: null, nextRunAt: null };
+    }),
+    updateSchedule: protectedProcedure.input(z.object({
+      enabled: z.boolean(),
+      intervalHours: z.number().min(1).max(168), // 1 hour to 7 days
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.upsertHealthCheckSchedule(ctx.user.id, {
+        enabled: input.enabled ? 1 : 0,
+        intervalHours: input.intervalHours,
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.updateSchedule", resource: "callerId", details: { enabled: input.enabled, intervalHours: input.intervalHours } });
+      return result;
+    }),
   }),
 
   templates: router({

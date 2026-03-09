@@ -12,7 +12,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures }: {
   status: string;
@@ -91,6 +92,11 @@ export default function CallerIds() {
   });
   const resetHealthMut = trpc.callerIds.resetHealth.useMutation({
     onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Health status reset and caller ID re-enabled"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const { data: schedule } = trpc.callerIds.getSchedule.useQuery();
+  const updateScheduleMut = trpc.callerIds.updateSchedule.useMutation({
+    onSuccess: () => { utils.callerIds.getSchedule.invalidate(); toast.success("Health check schedule updated"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -272,6 +278,68 @@ export default function CallerIds() {
             </CardContent>
           </Card>
         )}
+
+        {/* Auto Health Check Schedule */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-primary" />
+                <div>
+                  <CardTitle className="text-base">Automatic Health Checks</CardTitle>
+                  <CardDescription>Schedule periodic DID health checks to automatically detect and disable failing numbers</CardDescription>
+                </div>
+              </div>
+              <Switch
+                checked={schedule?.enabled === 1}
+                onCheckedChange={(checked) => {
+                  updateScheduleMut.mutate({ enabled: checked, intervalHours: schedule?.intervalHours || 24 });
+                }}
+              />
+            </div>
+          </CardHeader>
+          {schedule?.enabled === 1 && (
+            <CardContent className="pt-0">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-muted-foreground whitespace-nowrap">Check every</Label>
+                  <Select
+                    value={String(schedule?.intervalHours || 24)}
+                    onValueChange={(val) => updateScheduleMut.mutate({ enabled: true, intervalHours: Number(val) })}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1 hour</SelectItem>
+                      <SelectItem value="4">4 hours</SelectItem>
+                      <SelectItem value="8">8 hours</SelectItem>
+                      <SelectItem value="12">12 hours</SelectItem>
+                      <SelectItem value="24">24 hours</SelectItem>
+                      <SelectItem value="48">2 days</SelectItem>
+                      <SelectItem value="72">3 days</SelectItem>
+                      <SelectItem value="168">7 days</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  {schedule?.lastRunAt && (
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      Last run: {new Date(schedule.lastRunAt).toLocaleString()}
+                    </span>
+                  )}
+                  {schedule?.nextRunAt && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Next run: {new Date(schedule.nextRunAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          )}
+        </Card>
 
         <Card>
           <CardContent className="p-0">
