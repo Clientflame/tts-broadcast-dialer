@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,17 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
+import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square } from "lucide-react";
+import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic } from "lucide-react";
 
 const VOICE_OPTIONS = [
-  { id: "alloy", name: "Alloy", desc: "Neutral and balanced" },
-  { id: "echo", name: "Echo", desc: "Warm and confident" },
-  { id: "fable", name: "Fable", desc: "Expressive and dynamic" },
-  { id: "onyx", name: "Onyx", desc: "Deep and authoritative" },
-  { id: "nova", name: "Nova", desc: "Friendly and upbeat" },
-  { id: "shimmer", name: "Shimmer", desc: "Clear and pleasant" },
+  { id: "alloy", name: "Alloy", desc: "Neutral and balanced", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
+  { id: "echo", name: "Echo", desc: "Warm and confident", color: "bg-amber-500/10 border-amber-500/20 text-amber-700" },
+  { id: "fable", name: "Fable", desc: "Expressive and dynamic", color: "bg-purple-500/10 border-purple-500/20 text-purple-700" },
+  { id: "onyx", name: "Onyx", desc: "Deep and authoritative", color: "bg-slate-500/10 border-slate-500/20 text-slate-700" },
+  { id: "nova", name: "Nova", desc: "Friendly and upbeat", color: "bg-green-500/10 border-green-500/20 text-green-700" },
+  { id: "shimmer", name: "Shimmer", desc: "Clear and pleasant", color: "bg-pink-500/10 border-pink-500/20 text-pink-700" },
 ] as const;
 
 function AudioPlayer({ url, name }: { url: string; name: string }) {
@@ -77,14 +78,96 @@ function AudioPlayer({ url, name }: { url: string; name: string }) {
   );
 }
 
+function VoiceSampleCard({ voice, color, name, desc }: { voice: string; color: string; name: string; desc: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sampleUrl, setSampleUrl] = useState<string | null>(null);
+  const [sampleSpeed, setSampleSpeed] = useState(1.0);
+
+  const voiceSample = trpc.audio.voiceSample.useMutation({
+    onSuccess: (data) => {
+      setSampleUrl(data.url);
+      setLoading(false);
+      // Auto-play after generation
+      const audio = new window.Audio(data.url);
+      audioRef.current = audio;
+      audio.onended = () => setPlaying(false);
+      audio.onerror = () => { setPlaying(false); toast.error("Failed to play sample"); };
+      audio.play();
+      setPlaying(true);
+    },
+    onError: (e) => { setLoading(false); toast.error(e.message); },
+  });
+
+  useEffect(() => {
+    return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
+  }, []);
+
+  const handlePlay = () => {
+    if (playing && audioRef.current) {
+      audioRef.current.pause();
+      setPlaying(false);
+      return;
+    }
+
+    if (sampleUrl && sampleSpeed === 1.0) {
+      // Replay cached sample
+      if (audioRef.current) { audioRef.current.currentTime = 0; audioRef.current.play(); setPlaying(true); }
+      return;
+    }
+
+    // Generate new sample
+    setLoading(true);
+    voiceSample.mutate({ voice: voice as any, speed: sampleSpeed });
+  };
+
+  return (
+    <div className={`border rounded-lg p-4 space-y-3 ${color}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Mic className="h-4 w-4" />
+          <span className="font-semibold text-sm">{name}</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={handlePlay}
+          disabled={loading}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : playing ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+      <p className="text-xs opacity-80">{desc}</p>
+      <div className="text-[10px] opacity-60">
+        {sampleUrl ? "Click play to hear sample" : "Click play to generate sample"}
+      </div>
+    </div>
+  );
+}
+
 export default function Audio() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [quickTestOpen, setQuickTestOpen] = useState(false);
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [voice, setVoice] = useState<string>("alloy");
+  const [speed, setSpeed] = useState(1.0);
   const [testPhone, setTestPhone] = useState("");
   const [testAudioId, setTestAudioId] = useState<number | null>(null);
+
+  const speedLabel = useMemo(() => {
+    if (speed === 1.0) return "Normal";
+    if (speed < 1.0) return `${speed.toFixed(2)}x (Slower)`;
+    return `${speed.toFixed(2)}x (Faster)`;
+  }, [speed]);
 
   const utils = trpc.useUtils();
   const audioFiles = trpc.audio.list.useQuery();
@@ -93,7 +176,7 @@ export default function Audio() {
     onSuccess: () => {
       utils.audio.list.invalidate();
       setGenerateOpen(false);
-      setName(""); setText(""); setVoice("alloy");
+      setName(""); setText(""); setVoice("alloy"); setSpeed(1.0);
       toast.success("TTS generation started. Audio will be ready shortly.");
     },
     onError: (e) => toast.error(e.message),
@@ -204,6 +287,26 @@ export default function Audio() {
                     </Select>
                   </div>
                   <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Label>Speech Speed</Label>
+                      <span className="text-xs font-medium text-muted-foreground">{speedLabel}</span>
+                    </div>
+                    <Slider
+                      value={[speed]}
+                      onValueChange={([v]) => setSpeed(v)}
+                      min={0.25}
+                      max={4.0}
+                      step={0.05}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                      <span>0.25x</span>
+                      <span>1.0x</span>
+                      <span>2.0x</span>
+                      <span>4.0x</span>
+                    </div>
+                  </div>
+                  <div>
                     <Label>Message Text</Label>
                     <Textarea value={text} onChange={e => setText(e.target.value)} placeholder="Enter the message to convert to speech..." rows={5} maxLength={5000} />
                     <p className="text-xs text-muted-foreground mt-1">{text.length}/5000 characters</p>
@@ -211,7 +314,7 @@ export default function Audio() {
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setGenerateOpen(false)}>Cancel</Button>
-                  <Button onClick={() => generateTTS.mutate({ name, text, voice: voice as any })} disabled={!name || !text || generateTTS.isPending}>
+                  <Button onClick={() => generateTTS.mutate({ name, text, voice: voice as any, speed })} disabled={!name || !text || generateTTS.isPending}>
                     {generateTTS.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating...</> : "Generate"}
                   </Button>
                 </DialogFooter>
@@ -220,10 +323,28 @@ export default function Audio() {
           </div>
         </div>
 
+        {/* Voice Samples Section */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <FileAudio className="h-4 w-4" />Audio Files
+              <Mic className="h-4 w-4" />Voice Samples
+            </CardTitle>
+            <CardDescription>Click play on any voice to hear a live preview sample</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {VOICE_OPTIONS.map(v => (
+                <VoiceSampleCard key={v.id} voice={v.id} color={v.color} name={v.name} desc={v.desc} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Audio Files Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileAudio className="h-4 w-4" />Generated Audio Files
             </CardTitle>
             <CardDescription>Click play to preview audio in your browser, or use Quick Test to hear it over the phone</CardDescription>
           </CardHeader>
@@ -280,23 +401,6 @@ export default function Audio() {
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-base">Voice Options</CardTitle></CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {VOICE_OPTIONS.map(v => (
-                <div key={v.id} className="border rounded-lg p-3 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Volume2 className="h-4 w-4 text-primary" />
-                    <span className="font-medium text-sm">{v.name}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{v.desc}</p>
-                </div>
-              ))}
-            </div>
           </CardContent>
         </Card>
       </div>

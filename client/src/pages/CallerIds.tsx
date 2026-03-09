@@ -163,6 +163,12 @@ export default function CallerIds() {
               <CardTitle className="text-3xl text-muted-foreground">{callerIds.length - activeCount}</CardTitle>
             </CardHeader>
           </Card>
+          <Card className="md:col-span-3">
+            <CardHeader className="pb-2">
+              <CardDescription>Total Calls Made Across All DIDs</CardDescription>
+              <CardTitle className="text-3xl">{callerIds.reduce((sum, c) => sum + (c.callCount || 0), 0)}</CardTitle>
+            </CardHeader>
+          </Card>
         </div>
 
         <Card>
@@ -177,6 +183,7 @@ export default function CallerIds() {
                     <th className="p-3 text-left">Phone Number</th>
                     <th className="p-3 text-left">Label</th>
                     <th className="p-3 text-left">Status</th>
+                    <th className="p-3 text-left">Date Added</th>
                     <th className="p-3 text-left">Calls Made</th>
                     <th className="p-3 text-left">Last Used</th>
                     <th className="p-3 text-right">Actions</th>
@@ -184,9 +191,9 @@ export default function CallerIds() {
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
+                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
                   ) : callerIds.length === 0 ? (
-                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No caller IDs yet. Add DIDs to enable caller ID rotation.
                     </td></tr>
@@ -206,7 +213,10 @@ export default function CallerIds() {
                           </Badge>
                         </div>
                       </td>
-                      <td className="p-3">{cid.callCount}</td>
+                      <td className="p-3 text-muted-foreground text-xs">
+                        {cid.createdAt ? new Date(cid.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="p-3 font-medium">{cid.callCount}</td>
                       <td className="p-3 text-muted-foreground">
                         {cid.lastUsedAt ? new Date(cid.lastUsedAt).toLocaleString() : "Never"}
                       </td>

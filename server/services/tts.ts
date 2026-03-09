@@ -16,9 +16,12 @@ export async function generateTTS(params: {
   text: string;
   voice: TTSVoice;
   name: string;
+  speed?: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI API key not configured");
+
+  const speed = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
 
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -31,6 +34,7 @@ export async function generateTTS(params: {
       input: params.text,
       voice: params.voice,
       response_format: "mp3",
+      speed,
     }),
   });
 
@@ -49,6 +53,40 @@ export async function generateTTS(params: {
     s3Key: key,
     fileSize: audioBuffer.length,
   };
+}
+
+// Generate a short voice sample for preview
+export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0): Promise<{ url: string; key: string }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OpenAI API key not configured");
+
+  const sampleText = "Hello, this is a sample of my voice. I can help you deliver clear and professional broadcast messages to your audience.";
+  const clampedSpeed = Math.max(0.25, Math.min(4.0, speed));
+
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "tts-1",
+      input: sampleText,
+      voice,
+      response_format: "mp3",
+      speed: clampedSpeed,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Voice sample generation failed (${response.status}): ${errText}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  const fileKey = `voice-samples/${voice}-speed${clampedSpeed}.mp3`;
+  const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
+  return { url, key };
 }
 
 export async function transferAudioToFreePBX(params: {

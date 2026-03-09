@@ -32,3 +32,8 @@
 - [x] Campaign analytics page with charts (answer rates, durations, performance)
 - [x] DID rotation integration in dialer engine
 - [x] Production IP whitelisting instructions
+- [x] Voice sample preview - hear each voice before selecting
+- [x] TTS speed control (0.25x to 4.0x)
+- [x] Caller IDs show date added, call count, last used date
+- [x] Live Dialer Dashboard - active calls, leads in hopper, concurrent calls
+- [ ] Provide 20 feature suggestions

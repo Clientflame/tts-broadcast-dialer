@@ -21,6 +21,44 @@ export function isCampaignActive(campaignId: number): boolean {
   return activeCampaigns.has(campaignId);
 }
 
+export async function getDialerLiveStats(userId: number) {
+  const activeIds = getActiveCampaignIds();
+  let activeCalls = 0;
+  let leadsInHopper = 0;
+  let concurrentLimit = 0;
+  const campaignDetails: Array<{ id: number; name: string; activeCalls: number; pending: number; maxConcurrent: number }> = [];
+
+  for (const campaignId of activeIds) {
+    const active = activeCampaigns.get(campaignId);
+    if (!active) continue;
+
+    const stats = await db.getCampaignStats(campaignId);
+    const pendingCalls = await db.getPendingCallLogs(campaignId);
+    const activeCallCount = await db.getActiveCallCount(campaignId);
+    const maxConcurrent = active.campaign.maxConcurrentCalls || 1;
+
+    activeCalls += activeCallCount;
+    leadsInHopper += pendingCalls.length;
+    concurrentLimit += maxConcurrent;
+
+    campaignDetails.push({
+      id: campaignId,
+      name: active.campaign.name,
+      activeCalls: activeCallCount,
+      pending: pendingCalls.length,
+      maxConcurrent,
+    });
+  }
+
+  return {
+    activeCalls,
+    leadsInHopper,
+    concurrentLimit,
+    activeCampaignCount: activeIds.length,
+    campaigns: campaignDetails,
+  };
+}
+
 export async function startCampaign(campaignId: number, userId: number): Promise<void> {
   const campaign = await db.getCampaign(campaignId, userId);
   if (!campaign) throw new Error("Campaign not found");

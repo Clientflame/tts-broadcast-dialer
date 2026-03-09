@@ -5,9 +5,9 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
-import { generateTTS, TTS_VOICES } from "./services/tts";
+import { generateTTS, TTS_VOICES, generateVoiceSample } from "./services/tts";
 import { getAMIStatus, getAMIClient } from "./services/ami";
-import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds } from "./services/dialer";
+import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
 
 export const appRouter = router({
   system: systemRouter,
@@ -29,6 +29,9 @@ export const appRouter = router({
     }),
     activeCampaigns: protectedProcedure.query(async () => {
       return { ids: getActiveCampaignIds() };
+    }),
+    dialerLive: protectedProcedure.query(async ({ ctx }) => {
+      return getDialerLiveStats(ctx.user.id);
     }),
   }),
 
@@ -137,6 +140,7 @@ export const appRouter = router({
       name: z.string().min(1).max(255),
       text: z.string().min(1).max(5000),
       voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]),
+      speed: z.number().min(0.25).max(4.0).optional(),
     })).mutation(async ({ ctx, input }) => {
       const record = await db.createAudioFile({
         userId: ctx.user.id,
@@ -145,7 +149,7 @@ export const appRouter = router({
         voice: input.voice,
         status: "generating",
       });
-      generateTTS({ text: input.text, voice: input.voice, name: input.name })
+      generateTTS({ text: input.text, voice: input.voice, name: input.name, speed: input.speed })
         .then(async (result) => {
           await db.updateAudioFile(record.id, {
             s3Url: result.s3Url,
@@ -166,6 +170,13 @@ export const appRouter = router({
       return { success: true };
     }),
     voices: publicProcedure.query(() => TTS_VOICES),
+    voiceSample: protectedProcedure.input(z.object({
+      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]),
+      speed: z.number().min(0.25).max(4.0).optional(),
+    })).mutation(async ({ input }) => {
+      const result = await generateVoiceSample(input.voice, input.speed);
+      return { url: result.url };
+    }),
   }),
 
   campaigns: router({
