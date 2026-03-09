@@ -12,6 +12,9 @@ import CallLogs from "./pages/CallLogs";
 import AuditLog from "./pages/AuditLog";
 import FreePBX from "./pages/FreePBX";
 import DncList from "./pages/DncList";
+import CallerIds from "./pages/CallerIds";
+import Templates from "./pages/Templates";
+import Analytics from "./pages/Analytics";
 
 function Router() {
   return (
@@ -20,6 +23,9 @@ function Router() {
       <Route path={"/campaigns"} component={Campaigns} />
       <Route path={"/contacts"} component={Contacts} />
       <Route path={"/audio"} component={Audio} />
+      <Route path={"/caller-ids"} component={CallerIds} />
+      <Route path={"/templates"} component={Templates} />
+      <Route path={"/analytics"} component={Analytics} />
       <Route path={"/call-logs"} component={CallLogs} />
       <Route path={"/audit"} component={AuditLog} />
       <Route path={"/dnc"} component={DncList} />

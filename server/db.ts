@@ -8,6 +8,8 @@ import {
   campaigns, InsertCampaign,
   callLogs, InsertCallLog,
   auditLogs, InsertAuditLog,
+  callerIds, InsertCallerId,
+  broadcastTemplates, InsertBroadcastTemplate,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -424,4 +426,157 @@ export async function getDncCount(userId: number): Promise<number> {
   if (!db) return 0;
   const [result] = await db.select({ cnt: count() }).from(dncList).where(eq(dncList.userId, userId));
   return result?.cnt ?? 0;
+}
+
+// ─── Caller IDs (DID Pool) ──────────────────────────────────────────────────
+export async function createCallerId(data: InsertCallerId) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const normalized = data.phoneNumber.replace(/\D/g, "");
+  const result = await db.insert(callerIds).values({ ...data, phoneNumber: normalized });
+  return { id: result[0].insertId };
+}
+
+export async function bulkCreateCallerIds(entries: InsertCallerId[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (entries.length === 0) return { count: 0 };
+  const normalized = entries.map(e => ({ ...e, phoneNumber: e.phoneNumber.replace(/\D/g, "") }));
+  await db.insert(callerIds).values(normalized);
+  return { count: normalized.length };
+}
+
+export async function getCallerIds(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(callerIds).where(eq(callerIds.userId, userId)).orderBy(desc(callerIds.createdAt));
+}
+
+export async function getActiveCallerIds(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(callerIds).where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1))).orderBy(callerIds.callCount);
+}
+
+export async function updateCallerId(id: number, userId: number, data: Partial<InsertCallerId>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callerIds).set(data).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+}
+
+export async function deleteCallerId(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(callerIds).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+}
+
+export async function bulkDeleteCallerIds(ids: number[], userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (ids.length === 0) return;
+  await db.delete(callerIds).where(and(inArray(callerIds.id, ids), eq(callerIds.userId, userId)));
+}
+
+export async function incrementCallerIdUsage(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(callerIds).set({ callCount: sql`callCount + 1`, lastUsedAt: Date.now() }).where(eq(callerIds.id, id));
+}
+
+export async function getNextRotatingCallerId(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  // Round-robin: pick the active caller ID with the lowest call count
+  const result = await db.select().from(callerIds)
+    .where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1)))
+    .orderBy(callerIds.callCount)
+    .limit(1);
+  return result[0];
+}
+
+// ─── Broadcast Templates ────────────────────────────────────────────────────
+export async function createBroadcastTemplate(data: InsertBroadcastTemplate) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(broadcastTemplates).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getBroadcastTemplates(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(broadcastTemplates).where(eq(broadcastTemplates.userId, userId)).orderBy(desc(broadcastTemplates.createdAt));
+}
+
+export async function getBroadcastTemplate(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(broadcastTemplates).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId))).limit(1);
+  return result[0];
+}
+
+export async function updateBroadcastTemplate(id: number, userId: number, data: Partial<InsertBroadcastTemplate>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(broadcastTemplates).set(data).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+}
+
+export async function deleteBroadcastTemplate(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(broadcastTemplates).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+}
+
+// ─── Analytics ──────────────────────────────────────────────────────────────
+export async function getCallAnalytics(userId: number) {
+  const db = await getDb();
+  if (!db) return { statusBreakdown: [], dailyCalls: [], avgDuration: 0, totalDuration: 0 };
+
+  const statusBreakdown = await db.select({
+    status: callLogs.status,
+    cnt: count(),
+  }).from(callLogs).where(eq(callLogs.userId, userId)).groupBy(callLogs.status);
+
+  const dailyCalls = await db.select({
+    day: sql<string>`DATE(createdAt)`,
+    cnt: count(),
+    answered: sql<number>`SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END)`,
+  }).from(callLogs).where(eq(callLogs.userId, userId)).groupBy(sql`DATE(createdAt)`).orderBy(sql`DATE(createdAt)`).limit(30);
+
+  const [durationStats] = await db.select({
+    avgDur: sql<number>`COALESCE(AVG(duration), 0)`,
+    totalDur: sql<number>`COALESCE(SUM(duration), 0)`,
+  }).from(callLogs).where(and(eq(callLogs.userId, userId), sql`duration IS NOT NULL AND duration > 0`));
+
+  return {
+    statusBreakdown: statusBreakdown.map(r => ({ status: r.status, count: r.cnt })),
+    dailyCalls: dailyCalls.map(r => ({ day: r.day, total: r.cnt, answered: Number(r.answered || 0) })),
+    avgDuration: Math.round(Number(durationStats?.avgDur ?? 0)),
+    totalDuration: Number(durationStats?.totalDur ?? 0),
+  };
+}
+
+export async function getCampaignAnalytics(campaignId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const campaign = await getCampaign(campaignId, userId);
+  if (!campaign) return null;
+
+  const stats = await getCampaignStats(campaignId);
+
+  const [durationStats] = await db.select({
+    avgDur: sql<number>`COALESCE(AVG(duration), 0)`,
+    totalDur: sql<number>`COALESCE(SUM(duration), 0)`,
+    maxDur: sql<number>`COALESCE(MAX(duration), 0)`,
+    minDur: sql<number>`COALESCE(MIN(CASE WHEN duration > 0 THEN duration END), 0)`,
+  }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), sql`duration IS NOT NULL AND duration > 0`));
+
+  return {
+    campaign,
+    stats,
+    avgDuration: Math.round(Number(durationStats?.avgDur ?? 0)),
+    totalDuration: Number(durationStats?.totalDur ?? 0),
+    maxDuration: Number(durationStats?.maxDur ?? 0),
+    minDuration: Number(durationStats?.minDur ?? 0),
+  };
 }

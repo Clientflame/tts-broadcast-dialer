@@ -76,9 +76,11 @@ export const appRouter = router({
       lastName: z.string().max(100).optional(),
       email: z.string().email().max(320).optional(),
       company: z.string().max(255).optional(),
+      state: z.string().max(50).optional(),
+      databaseName: z.string().max(255).optional(),
       customFields: z.record(z.string(), z.string()).optional(),
     })).mutation(async ({ ctx, input }) => {
-      return db.createContact({ ...input, userId: ctx.user.id });
+      return db.createContact({ ...input, userId: ctx.user.id } as any);
     }),
     update: protectedProcedure.input(z.object({
       id: z.number(),
@@ -106,6 +108,8 @@ export const appRouter = router({
         lastName: z.string().optional(),
         email: z.string().optional(),
         company: z.string().optional(),
+        state: z.string().optional(),
+        databaseName: z.string().optional(),
         customFields: z.record(z.string(), z.string()).optional(),
       })).min(1).max(10000),
     })).mutation(async ({ ctx, input }) => {
@@ -299,6 +303,136 @@ export const appRouter = router({
     }),
     check: protectedProcedure.input(z.object({ phoneNumber: z.string() })).query(async ({ ctx, input }) => {
       return { onDnc: await db.isPhoneOnDnc(input.phoneNumber, ctx.user.id) };
+    }),
+  }),
+
+  callerIds: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getCallerIds(ctx.user.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1).max(20),
+      label: z.string().max(255).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.createCallerId({ ...input, userId: ctx.user.id });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.create", resource: "callerId", resourceId: result.id });
+      return result;
+    }),
+    bulkCreate: protectedProcedure.input(z.object({
+      entries: z.array(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        label: z.string().max(255).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const data = input.entries.map(e => ({ ...e, userId: ctx.user.id }));
+      const result = await db.bulkCreateCallerIds(data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.bulkCreate", resource: "callerId", details: { count: result.count } });
+      return result;
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      phoneNumber: z.string().min(1).max(20).optional(),
+      label: z.string().max(255).optional(),
+      isActive: z.number().min(0).max(1).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateCallerId(id, ctx.user.id, data);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteCallerId(input.id, ctx.user.id);
+      return { success: true };
+    }),
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      await db.bulkDeleteCallerIds(input.ids, ctx.user.id);
+      return { success: true };
+    }),
+  }),
+
+  templates: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getBroadcastTemplates(ctx.user.id);
+    }),
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+      const template = await db.getBroadcastTemplate(input.id, ctx.user.id);
+      if (!template) throw new TRPCError({ code: "NOT_FOUND" });
+      return template;
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      messageText: z.string().optional(),
+      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      retryAttempts: z.number().min(0).max(5).optional(),
+      retryDelay: z.number().min(60).max(3600).optional(),
+      timezone: z.string().max(64).optional(),
+      timeWindowStart: z.string().max(5).optional(),
+      timeWindowEnd: z.string().max(5).optional(),
+      useDidRotation: z.number().min(0).max(1).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.createBroadcastTemplate({ ...input, userId: ctx.user.id });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "template.create", resource: "template", resourceId: result.id });
+      return result;
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      messageText: z.string().optional(),
+      voice: z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
+      retryAttempts: z.number().min(0).max(5).optional(),
+      retryDelay: z.number().min(60).max(3600).optional(),
+      timezone: z.string().max(64).optional(),
+      timeWindowStart: z.string().max(5).optional(),
+      timeWindowEnd: z.string().max(5).optional(),
+      useDidRotation: z.number().min(0).max(1).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateBroadcastTemplate(id, ctx.user.id, data);
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteBroadcastTemplate(input.id, ctx.user.id);
+      return { success: true };
+    }),
+  }),
+
+  analytics: router({
+    overview: protectedProcedure.query(async ({ ctx }) => {
+      return db.getCallAnalytics(ctx.user.id);
+    }),
+    campaign: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
+      const result = await db.getCampaignAnalytics(input.campaignId, ctx.user.id);
+      if (!result) throw new TRPCError({ code: "NOT_FOUND" });
+      return result;
+    }),
+  }),
+
+  quickTest: router({
+    dial: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1).max(20),
+      audioFileId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
+      if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
+      const { transferAudioToFreePBX } = await import("./services/tts");
+      const result = await transferAudioToFreePBX({ s3Url: audioFile.s3Url, fileName: `quicktest_${audioFile.id}.mp3` });
+      const ami = getAMIClient();
+      const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
+      const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
+      const originateResult = await ami.originate({
+        channel,
+        context: "tts-broadcast",
+        exten: "s",
+        priority: "1",
+        timeout: 30000,
+        variables: { AUDIOFILE: result.remotePath },
+        async: true,
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });
+      return { success: originateResult.Response !== "Error", message: originateResult.Message || "Call queued" };
     }),
   }),
 

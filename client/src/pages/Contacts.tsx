@@ -23,7 +23,7 @@ export default function Contacts() {
   const [importOpen, setImportOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<number[]>([]);
-  const [contactForm, setContactForm] = useState({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "" });
+  const [contactForm, setContactForm] = useState({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "", state: "", databaseName: "" });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -55,7 +55,7 @@ export default function Contacts() {
     onError: (e) => toast.error(e.message),
   });
 
-  const resetContactForm = () => setContactForm({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "" });
+  const resetContactForm = () => setContactForm({ phoneNumber: "", firstName: "", lastName: "", email: "", company: "", state: "", databaseName: "" });
 
   const filteredContacts = useMemo(() => {
     if (!contacts.data) return [];
@@ -84,6 +84,8 @@ export default function Contacts() {
       const lastIdx = headers.findIndex(h => h.includes("last") || h === "lastname");
       const emailIdx = headers.findIndex(h => h.includes("email"));
       const companyIdx = headers.findIndex(h => h.includes("company") || h.includes("org"));
+      const stateIdx = headers.findIndex(h => h === "state" || h.includes("state"));
+      const dbNameIdx = headers.findIndex(h => h.includes("database") || h === "db" || h === "database name");
 
       const parsed = lines.slice(1).map(line => {
         const cols = line.split(",").map(c => c.trim().replace(/^['"]|['"]$/g, ""));
@@ -93,6 +95,8 @@ export default function Contacts() {
           lastName: lastIdx >= 0 ? cols[lastIdx] : undefined,
           email: emailIdx >= 0 ? cols[emailIdx] : undefined,
           company: companyIdx >= 0 ? cols[companyIdx] : undefined,
+          state: stateIdx >= 0 ? cols[stateIdx] : undefined,
+          databaseName: dbNameIdx >= 0 ? cols[dbNameIdx] : undefined,
         };
       }).filter(c => c.phoneNumber);
 
@@ -105,9 +109,9 @@ export default function Contacts() {
 
   const handleExportCSV = useCallback(() => {
     if (!contacts.data?.length) return;
-    const headers = "Phone,First Name,Last Name,Email,Company,Status\n";
+    const headers = "Database Name,First Name,Last Name,State,Phone,Email,Company,Status\n";
     const rows = contacts.data.map(c =>
-      `"${c.phoneNumber}","${c.firstName || ""}","${c.lastName || ""}","${c.email || ""}","${c.company || ""}","${c.status}"`
+      `"${(c as any).databaseName || ""}","${c.firstName || ""}","${c.lastName || ""}","${(c as any).state || ""}","${c.phoneNumber}","${c.email || ""}","${c.company || ""}","${c.status}"`
     ).join("\n");
     const blob = new Blob([headers + rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -210,8 +214,10 @@ export default function Contacts() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-10"><Checkbox checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0} onCheckedChange={toggleAll} /></TableHead>
+                        <TableHead>Database</TableHead>
                         <TableHead>Phone</TableHead>
                         <TableHead>Name</TableHead>
+                        <TableHead>State</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Company</TableHead>
                         <TableHead>Status</TableHead>
@@ -219,7 +225,7 @@ export default function Contacts() {
                     </TableHeader>
                     <TableBody>
                       {filteredContacts.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No contacts found</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No contacts found</TableCell></TableRow>
                       ) : filteredContacts.map(contact => (
                         <TableRow key={contact.id}>
                           <TableCell>
@@ -230,8 +236,10 @@ export default function Contacts() {
                               }}
                             />
                           </TableCell>
+                          <TableCell className="text-sm">{(contact as any).databaseName || "—"}</TableCell>
                           <TableCell className="font-mono text-sm">{contact.phoneNumber}</TableCell>
                           <TableCell>{[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—"}</TableCell>
+                          <TableCell className="text-sm">{(contact as any).state || "—"}</TableCell>
                           <TableCell className="text-sm">{contact.email || "—"}</TableCell>
                           <TableCell className="text-sm">{contact.company || "—"}</TableCell>
                           <TableCell>
@@ -260,11 +268,15 @@ export default function Contacts() {
                 <div><Label>Last Name</Label><Input value={contactForm.lastName} onChange={e => setContactForm(p => ({ ...p, lastName: e.target.value }))} /></div>
               </div>
               <div><Label>Email</Label><Input type="email" value={contactForm.email} onChange={e => setContactForm(p => ({ ...p, email: e.target.value }))} /></div>
-              <div><Label>Company</Label><Input value={contactForm.company} onChange={e => setContactForm(p => ({ ...p, company: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>State</Label><Input value={contactForm.state} onChange={e => setContactForm(p => ({ ...p, state: e.target.value }))} placeholder="FL" /></div>
+                <div><Label>Company</Label><Input value={contactForm.company} onChange={e => setContactForm(p => ({ ...p, company: e.target.value }))} /></div>
+              </div>
+              <div><Label>Database Name</Label><Input value={contactForm.databaseName} onChange={e => setContactForm(p => ({ ...p, databaseName: e.target.value }))} placeholder="Source database" /></div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => { setAddContactOpen(false); resetContactForm(); }}>Cancel</Button>
-              <Button onClick={() => createContact.mutate({ listId: selectedListId!, ...contactForm, email: contactForm.email || undefined, company: contactForm.company || undefined, firstName: contactForm.firstName || undefined, lastName: contactForm.lastName || undefined })} disabled={!contactForm.phoneNumber || createContact.isPending}>
+              <Button onClick={() => createContact.mutate({ listId: selectedListId!, phoneNumber: contactForm.phoneNumber, firstName: contactForm.firstName || undefined, lastName: contactForm.lastName || undefined, email: contactForm.email || undefined, company: contactForm.company || undefined, state: contactForm.state || undefined, databaseName: contactForm.databaseName || undefined })} disabled={!contactForm.phoneNumber || createContact.isPending}>
                 {createContact.isPending ? "Adding..." : "Add Contact"}
               </Button>
             </DialogFooter>

@@ -24,3 +24,11 @@
 - [x] Add DNC (Do Not Call) list feature with schema, API, UI, and auto-filtering
 - [x] Identify production IP and prepare whitelisting instructions for FreePBX
 - [x] AMI keepalive ping and exponential backoff reconnection logic
+- [x] Dynamic DID/CallerID rotating list with bulk add
+- [x] Audio preview player in Audio/TTS page
+- [x] Quick test call from audio page (dial a number to preview TTS)
+- [x] Schedule broadcast templates (save/load campaign configurations)
+- [x] CSV import with columns: Database Name, First Name, Last Name, State, Phone
+- [x] Campaign analytics page with charts (answer rates, durations, performance)
+- [x] DID rotation integration in dialer engine
+- [x] Production IP whitelisting instructions

@@ -7,6 +7,8 @@ interface ActiveCampaign {
   campaign: Campaign;
   intervalId: ReturnType<typeof setInterval> | null;
   audioPath: string | null;
+  callerIds: Array<{ id: number; phoneNumber: string; label: string | null }>;
+  callerIdIndex: number;
 }
 
 const activeCampaigns = new Map<number, ActiveCampaign>();
@@ -83,10 +85,23 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const updatedCampaign = await db.getCampaign(campaignId, userId);
   if (!updatedCampaign) throw new Error("Campaign not found after update");
 
+  // Load caller IDs for DID rotation
+  let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
+  if ((campaign as any).useDidRotation) {
+    callerIdPool = await db.getActiveCallerIds(userId);
+    if (callerIdPool.length > 0) {
+      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs`);
+    } else {
+      console.log(`[Dialer] DID rotation enabled but no active caller IDs found, using campaign caller ID`);
+    }
+  }
+
   const active: ActiveCampaign = {
     campaign: updatedCampaign,
     intervalId: null,
     audioPath,
+    callerIds: callerIdPool,
+    callerIdIndex: 0,
   };
 
   activeCampaigns.set(campaignId, active);
@@ -184,15 +199,25 @@ async function dialContact(callLog: CallLog, active: ActiveCampaign, userId: num
     variables.AUDIOFILE = active.audioPath;
   }
 
+  // Determine caller ID - use DID rotation if available, otherwise campaign caller ID
+  let callerIdStr: string | undefined;
+  if (active.callerIds.length > 0) {
+    const did = active.callerIds[active.callerIdIndex % active.callerIds.length];
+    active.callerIdIndex++;
+    callerIdStr = `"${did.label || "Broadcast"}" <${did.phoneNumber}>`;
+    // Update the DID usage count
+    db.incrementCallerIdUsage(did.id).catch(err => console.error("[Dialer] Failed to update DID usage:", err));
+  } else if (active.campaign.callerIdNumber) {
+    callerIdStr = `"${active.campaign.callerIdName || "Broadcast"}" <${active.campaign.callerIdNumber}>`;
+  }
+
   try {
     const result = await ami.originate({
       channel,
       context: "tts-broadcast",
       exten: "s",
       priority: "1",
-      callerId: active.campaign.callerIdNumber
-        ? `"${active.campaign.callerIdName || "Broadcast"}" <${active.campaign.callerIdNumber}>`
-        : undefined,
+      callerId: callerIdStr,
       timeout: 30000,
       variables,
       async: true,

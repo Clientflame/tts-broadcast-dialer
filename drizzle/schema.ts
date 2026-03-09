@@ -49,6 +49,8 @@ export const contacts = mysqlTable("contacts", {
   lastName: varchar("lastName", { length: 100 }),
   email: varchar("email", { length: 320 }),
   company: varchar("company", { length: 255 }),
+  state: varchar("state", { length: 50 }),
+  databaseName: varchar("databaseName", { length: 255 }),
   customFields: json("customFields").$type<Record<string, string>>(),
   status: mysqlEnum("status", ["active", "inactive", "dnc"]).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -179,3 +181,40 @@ export const dncList = mysqlTable("dnc_list", {
 
 export type DncEntry = typeof dncList.$inferSelect;
 export type InsertDncEntry = typeof dncList.$inferInsert;
+
+// ─── DID / Caller ID Pool ──────────────────────────────────────────────────
+export const callerIds = mysqlTable("caller_ids", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  label: varchar("label", { length: 255 }),
+  isActive: int("isActive").default(1).notNull(),
+  callCount: int("callCount").default(0).notNull(),
+  lastUsedAt: bigint("lastUsedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CallerId = typeof callerIds.$inferSelect;
+export type InsertCallerId = typeof callerIds.$inferInsert;
+
+// ─── Broadcast Templates ───────────────────────────────────────────────────
+export const broadcastTemplates = mysqlTable("broadcast_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  messageText: text("messageText"),
+  voice: varchar("voice", { length: 50 }).default("alloy"),
+  maxConcurrentCalls: int("maxConcurrentCalls").default(1),
+  retryAttempts: int("retryAttempts").default(0),
+  retryDelay: int("retryDelay").default(300),
+  timezone: varchar("timezone", { length: 64 }).default("America/New_York"),
+  timeWindowStart: varchar("timeWindowStart", { length: 5 }).default("09:00"),
+  timeWindowEnd: varchar("timeWindowEnd", { length: 5 }).default("21:00"),
+  useDidRotation: int("useDidRotation").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type BroadcastTemplate = typeof broadcastTemplates.$inferSelect;
+export type InsertBroadcastTemplate = typeof broadcastTemplates.$inferInsert;

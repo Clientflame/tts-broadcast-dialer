@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,6 +32,9 @@ const menuItems = [
   { icon: Megaphone, label: "Campaigns", path: "/campaigns" },
   { icon: Users, label: "Contacts", path: "/contacts" },
   { icon: Volume2, label: "Audio / TTS", path: "/audio" },
+  { icon: PhoneCall, label: "Caller IDs", path: "/caller-ids" },
+  { icon: BookTemplate, label: "Templates", path: "/templates" },
+  { icon: BarChart3, label: "Analytics", path: "/analytics" },
   { icon: FileText, label: "Call Logs", path: "/call-logs" },
   { icon: Ban, label: "DNC List", path: "/dnc" },
   { icon: Shield, label: "Audit Log", path: "/audit" },
