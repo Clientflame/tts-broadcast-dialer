@@ -1420,6 +1420,29 @@ Return ONLY the message text, nothing else.`;
       .query(async ({ input }) => {
         return db.getThrottleHistory(input?.agentId, 100);
       }),
+
+    agentMetrics: protectedProcedure
+      .query(async ({ ctx }) => {
+        return db.getAgentMetrics(ctx.user.id);
+      }),
+
+    agentTimeSeries: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        days: z.number().min(1).max(90).default(7),
+      }))
+      .query(async ({ ctx, input }) => {
+        return db.getAgentCallTimeSeries(ctx.user.id, input.agentId, input.days);
+      }),
+
+    agentDailyStats: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        days: z.number().min(1).max(90).default(30),
+      }))
+      .query(async ({ ctx, input }) => {
+        return db.getAgentDailyStats(ctx.user.id, input.agentId, input.days);
+      }),
   }),
 });
 

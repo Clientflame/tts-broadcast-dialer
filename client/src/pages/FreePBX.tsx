@@ -11,8 +11,13 @@ import { Slider } from "@/components/ui/slider";
 import {
   Wifi, WifiOff, RefreshCw, Server, Loader2,
   CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
-  Activity, Zap, Gauge, AlertTriangle, RotateCcw, ShieldAlert
+  Activity, Zap, Gauge, AlertTriangle, RotateCcw, ShieldAlert,
+  BarChart3, TrendingUp, Phone, PhoneOff, PhoneMissed
 } from "lucide-react";
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Legend, Area, AreaChart
+} from "recharts";
 
 const SPEED_PRESETS = [
   { label: "Low", value: 10, color: "text-blue-600" },
@@ -20,6 +25,211 @@ const SPEED_PRESETS = [
   { label: "High", value: 50, color: "text-orange-600" },
   { label: "Max", value: 100, color: "text-red-600" },
 ];
+
+function AgentMetricsDashboard() {
+  const { data: metrics = [], isLoading } = trpc.freepbx.agentMetrics.useQuery(undefined, { refetchInterval: 15000 });
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState(7);
+
+  const { data: timeSeries = [] } = trpc.freepbx.agentTimeSeries.useQuery(
+    { agentId: selectedAgent || "", days: timeRange },
+    { enabled: !!selectedAgent, refetchInterval: 30000 }
+  );
+
+  const { data: dailyStats = [] } = trpc.freepbx.agentDailyStats.useQuery(
+    { agentId: selectedAgent || "", days: timeRange },
+    { enabled: !!selectedAgent, refetchInterval: 30000 }
+  );
+
+  if (isLoading) return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Loading agent metrics...</CardContent></Card>;
+  if (metrics.length === 0) return null;
+
+  const totalCalls = metrics.reduce((s: number, m: any) => s + m.totalCalls, 0);
+  const totalAnswered = metrics.reduce((s: number, m: any) => s + m.answered, 0);
+  const overallRate = totalCalls > 0 ? Math.round((totalAnswered / totalCalls) * 100) : 0;
+
+  // Auto-select first agent if none selected
+  if (!selectedAgent && metrics.length > 0) {
+    setTimeout(() => setSelectedAgent(metrics[0].agentId), 0);
+  }
+
+  const selectedMetric = metrics.find((m: any) => m.agentId === selectedAgent);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <BarChart3 className="h-4 w-4" />Agent Performance Metrics
+        </CardTitle>
+        <CardDescription>
+          Call volume, success rates, and trends per agent
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 text-center">
+            <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{totalCalls}</p>
+            <p className="text-xs text-blue-600 dark:text-blue-400">Total Calls</p>
+          </div>
+          <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 text-center">
+            <p className="text-2xl font-bold text-green-700 dark:text-green-300">{totalAnswered}</p>
+            <p className="text-xs text-green-600 dark:text-green-400">Answered</p>
+          </div>
+          <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900 text-center">
+            <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{overallRate}%</p>
+            <p className="text-xs text-purple-600 dark:text-purple-400">Answer Rate</p>
+          </div>
+        </div>
+
+        {/* Per-Agent Breakdown */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Per-Agent Breakdown</p>
+          <div className="grid gap-2">
+            {metrics.map((m: any) => {
+              const isSelected = m.agentId === selectedAgent;
+              return (
+                <div
+                  key={m.agentId}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                    isSelected
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                      : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => setSelectedAgent(m.agentId)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${m.isOnline ? "bg-green-500" : "bg-gray-400"}`} />
+                      <span className="text-sm font-medium">{m.agentName}</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs">
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <Phone className="h-3 w-3" />{m.totalCalls}
+                      </span>
+                      <span className="flex items-center gap-1 text-green-600">
+                        <TrendingUp className="h-3 w-3" />{m.answerRate}%
+                      </span>
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="text-green-600">{m.answered} ans</span>
+                        <span className="text-yellow-600">{m.busy} busy</span>
+                        <span className="text-orange-600">{m.noAnswer} na</span>
+                        <span className="text-red-600">{m.failed} fail</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Mini progress bar */}
+                  {m.totalCalls > 0 && (
+                    <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden flex">
+                      <div className="bg-green-500 h-full" style={{ width: `${(m.answered / m.totalCalls) * 100}%` }} />
+                      <div className="bg-yellow-500 h-full" style={{ width: `${(m.busy / m.totalCalls) * 100}%` }} />
+                      <div className="bg-orange-500 h-full" style={{ width: `${(m.noAnswer / m.totalCalls) * 100}%` }} />
+                      <div className="bg-red-500 h-full" style={{ width: `${(m.failed / m.totalCalls) * 100}%` }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Time Range Selector + Charts */}
+        {selectedAgent && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium">Trends: {selectedMetric?.agentName}</p>
+              <div className="flex gap-1">
+                {[{ label: "7d", value: 7 }, { label: "14d", value: 14 }, { label: "30d", value: 30 }].map((r) => (
+                  <Button
+                    key={r.value}
+                    variant={timeRange === r.value ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs px-2.5"
+                    onClick={() => setTimeRange(r.value)}
+                  >
+                    {r.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Daily Call Volume Chart */}
+            {dailyStats.length > 0 ? (
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Daily Call Volume</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={dailyStats}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 10 }}
+                      tickFormatter={(v: string) => {
+                        const d = new Date(v);
+                        return `${d.getMonth() + 1}/${d.getDate()}`;
+                      }}
+                    />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    <Bar dataKey="answered" name="Answered" fill="#22c55e" stackId="a" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="busy" name="Busy" fill="#eab308" stackId="a" />
+                    <Bar dataKey="noAnswer" name="No Answer" fill="#f97316" stackId="a" />
+                    <Bar dataKey="failed" name="Failed" fill="#ef4444" stackId="a" radius={[2, 2, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-sm text-muted-foreground">No call data for this time range</div>
+            )}
+
+            {/* Answer Rate Trend */}
+            {dailyStats.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">Answer Rate Trend</p>
+                <ResponsiveContainer width="100%" height={160}>
+                  <AreaChart data={dailyStats}>
+                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 10 }}
+                      tickFormatter={(v: string) => {
+                        const d = new Date(v);
+                        return `${d.getMonth() + 1}/${d.getDate()}`;
+                      }}
+                    />
+                    <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                      formatter={(value: number) => [`${value}%`, "Answer Rate"]}
+                    />
+                    <defs>
+                      <linearGradient id="answerRateGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      type="monotone"
+                      dataKey="answerRate"
+                      name="Answer Rate"
+                      stroke="#8b5cf6"
+                      fill="url(#answerRateGradient)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function ThrottleHistoryTable() {
   const { data: history = [], isLoading } = trpc.freepbx.throttleHistory.useQuery(undefined, { refetchInterval: 15000 });
@@ -536,6 +746,9 @@ export default function FreePBX() {
             <ThrottleHistoryTable />
           </CardContent>
         </Card>
+
+        {/* Agent Performance Metrics */}
+        <AgentMetricsDashboard />
 
         {/* Installation Guide */}
         <Card>

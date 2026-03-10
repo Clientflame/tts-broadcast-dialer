@@ -165,3 +165,8 @@
 - [x] Broadcast template edit - full edit dialog with all template fields
 - [x] Broadcast template bulk delete - checkbox selection with delete count button
 - [x] Broadcast template duplicate - one-click clone with "(copy)" suffix
+- [x] Agent dashboard metrics - per-agent call volume charts and success rate trends
+- [x] Server-side endpoints for agent metrics (summary, hourly time series, daily stats)
+- [x] Stacked bar chart showing daily call volume per agent (answered/busy/no-answer/failed)
+- [x] Area chart showing answer rate trend per agent over time
+- [x] Agent performance summary cards (total calls, answered, answer rate) with per-agent breakdown

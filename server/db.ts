@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray, count } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, count, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -1500,4 +1500,149 @@ export async function getPendingCallQueueCount(): Promise<number> {
     .from(callQueue)
     .where(eq(callQueue.status, "pending"));
   return result[0]?.cnt ?? 0;
+}
+
+// ─── Agent Metrics ──────────────────────────────────────────────────────────
+
+export async function getAgentMetrics(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all agents (agents are shared, not per-user)
+  const agents = await db.select().from(pbxAgents);
+
+  const metrics = [];
+  for (const agent of agents) {
+    // Get total calls, results breakdown, and avg duration from callQueue
+    const allCalls = await db
+      .select({
+        result: callQueue.result,
+        status: callQueue.status,
+        createdAt: callQueue.createdAt,
+      })
+      .from(callQueue)
+      .where(
+        and(
+          eq(callQueue.claimedBy, agent.agentId),
+          inArray(callQueue.status, ["completed", "failed"])
+        )
+      );
+
+    const totalCalls = allCalls.length;
+    const answered = allCalls.filter(c => c.result === "answered").length;
+    const busy = allCalls.filter(c => c.result === "busy").length;
+    const noAnswer = allCalls.filter(c => c.result === "no-answer").length;
+    const failed = allCalls.filter(c => c.result === "failed" || c.result === "congestion").length;
+    const answerRate = totalCalls > 0 ? Math.round((answered / totalCalls) * 100) : 0;
+
+    metrics.push({
+      agentId: agent.agentId,
+      agentName: agent.name || agent.agentId,
+      totalCalls,
+      answered,
+      busy,
+      noAnswer,
+      failed,
+      answerRate,
+      maxCalls: agent.maxCalls ?? 10,
+      effectiveMaxCalls: agent.effectiveMaxCalls,
+      isOnline: agent.lastHeartbeat ? Date.now() - (agent.lastHeartbeat ?? 0) < 30000 : false,
+    });
+  }
+
+  return metrics;
+}
+
+export async function getAgentCallTimeSeries(userId: number, agentId: string, days: number = 7) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const calls = await db
+    .select({
+      result: callQueue.result,
+      createdAt: callQueue.createdAt,
+    })
+    .from(callQueue)
+    .where(
+      and(
+        eq(callQueue.claimedBy, agentId),
+        eq(callQueue.userId, userId),
+        inArray(callQueue.status, ["completed", "failed"]),
+        gte(callQueue.createdAt, cutoff)
+      )
+    )
+    .orderBy(callQueue.createdAt);
+
+  // Group by hour
+  const hourlyMap = new Map<string, { total: number; answered: number; busy: number; noAnswer: number; failed: number }>();
+
+  for (const call of calls) {
+    const date = new Date(call.createdAt);
+    const hourKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:00`;
+
+    if (!hourlyMap.has(hourKey)) {
+      hourlyMap.set(hourKey, { total: 0, answered: 0, busy: 0, noAnswer: 0, failed: 0 });
+    }
+    const bucket = hourlyMap.get(hourKey)!;
+    bucket.total++;
+    if (call.result === "answered") bucket.answered++;
+    else if (call.result === "busy") bucket.busy++;
+    else if (call.result === "no-answer") bucket.noAnswer++;
+    else bucket.failed++;
+  }
+
+  return Array.from(hourlyMap.entries()).map(([hour, data]) => ({
+    hour,
+    ...data,
+    answerRate: data.total > 0 ? Math.round((data.answered / data.total) * 100) : 0,
+  }));
+}
+
+export async function getAgentDailyStats(userId: number, agentId: string, days: number = 30) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const calls = await db
+    .select({
+      result: callQueue.result,
+      createdAt: callQueue.createdAt,
+    })
+    .from(callQueue)
+    .where(
+      and(
+        eq(callQueue.claimedBy, agentId),
+        eq(callQueue.userId, userId),
+        inArray(callQueue.status, ["completed", "failed"]),
+        gte(callQueue.createdAt, cutoff)
+      )
+    )
+    .orderBy(callQueue.createdAt);
+
+  // Group by day
+  const dailyMap = new Map<string, { total: number; answered: number; busy: number; noAnswer: number; failed: number }>();
+
+  for (const call of calls) {
+    const date = new Date(call.createdAt);
+    const dayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+    if (!dailyMap.has(dayKey)) {
+      dailyMap.set(dayKey, { total: 0, answered: 0, busy: 0, noAnswer: 0, failed: 0 });
+    }
+    const bucket = dailyMap.get(dayKey)!;
+    bucket.total++;
+    if (call.result === "answered") bucket.answered++;
+    else if (call.result === "busy") bucket.busy++;
+    else if (call.result === "no-answer") bucket.noAnswer++;
+    else bucket.failed++;
+  }
+
+  return Array.from(dailyMap.entries()).map(([day, data]) => ({
+    day,
+    ...data,
+    answerRate: data.total > 0 ? Math.round((data.answered / data.total) * 100) : 0,
+  }));
 }
