@@ -475,6 +475,8 @@ export async function getDashboardStats(userId: number) {
   const [callStats] = await db.select({
     total: count(),
     answered: sql<number>`SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END)`,
+    totalDuration: sql<number>`COALESCE(SUM(duration), 0)`,
+    avgDuration: sql<number>`COALESCE(AVG(CASE WHEN duration > 0 THEN duration END), 0)`,
   }).from(callLogs).where(eq(callLogs.userId, userId));
   return {
     totalCampaigns: campaignStats?.total ?? 0,
@@ -483,6 +485,8 @@ export async function getDashboardStats(userId: number) {
     totalCalls: callStats?.total ?? 0,
     answeredCalls: Number(callStats?.answered ?? 0),
     totalLists: listStats?.total ?? 0,
+    totalDurationSecs: Number(callStats?.totalDuration ?? 0),
+    avgDurationSecs: Math.round(Number(callStats?.avgDuration ?? 0)),
   };
 }
 
@@ -1662,6 +1666,7 @@ export async function getRecentCallActivity(userId: number, limit = 50) {
     campaignId: callQueue.campaignId,
     campaignName: campaigns.name,
     audioName: callQueue.audioName,
+    callDuration: callQueue.callDuration,
     createdAt: callQueue.createdAt,
     updatedAt: callQueue.updatedAt,
   })
@@ -1692,6 +1697,7 @@ export async function getRecentCallActivity(userId: number, limit = 50) {
     campaignId: r.campaignId,
     campaignName: r.campaignName || "Quick Test",
     audioName: r.audioName,
+    callDuration: r.callDuration || null,
     createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
     updatedAt: r.updatedAt ? new Date(r.updatedAt).getTime() : null,
     claimedAt: r.claimedAt,

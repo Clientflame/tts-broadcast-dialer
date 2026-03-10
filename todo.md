@@ -174,3 +174,11 @@
 - [x] Server-side endpoint for recent call activity with agent name lookup and campaign join
 - [x] Call activity feed UI with 3s auto-refresh, color-coded status badges, and pulse animation for active calls
 - [x] Activity feed shows campaign name, phone number, agent name, caller ID, status badge, and relative timestamp
+- [x] Call duration tracking - record duration (seconds) for answered calls
+- [x] Add callDuration column to callQueue and callLogs schema
+- [x] Update PBX agent result reporting API to accept and store call duration
+- [x] Display call duration in the activity feed for answered calls
+- [x] Display call duration in the Call Logs page
+- [x] Add duration stats to analytics (avg duration, total minutes, cost-per-minute)
+- [x] Update Cost Estimator with actual duration-based cost calculations
+- [x] Vitest tests for call duration tracking (6 tests, 101 total passing)

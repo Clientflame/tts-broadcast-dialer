@@ -124,11 +124,16 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
     }
 
     // Update queue item
-    await db.updateCallQueueItem(queueId, {
+    const queueUpdate: any = {
       status: result === "answered" || result === "completed" ? "completed" : "failed",
       result,
       resultDetails: details || {},
-    });
+    };
+    // Store call duration on the queue item for the activity feed
+    if (details?.duration && typeof details.duration === "number" && details.duration > 0) {
+      queueUpdate.callDuration = Math.round(details.duration);
+    }
+    await db.updateCallQueueItem(queueId, queueUpdate);
 
     // Update the corresponding call log if this was a campaign call
     if (queueItem.callLogId) {

@@ -352,6 +352,7 @@ export const callQueue = mysqlTable("call_queue", {
   claimedBy: varchar("claimedBy", { length: 100 }), // PBX agent ID
   claimedAt: bigint("claimedAt", { mode: "number" }),
   result: varchar("result", { length: 50 }), // answered, busy, no-answer, failed, congestion
+  callDuration: int("callDuration"), // call duration in seconds (for answered calls)
   resultDetails: json("resultDetails").$type<Record<string, any>>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

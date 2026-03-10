@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
-import { Phone, PhoneCall, PhoneOff, Clock, TrendingUp } from "lucide-react";
+import { Phone, PhoneCall, PhoneOff, Clock, TrendingUp, Timer, DollarSign } from "lucide-react";
 
 const STATUS_COLORS: Record<string, string> = {
   answered: "#22c55e",
@@ -17,15 +17,26 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return "0s";
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  return `${m}m ${s}s`;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function formatMinutes(totalSecs: number): string {
+  if (totalSecs <= 0) return "0m";
+  const mins = Math.floor(totalSecs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
+  return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
 }
 
 export default function Analytics() {
   const { data: analytics, isLoading } = trpc.analytics.overview.useQuery();
   const { data: stats } = trpc.dashboard.stats.useQuery();
+  const { data: costSettings } = trpc.costEstimator.getSettings.useQuery();
 
   if (isLoading) {
     return (
@@ -51,6 +62,13 @@ export default function Analytics() {
   const answeredCalls = statusData.filter(s => s.name === "Answered" || s.name === "Completed").reduce((sum, s) => sum + s.value, 0);
   const answerRate = totalCalls > 0 ? ((answeredCalls / totalCalls) * 100).toFixed(1) : "0";
 
+  // Duration and cost calculations
+  const totalDuration = analytics?.totalDuration || 0;
+  const avgDuration = analytics?.avgDuration || 0;
+  const costPerMin = parseFloat(costSettings?.trunkCostPerMinute || "0.01");
+  const totalTrunkCost = (totalDuration / 60) * costPerMin;
+  const costPerCall = answeredCalls > 0 ? totalTrunkCost / answeredCalls : 0;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -59,7 +77,7 @@ export default function Analytics() {
           <p className="text-muted-foreground">Campaign performance and call statistics</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1"><Phone className="h-3 w-3" /> Total Calls</CardDescription>
@@ -81,8 +99,23 @@ export default function Analytics() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1"><Clock className="h-3 w-3" /> Avg Duration</CardDescription>
-              <CardTitle className="text-3xl">{formatDuration(analytics?.avgDuration || 0)}</CardTitle>
+              <CardTitle className="text-3xl">{formatDuration(avgDuration)}</CardTitle>
             </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1"><Timer className="h-3 w-3" /> Total Talk Time</CardDescription>
+              <CardTitle className="text-3xl text-purple-500">{formatMinutes(totalDuration)}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> Trunk Cost</CardDescription>
+              <CardTitle className="text-3xl text-emerald-500">${totalTrunkCost.toFixed(2)}</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-xs text-muted-foreground">${costPerCall.toFixed(3)}/call avg</p>
+            </CardContent>
           </Card>
         </div>
 
@@ -168,7 +201,7 @@ export default function Analytics() {
             <CardTitle className="text-base">Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Total Campaigns</p>
                 <p className="text-xl font-semibold">{stats?.totalCampaigns || 0}</p>
@@ -178,12 +211,16 @@ export default function Analytics() {
                 <p className="text-xl font-semibold">{stats?.totalContacts || 0}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Total Call Duration</p>
-                <p className="text-xl font-semibold">{formatDuration(analytics?.totalDuration || 0)}</p>
+                <p className="text-muted-foreground">Total Talk Time</p>
+                <p className="text-xl font-semibold">{formatMinutes(totalDuration)}</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Contact Lists</p>
-                <p className="text-xl font-semibold">{stats?.totalLists || 0}</p>
+                <p className="text-muted-foreground">Avg Call Duration</p>
+                <p className="text-xl font-semibold">{formatDuration(avgDuration)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Est. Total Cost</p>
+                <p className="text-xl font-semibold text-emerald-600">${totalTrunkCost.toFixed(2)}</p>
               </div>
             </div>
           </CardContent>

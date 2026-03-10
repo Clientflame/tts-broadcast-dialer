@@ -30,6 +30,23 @@ function timeAgo(ts: number | null) {
   return new Date(ts).toLocaleDateString();
 }
 
+function formatDuration(secs: number | null): string {
+  if (!secs || secs <= 0) return "";
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function formatMinutes(totalSecs: number): string {
+  if (totalSecs <= 0) return "0m";
+  const mins = Math.floor(totalSecs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
+  return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
+}
+
 function getStatusConfig(status: string, result: string | null) {
   if (status === "completed" && result === "answered") {
     return { icon: PhoneIncoming, label: "Answered", color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/30" };
@@ -138,6 +155,7 @@ function CallActivityFeed() {
             const cfg = getStatusConfig(item.status, item.result);
             const Icon = cfg.icon;
             const isActive = item.status === "dialing" || item.status === "claimed";
+            const dur = formatDuration(item.callDuration);
 
             return (
               <div
@@ -156,6 +174,11 @@ function CallActivityFeed() {
                     <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${cfg.color} ${cfg.border}`}>
                       {cfg.label}
                     </Badge>
+                    {dur && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-green-600 font-medium">
+                        <Timer className="h-3 w-3" />{dur}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
                     {item.campaignName && (
@@ -196,6 +219,9 @@ export default function Home() {
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 
   const isDialerActive = (dialerLive.data?.activeCampaignCount ?? 0) > 0;
+
+  const totalDurationSecs = stats.data?.totalDurationSecs ?? 0;
+  const avgDurationSecs = stats.data?.avgDurationSecs ?? 0;
 
   return (
     <DashboardLayout>
@@ -325,7 +351,7 @@ export default function Home() {
         </Card>
 
         {/* Overview Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Campaigns</CardTitle>
@@ -354,6 +380,32 @@ export default function Home() {
             <CardContent>
               <div className="text-3xl font-bold">{stats.data?.totalCalls ?? 0}</div>
               <p className="text-xs text-muted-foreground mt-1">{stats.data?.answeredCalls ?? 0} answered</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Talk Time</CardTitle>
+              <Timer className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{formatMinutes(totalDurationSecs)}</div>
+              <p className="text-xs text-muted-foreground mt-1">Avg {avgDurationSecs}s per call</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Answer Rate</CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">
+                {(stats.data?.totalCalls ?? 0) > 0
+                  ? `${Math.round(((stats.data?.answeredCalls ?? 0) / (stats.data?.totalCalls ?? 1)) * 100)}%`
+                  : "—"}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {(stats.data?.answeredCalls ?? 0)} of {(stats.data?.totalCalls ?? 0)} calls
+              </p>
             </CardContent>
           </Card>
         </div>

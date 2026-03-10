@@ -424,3 +424,67 @@ describe("dashboard.callActivity", () => {
     }
   });
 });
+
+describe("dashboard.stats - duration fields", () => {
+  it("returns duration stats for authenticated users", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.stats();
+    expect(result).toHaveProperty("totalDurationSecs");
+    expect(result).toHaveProperty("avgDurationSecs");
+    expect(typeof result.totalDurationSecs).toBe("number");
+    expect(typeof result.avgDurationSecs).toBe("number");
+    expect(result.totalDurationSecs).toBeGreaterThanOrEqual(0);
+    expect(result.avgDurationSecs).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("dashboard.callActivity - duration field", () => {
+  it("returns callDuration field in activity items", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.callActivity({ limit: 5 });
+    if (result.length > 0) {
+      const item = result[0];
+      expect(item).toHaveProperty("callDuration");
+    }
+  });
+});
+
+describe("analytics.overview - duration stats", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.analytics.overview()).rejects.toThrow();
+  });
+
+  it("returns duration fields in analytics overview", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.analytics.overview();
+    expect(result).toHaveProperty("avgDuration");
+    expect(result).toHaveProperty("totalDuration");
+    expect(typeof result.avgDuration).toBe("number");
+    expect(typeof result.totalDuration).toBe("number");
+    expect(result.avgDuration).toBeGreaterThanOrEqual(0);
+    expect(result.totalDuration).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("costEstimator.getSettings", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.costEstimator.getSettings()).rejects.toThrow();
+  });
+
+  it("returns default cost settings", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.costEstimator.getSettings();
+    expect(result).toHaveProperty("trunkCostPerMinute");
+    expect(result).toHaveProperty("ttsCostPer1kChars");
+    expect(result).toHaveProperty("currency");
+    expect(result).toHaveProperty("avgCallDurationSecs");
+  });
+});
