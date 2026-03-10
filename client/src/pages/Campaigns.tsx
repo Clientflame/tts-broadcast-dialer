@@ -81,7 +81,7 @@ const MERGE_FIELDS = [
 type FormState = {
   name: string; description: string; contactListId: number; audioFileId: number;
   voice: string; ttsProvider: "openai" | "google"; callerIdNumber: string; callerIdName: string;
-  maxConcurrentCalls: number; retryAttempts: number; retryDelay: number;
+  maxConcurrentCalls: number; cpsLimit: number; retryAttempts: number; retryDelay: number;
   timezone: string; timeWindowStart: string; timeWindowEnd: string;
   ivrEnabled: boolean; ivrOptions: { digit: string; action: string; label: string }[];
   abTestGroup: string; abTestVariant: string;
@@ -96,7 +96,7 @@ type FormState = {
 const DEFAULT_FORM: FormState = {
   name: "", description: "", contactListId: 0, audioFileId: 0,
   voice: "alloy", ttsProvider: "openai", callerIdNumber: "", callerIdName: "",
-  maxConcurrentCalls: 10, retryAttempts: 0, retryDelay: 300,
+  maxConcurrentCalls: 10, cpsLimit: 3, retryAttempts: 0, retryDelay: 300,
   timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
@@ -441,6 +441,27 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
             <p className="text-xs text-muted-foreground mt-1">Caps the agent speed for this campaign (10-100). Cannot exceed agent's max.</p>
           </div>
 
+          <div>
+            <Label className="flex items-center justify-between">
+              <span>Calls Per Second (CPS)</span>
+              <span className="font-bold text-primary">{form.cpsLimit} CPS</span>
+            </Label>
+            <Slider
+              min={1}
+              max={10}
+              step={1}
+              value={[form.cpsLimit]}
+              onValueChange={([v]) => setForm(p => ({ ...p, cpsLimit: v }))}
+              className="mt-2"
+            />
+            <div className="flex justify-between mt-1">
+              <span className="text-[10px] text-muted-foreground">1 CPS (safe)</span>
+              <span className="text-[10px] text-muted-foreground">5 CPS (standard)</span>
+              <span className="text-[10px] text-muted-foreground">10 CPS (aggressive)</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Controls how fast new calls are initiated. Lower values reduce carrier errors. Campaign CPS overrides agent CPS.</p>
+          </div>
+
           {/* Call Pacing Mode */}
           <div className="p-4 rounded-lg border space-y-4">
             <div>
@@ -683,6 +704,7 @@ export default function Campaigns() {
       callerIdNumber: c.callerIdNumber || "",
       callerIdName: c.callerIdName || "",
       maxConcurrentCalls: c.maxConcurrentCalls || 3,
+      cpsLimit: (c as any).cpsLimit || 3,
       retryAttempts: c.retryAttempts || 0,
       retryDelay: c.retryDelay || 300,
       timezone: c.timezone || "America/New_York",

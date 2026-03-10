@@ -34,7 +34,7 @@ interface AgentThrottleState {
 const agentStates = new Map<string, AgentThrottleState>();
 
 const THROTTLE_WINDOW_MS = 60_000;      // 60-second window for error counting
-const THROTTLE_ERROR_THRESHOLD = 5;      // 5 errors in window triggers throttle
+const THROTTLE_ERROR_THRESHOLD = 10;     // 10 carrier errors in window triggers throttle (raised from 5)
 const THROTTLE_REDUCTION_FACTOR = 0.75;  // Reduce to 75% of current effective
 const RAMP_UP_INTERVAL_MS = 30_000;      // Check for ramp-up every 30 seconds
 const RAMP_UP_FACTOR = 1.10;             // Increase by 10% each ramp-up
@@ -42,10 +42,11 @@ const MIN_EFFECTIVE_RATIO = 0.10;        // Never go below 10% of maxCalls
 const MIN_EFFECTIVE_ABSOLUTE = 2;        // Absolute minimum of 2 concurrent calls
 const NOTIFICATION_COOLDOWN_MS = 300_000; // Only notify once every 5 minutes
 
-// Carrier error result types
+// Carrier error result types - ONLY true carrier/trunk errors
+// "failed" is NOT included because it covers normal call failures (wrong number, disconnected, etc.)
+// These should only be errors that indicate the trunk/carrier is overloaded or unavailable
 const CARRIER_ERROR_RESULTS = new Set([
   "congestion",
-  "failed",
   "all-circuits-busy",
   "service-unavailable",
   "trunk-error",

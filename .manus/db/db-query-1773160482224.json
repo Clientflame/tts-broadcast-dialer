@@ -1,0 +1,60 @@
+{
+  "query": "SELECT id, firstName, lastName FROM contacts WHERE firstName IS NOT NULL AND firstName != '' LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, firstName, lastName FROM contacts WHERE firstName IS NOT NULL AND firstName != '' LIMIT 10;",
+  "rows": [
+    {
+      "id": "30052",
+      "firstName": "Alice",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30053",
+      "firstName": "Bob",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30054",
+      "firstName": "Charlie",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30055",
+      "firstName": "Dave",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30056",
+      "firstName": "Eve",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30057",
+      "firstName": "Frank",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30058",
+      "firstName": "Grace",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30059",
+      "firstName": "New Contact",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30060",
+      "firstName": "Another New",
+      "lastName": "NULL"
+    },
+    {
+      "id": "30061",
+      "firstName": "No DNC",
+      "lastName": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tfirstName\tlastName\n30052\tAlice\tNULL\n30053\tBob\tNULL\n30054\tCharlie\tNULL\n30055\tDave\tNULL\n30056\tEve\tNULL\n30057\tFrank\tNULL\n30058\tGrace\tNULL\n30059\tNew Contact\tNULL\n30060\tAnother New\tNULL\n30061\tNo DNC\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

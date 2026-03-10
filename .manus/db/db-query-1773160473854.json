@@ -1,0 +1,110 @@
+{
+  "query": "SELECT id, phoneNumber, firstName, lastName, email, company, state, databaseName FROM contacts LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, firstName, lastName, email, company, state, databaseName FROM contacts LIMIT 10;",
+  "rows": [
+    {
+      "id": "30052",
+      "phoneNumber": "2012851701",
+      "firstName": "Alice",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30053",
+      "phoneNumber": "2012851702",
+      "firstName": "Bob",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30054",
+      "phoneNumber": "2012851703",
+      "firstName": "Charlie",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30055",
+      "phoneNumber": "2012851710",
+      "firstName": "Dave",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30056",
+      "phoneNumber": "2012851711",
+      "firstName": "Eve",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30057",
+      "phoneNumber": "2012851720",
+      "firstName": "Frank",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30058",
+      "phoneNumber": "2012851730",
+      "firstName": "Grace",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30059",
+      "phoneNumber": "2012851740",
+      "firstName": "New Contact",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30060",
+      "phoneNumber": "2012851741",
+      "firstName": "Another New",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    },
+    {
+      "id": "30061",
+      "phoneNumber": "2012851750",
+      "firstName": "No DNC",
+      "lastName": "NULL",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NULL",
+      "databaseName": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tfirstName\tlastName\temail\tcompany\tstate\tdatabaseName\n30052\t2012851701\tAlice\tNULL\tNULL\tNULL\tNULL\tNULL\n30053\t2012851702\tBob\tNULL\tNULL\tNULL\tNULL\tNULL\n30054\t2012851703\tCharlie\tNULL\tNULL\tNULL\tNULL\tNULL\n30055\t2012851710\tDave\tNULL\tNULL\tNULL\tNULL\tNULL\n30056\t2012851711\tEve\tNULL\tNULL\tNULL\tNULL\tNULL\n30057\t2012851720\tFrank\tNULL\tNULL\tNULL\tNULL\tNULL\n30058\t2012851730\tGrace\tNULL\tNULL\tNULL\tNULL\tNULL\n30059\t2012851740\tNew Contact\tNULL\tNULL\tNULL\tNULL\tNULL\n30060\t2012851741\tAnother New\tNULL\tNULL\tNULL\tNULL\tNULL\n30061\t2012851750\tNo DNC\tNULL\tNULL\tNULL\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 88
+}

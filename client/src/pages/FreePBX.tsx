@@ -406,6 +406,7 @@ export default function FreePBX() {
 
   const [agentName, setAgentName] = useState("");
   const [maxCalls, setMaxCalls] = useState(10);
+  const [cpsLimit, setCpsLimit] = useState(3);
   const [newAgentId, setNewAgentId] = useState("");
   const [showInstaller, setShowInstaller] = useState(false);
   const [showInstallerForAgent, setShowInstallerForAgent] = useState<string | null>(null);
@@ -414,6 +415,14 @@ export default function FreePBX() {
   const updateMaxCalls = trpc.freepbx.updateAgentMaxCalls.useMutation({
     onSuccess: () => {
       toast.success("Agent speed updated");
+      agents.refetch();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const updateCps = trpc.freepbx.updateAgentCps.useMutation({
+    onSuccess: () => {
+      toast.success("CPS limit updated");
       agents.refetch();
     },
     onError: (e: any) => toast.error(e.message),
@@ -435,6 +444,7 @@ export default function FreePBX() {
     registerAgent.mutate({
       name: agentName.trim(),
       maxCalls: maxCalls,
+      cpsLimit: cpsLimit,
     });
   };
 
@@ -597,24 +607,38 @@ export default function FreePBX() {
                     )}
                   </Button>
                 </div>
-                <div className="space-y-2 text-left">
-                  <Label className="text-xs flex items-center justify-between">
-                    <span>Max Concurrent Calls</span>
-                    <span className="font-bold text-primary">{maxCalls}</span>
-                  </Label>
-                  <Slider min={10} max={100} step={5} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
-                  <div className="flex gap-2">
-                    {SPEED_PRESETS.map((p) => (
-                      <Button
-                        key={p.label}
-                        variant={maxCalls === p.value ? "default" : "outline"}
-                        size="sm"
-                        className="flex-1 text-xs h-7"
-                        onClick={() => setMaxCalls(p.value)}
-                      >
-                        {p.label} ({p.value})
-                      </Button>
-                    ))}
+                <div className="grid grid-cols-2 gap-4 text-left">
+                  <div className="space-y-2">
+                    <Label className="text-xs flex items-center justify-between">
+                      <span>Max Concurrent Calls</span>
+                      <span className="font-bold text-primary">{maxCalls}</span>
+                    </Label>
+                    <Slider min={10} max={100} step={5} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
+                    <div className="flex gap-2">
+                      {SPEED_PRESETS.map((p) => (
+                        <Button
+                          key={p.label}
+                          variant={maxCalls === p.value ? "default" : "outline"}
+                          size="sm"
+                          className="flex-1 text-xs h-7"
+                          onClick={() => setMaxCalls(p.value)}
+                        >
+                          {p.label} ({p.value})
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs flex items-center justify-between">
+                      <span>Calls Per Second (CPS)</span>
+                      <span className="font-bold text-primary">{cpsLimit} CPS</span>
+                    </Label>
+                    <Slider min={1} max={10} step={1} value={[cpsLimit]} onValueChange={([v]) => setCpsLimit(v)} />
+                    <div className="flex justify-between">
+                      <span className="text-[10px] text-muted-foreground">1 (safe)</span>
+                      <span className="text-[10px] text-muted-foreground">5 (standard)</span>
+                      <span className="text-[10px] text-muted-foreground">10 (aggressive)</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -784,6 +808,35 @@ export default function FreePBX() {
                                 {p.label}
                               </Button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* CPS Rate Limit control */}
+                        <div className="flex items-center gap-4 mt-3">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Zap className="h-3 w-3" />
+                                Calls Per Second (CPS)
+                              </span>
+                              <span className="text-sm font-bold text-primary">
+                                {(agent as any).cpsLimit ?? 3} CPS
+                              </span>
+                            </div>
+                            <Slider
+                              min={1}
+                              max={10}
+                              step={1}
+                              value={[(agent as any).cpsLimit ?? 3]}
+                              onValueChange={([v]) => {
+                                updateCps.mutate({ agentId: agent.agentId, cpsLimit: v });
+                              }}
+                            />
+                            <div className="flex justify-between mt-1">
+                              <span className="text-[10px] text-muted-foreground">1 CPS (safe)</span>
+                              <span className="text-[10px] text-muted-foreground">5 CPS (standard)</span>
+                              <span className="text-[10px] text-muted-foreground">10 CPS (aggressive)</span>
+                            </div>
                           </div>
                         </div>
 

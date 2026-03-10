@@ -373,6 +373,14 @@ export async function getCampaign(id: number, userId: number) {
   return result[0];
 }
 
+// Get campaign by ID only (no userId check) - used by PBX agent context
+export async function getCampaignById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  return result[0];
+}
+
 export async function updateCampaign(id: number, userId: number, data: Partial<InsertCampaign>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -1332,6 +1340,12 @@ export async function updatePbxAgentMaxCalls(agentId: string, maxCalls: number) 
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(pbxAgents).set({ maxCalls }).where(eq(pbxAgents.agentId, agentId));
+}
+
+export async function updatePbxAgentCps(agentId: string, cpsLimit: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(pbxAgents).set({ cpsLimit }).where(eq(pbxAgents.agentId, agentId));
 }
 
 export async function deletePbxAgentByAgentId(agentId: string) {

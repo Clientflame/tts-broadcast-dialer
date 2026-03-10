@@ -197,3 +197,15 @@
 - [x] Optimize large imports with chunked database inserts for performance
 - [x] Add import progress indicator for large files
 - [x] Vitest tests for increased import limit (4 tests, 109 total passing)
+- [x] Investigate: First Name and Last Name importing into combined Name field - VERIFIED: data is stored separately, UI just displays combined. TTS merge fields work correctly.
+- [x] Investigate auto-throttle: 15 carrier errors in 60s - FIXED: 'failed' was incorrectly classified as carrier error
+- [x] Investigate dashboard not live/updating while dialer is still running - transient DB connection issue (ECONNRESET)
+- [x] Implement CPS rate limiting (1-10 calls per second) on PBX agent call dispatch
+- [x] Add cpsLimit field to pbxAgents schema (default 3 CPS)
+- [x] Add cpsLimit to campaign settings (override per campaign)
+- [x] PBX agent poll endpoint returns CPS limit so agent can throttle call initiation rate
+- [x] Fix auto-throttle: only trigger on real carrier errors (congestion, trunk-error, service-unavailable, all-circuits-busy), NOT on normal failures
+- [x] Reset current throttle on AI-Agent-Collecter 1 — user can reset from UI after publish
+- [x] Update FreePBX page UI with CPS configuration slider (1-10)
+- [x] Update Campaign creation dialog with CPS setting
+- [x] Vitest tests for CPS rate limiting (109 total passing, auto-throttle test updated)

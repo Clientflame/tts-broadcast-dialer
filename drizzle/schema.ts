@@ -162,6 +162,7 @@ export const campaigns = mysqlTable("campaigns", {
     "cancelled",
   ]).default("draft").notNull(),
   maxConcurrentCalls: int("maxConcurrentCalls").default(1).notNull(),
+  cpsLimit: int("cpsLimit").default(3).notNull(),  // Calls per second rate limit (1-10)
   retryAttempts: int("retryAttempts").default(0).notNull(),
   retryDelay: int("retryDelay").default(300).notNull(),
   scheduledAt: bigint("scheduledAt", { mode: "number" }),
@@ -376,6 +377,7 @@ export const pbxAgents = mysqlTable("pbx_agents", {
   throttleReason: text("throttleReason"),
   throttleStartedAt: bigint("throttleStartedAt", { mode: "number" }),
   throttleCarrierErrors: int("throttleCarrierErrors").default(0).notNull(),
+  cpsLimit: int("cpsLimit").default(3),  // Calls per second rate limit (1-10)
   ipAddress: varchar("ipAddress", { length: 45 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

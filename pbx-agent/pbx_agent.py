@@ -33,6 +33,7 @@ CONFIG = {
     "ami_secret": os.environ.get("AMI_SECRET", "Br0adcast!D1aler2024"),
     "poll_interval": int(os.environ.get("POLL_INTERVAL", "3")),
     "max_concurrent": int(os.environ.get("MAX_CONCURRENT", "5")),
+    "cps_limit": int(os.environ.get("CPS_LIMIT", "3")),  # Calls per second rate limit
     "audio_dir": "/var/lib/asterisk/sounds/custom/broadcast",
     "trunk_name": "vitel-outbound",
 }
@@ -588,6 +589,7 @@ def main():
     log.info(f"API URL: {CONFIG['api_url']}")
     log.info(f"AMI: {CONFIG['ami_host']}:{CONFIG['ami_port']}")
     log.info(f"Max concurrent: {CONFIG['max_concurrent']}")
+    log.info(f"CPS limit: {CONFIG['cps_limit']}")
     log.info("=" * 60)
 
     if not CONFIG["api_url"] or not CONFIG["api_key"]:
@@ -635,8 +637,20 @@ def main():
                 calls = response["calls"]
                 log.info(f"Received {len(calls)} call(s) from queue")
 
-                for call_data in calls:
+                # Update CPS limit from server response (server may override)
+                server_cps = response.get("cpsLimit")
+                if server_cps and isinstance(server_cps, (int, float)) and server_cps > 0:
+                    CONFIG["cps_limit"] = int(server_cps)
+
+                # CPS rate limiting: stagger call initiation
+                cps = max(1, CONFIG["cps_limit"])
+                delay_between_calls = 1.0 / cps  # e.g., 3 CPS = 0.333s between calls
+
+                for i, call_data in enumerate(calls):
                     try:
+                        # Apply CPS delay between calls (not before the first one)
+                        if i > 0 and delay_between_calls > 0:
+                            time.sleep(delay_between_calls)
                         process_call(ami, call_data)
                     except Exception as e:
                         log.error(f"Error processing call {call_data.get('id')}: {e}")

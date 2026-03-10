@@ -1,0 +1,110 @@
+{
+  "query": "SELECT id, phoneNumber, firstName, lastName, email, company, state, databaseName FROM contacts ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, firstName, lastName, email, company, state, databaseName FROM contacts ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "43681",
+      "phoneNumber": "3012571121",
+      "firstName": "Tasha",
+      "lastName": "Rogers",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "MD",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43680",
+      "phoneNumber": "3033033037",
+      "firstName": "PAUL",
+      "lastName": "TORRES",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "CO",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43679",
+      "phoneNumber": "5057371232",
+      "firstName": "STELLA",
+      "lastName": "PANANA",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NM",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43678",
+      "phoneNumber": "7402506110",
+      "firstName": "April",
+      "lastName": "Slusher",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "OH",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43677",
+      "phoneNumber": "9195195217",
+      "firstName": "Frederick",
+      "lastName": "Jones",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "NC",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43676",
+      "phoneNumber": "4357909756",
+      "firstName": "BRENDAN",
+      "lastName": "EIGHMY",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "CO",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43675",
+      "phoneNumber": "5738148683",
+      "firstName": "BRANDEN",
+      "lastName": "MCGUIRE",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "KS",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43674",
+      "phoneNumber": "5618564882",
+      "firstName": "Victor",
+      "lastName": "Toomer",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "FL",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43673",
+      "phoneNumber": "3146471997",
+      "firstName": "Kathleen",
+      "lastName": "Kowalczyk",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "MO",
+      "databaseName": "10.30.24"
+    },
+    {
+      "id": "43672",
+      "phoneNumber": "8166120873",
+      "firstName": "ROSCHELL",
+      "lastName": "WHITLOW",
+      "email": "NULL",
+      "company": "NULL",
+      "state": "KS",
+      "databaseName": "10.30.24"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tfirstName\tlastName\temail\tcompany\tstate\tdatabaseName\n43681\t3012571121\tTasha\tRogers\tNULL\tNULL\tMD\t10.30.24\n43680\t3033033037\tPAUL\tTORRES\tNULL\tNULL\tCO\t10.30.24\n43679\t5057371232\tSTELLA\tPANANA\tNULL\tNULL\tNM\t10.30.24\n43678\t7402506110\tApril\tSlusher\tNULL\tNULL\tOH\t10.30.24\n43677\t9195195217\tFrederick\tJones\tNULL\tNULL\tNC\t10.30.24\n43676\t4357909756\tBRENDAN\tEIGHMY\tNULL\tNULL\tCO\t10.30.24\n43675\t5738148683\tBRANDEN\tMCGUIRE\tNULL\tNULL\tKS\t10.30.24\n43674\t5618564882\tVictor\tToomer\tNULL\tNULL\tFL\t10.30.24\n43673\t3146471997\tKathleen\tKowalczyk\tNULL\tNULL\tMO\t10.30.24\n43672\t8166120873\tROSCHELL\tWHITLOW\tNULL\tNULL\tKS\t10.30.24\n",
+  "stderr": "",
+  "execution_time_ms": 100
+}

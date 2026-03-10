@@ -127,6 +127,13 @@
       "when": 1773152113828,
       "tag": "0017_spotty_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1773182648765,
+      "tag": "0018_medical_jack_flag",
+      "breakpoints": true
     }
   ]
 }

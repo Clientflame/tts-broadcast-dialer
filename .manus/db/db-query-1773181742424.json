@@ -1,0 +1,26 @@
+{
+  "query": "SELECT result, COUNT(*) as count FROM call_queue WHERE campaignId = 30010 GROUP BY result ORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT result, COUNT(*) as count FROM call_queue WHERE campaignId = 30010 GROUP BY result ORDER BY count DESC;",
+  "rows": [
+    {
+      "result": "failed",
+      "count": "103"
+    },
+    {
+      "result": "NULL",
+      "count": "91"
+    },
+    {
+      "result": "answered",
+      "count": "63"
+    },
+    {
+      "result": "no-answer",
+      "count": "38"
+    }
+  ],
+  "messages": [],
+  "stdout": "result\tcount\nfailed\t103\nNULL\t91\nanswered\t63\nno-answer\t38\n",
+  "stderr": "",
+  "execution_time_ms": 132
+}

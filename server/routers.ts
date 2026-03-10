@@ -361,6 +361,7 @@ export const appRouter = router({
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
       maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      cpsLimit: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -400,6 +401,7 @@ export const appRouter = router({
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
       maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      cpsLimit: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -1354,6 +1356,7 @@ Return ONLY the message text, nothing else.`;
       .input(z.object({
         name: z.string().min(1).max(100),
         maxCalls: z.number().int().min(10).max(100).default(10),
+        cpsLimit: z.number().int().min(1).max(10).default(3),
       }))
       .mutation(async ({ input }) => {
         const crypto = await import("crypto");
@@ -1365,9 +1368,12 @@ Return ONLY the message text, nothing else.`;
           apiKey,
           status: "offline",
         });
-        // Set maxCalls from input
+        // Set maxCalls and cpsLimit from input
         if (input.maxCalls !== 10) {
           await db.updatePbxAgentMaxCalls(agentId, input.maxCalls);
+        }
+        if (input.cpsLimit !== 3) {
+          await db.updatePbxAgentCps(agentId, input.cpsLimit);
         }
         return { agentId, apiKey, name: input.name };
       }),
@@ -1379,6 +1385,16 @@ Return ONLY the message text, nothing else.`;
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentMaxCalls(input.agentId, input.maxCalls);
+        return { success: true };
+      }),
+
+    updateAgentCps: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        cpsLimit: z.number().int().min(1).max(10),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updatePbxAgentCps(input.agentId, input.cpsLimit);
         return { success: true };
       }),
 

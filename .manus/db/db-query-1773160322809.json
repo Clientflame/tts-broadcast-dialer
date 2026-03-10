@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, phoneNumber, firstName, lastName FROM contacts ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, firstName, lastName FROM contacts ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "43681",
+      "phoneNumber": "3012571121",
+      "firstName": "Tasha",
+      "lastName": "Rogers"
+    },
+    {
+      "id": "43680",
+      "phoneNumber": "3033033037",
+      "firstName": "PAUL",
+      "lastName": "TORRES"
+    },
+    {
+      "id": "43679",
+      "phoneNumber": "5057371232",
+      "firstName": "STELLA",
+      "lastName": "PANANA"
+    },
+    {
+      "id": "43678",
+      "phoneNumber": "7402506110",
+      "firstName": "April",
+      "lastName": "Slusher"
+    },
+    {
+      "id": "43677",
+      "phoneNumber": "9195195217",
+      "firstName": "Frederick",
+      "lastName": "Jones"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tfirstName\tlastName\n43681\t3012571121\tTasha\tRogers\n43680\t3033033037\tPAUL\tTORRES\n43679\t5057371232\tSTELLA\tPANANA\n43678\t7402506110\tApril\tSlusher\n43677\t9195195217\tFrederick\tJones\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

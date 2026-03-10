@@ -85,6 +85,22 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     // Update agent heartbeat
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
 
+    // Determine CPS limit: campaign-level overrides agent-level
+    const agentCps = agent.cpsLimit ?? 3;
+    // Check if all calls belong to the same campaign and it has a CPS override
+    let effectiveCps = agentCps;
+    if (calls.length > 0) {
+      try {
+        const campaignId = calls[0].campaignId;
+        if (campaignId) {
+          const campaign = await db.getCampaignById(campaignId);
+          if (campaign?.cpsLimit && campaign.cpsLimit > 0) {
+            effectiveCps = Math.min(agentCps, campaign.cpsLimit);
+          }
+        }
+      } catch (_) { /* use agent CPS on error */ }
+    }
+
     res.json({
       calls: calls.map(c => ({
         id: c.id,
@@ -100,6 +116,8 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         campaignId: c.campaignId,
         callLogId: c.callLogId,
       })),
+      cpsLimit: effectiveCps,
+      maxConcurrent: effectiveLimit,
     });
   } catch (err) {
     console.error("[PBX-API] Poll error:", err);
@@ -384,6 +402,7 @@ installerRouter.get("/install", async (req: any, res: any) => {
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const apiUrl = `${protocol}://${host}/api/pbx`;
   const maxCalls = agent.maxCalls ?? 10;
+  const cpsLimit = (agent as any).cpsLimit ?? 3;
   const agentName = agent.name || "pbx-agent";
 
   // Read AMI credentials from environment secrets
@@ -411,13 +430,13 @@ installerRouter.get("/install", async (req: any, res: any) => {
   }
 
   // Generate the installer script
-  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, agentName, agentScript, amiUser, amiPassword, amiPort);
+  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, cpsLimit, agentName, agentScript, amiUser, amiPassword, amiPort);
 
   res.setHeader("Content-Type", "text/plain");
   res.send(script);
 });
 
-function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, agentName: string, agentScript: string, amiUser: string, amiPassword: string, amiPort: string): string {
+function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, cpsLimit: number, agentName: string, agentScript: string, amiUser: string, amiPassword: string, amiPort: string): string {
   // Escape backticks and dollar signs in the Python script for safe embedding in heredoc
   // Using a quoted heredoc ('AGENT_SCRIPT_EOF') prevents shell expansion
   const parts: string[] = [];
@@ -525,6 +544,7 @@ Environment=AMI_USER=${amiUser}
 Environment=AMI_SECRET=${amiPassword}
 Environment=POLL_INTERVAL=3
 Environment=MAX_CONCURRENT=${maxCalls}
+Environment=CPS_LIMIT=${cpsLimit}
 
 [Install]
 WantedBy=multi-user.target
