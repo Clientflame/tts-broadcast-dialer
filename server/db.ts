@@ -211,7 +211,12 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
   const allDupePhones = [...intraFileDupes, ...sameListDupes, ...crossListDupePhones];
 
   if (afterDnc.length > 0) {
-    await db.insert(contacts).values(afterDnc);
+    // Chunked insert for large imports to prevent DB timeout
+    const CHUNK_SIZE = 1000;
+    for (let i = 0; i < afterDnc.length; i += CHUNK_SIZE) {
+      const chunk = afterDnc.slice(i, i + CHUNK_SIZE);
+      await db.insert(contacts).values(chunk);
+    }
   }
   await db.update(contactLists).set({ contactCount: sql`(SELECT COUNT(*) FROM contacts WHERE listId = ${listId})` }).where(eq(contactLists.id, listId));
   return {
@@ -510,16 +515,26 @@ export async function bulkAddToDnc(entries: InsertDncEntry[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (entries.length === 0) return { added: 0, duplicates: 0 };
-  let added = 0;
+  const userId = entries[0].userId;
+  // Batch fetch existing DNC numbers for this user
+  const existingRows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList).where(eq(dncList.userId, userId));
+  const existingSet = new Set(existingRows.map(r => r.phoneNumber));
+  const seenInBatch = new Set<string>();
+  const toInsert: typeof entries = [];
   let duplicates = 0;
   for (const entry of entries) {
     const normalized = entry.phoneNumber.replace(/\D/g, "");
-    const existing = await db.select({ id: dncList.id }).from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, entry.userId))).limit(1);
-    if (existing.length > 0) { duplicates++; continue; }
-    await db.insert(dncList).values({ ...entry, phoneNumber: normalized });
-    added++;
+    if (existingSet.has(normalized) || seenInBatch.has(normalized)) { duplicates++; continue; }
+    seenInBatch.add(normalized);
+    toInsert.push({ ...entry, phoneNumber: normalized });
   }
-  return { added, duplicates };
+  // Chunked insert for large batches
+  const CHUNK_SIZE = 1000;
+  for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+    const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+    await db.insert(dncList).values(chunk);
+  }
+  return { added: toInsert.length, duplicates };
 }
 
 export async function getDncEntries(userId: number, search?: string) {

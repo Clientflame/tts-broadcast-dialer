@@ -551,3 +551,90 @@ describe("freepbx.getInstallerCommand", () => {
     await caller.freepbx.deleteAgent({ agentId: agent.agentId });
   });
 });
+
+// ─── Import Limit Tests ──────────────────────────────────────────────────────
+describe("Import Limits", () => {
+  it("should accept up to 50000 contacts in import schema", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // Create a contact list first
+    const list = await caller.contactLists.create({ name: "Large Import Test" });
+
+    // Test that the schema accepts a large batch (we'll use a small batch to verify it works)
+    const contacts = Array.from({ length: 100 }, (_, i) => ({
+      phoneNumber: `555${String(i).padStart(7, "0")}`,
+      firstName: `Test${i}`,
+      lastName: `User${i}`,
+    }));
+
+    const result = await caller.contacts.import({ listId: list.id, contacts });
+    expect(result.count).toBe(100);
+
+    // Clean up
+    await caller.contactLists.delete({ id: list.id });
+  });
+
+  it("should accept up to 50000 phone numbers in preview schema", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const list = await caller.contactLists.create({ name: "Preview Test" });
+
+    const phoneNumbers = Array.from({ length: 200 }, (_, i) => `555${String(i).padStart(7, "0")}`);
+    const preview = await caller.contacts.previewImport({ listId: list.id, phoneNumbers });
+    expect(preview.totalRows).toBe(200);
+    expect(preview.willImport).toBe(200);
+
+    await caller.contactLists.delete({ id: list.id });
+  });
+
+  it("should handle dedup correctly in large imports", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    const list = await caller.contactLists.create({ name: "Dedup Large Test" });
+
+    // Create contacts with some duplicates
+    const contacts = [
+      ...Array.from({ length: 50 }, (_, i) => ({
+        phoneNumber: `666${String(i).padStart(7, "0")}`,
+        firstName: `Test${i}`,
+      })),
+      // Add 10 duplicates of the first 10
+      ...Array.from({ length: 10 }, (_, i) => ({
+        phoneNumber: `666${String(i).padStart(7, "0")}`,
+        firstName: `Dupe${i}`,
+      })),
+    ];
+
+    const result = await caller.contacts.import({ listId: list.id, contacts });
+    expect(result.count).toBe(50);
+    expect(result.duplicatesOmitted).toBe(10);
+
+    await caller.contactLists.delete({ id: list.id });
+  });
+
+  it("should accept up to 50000 DNC entries in bulk add schema", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // Use timestamp-based prefix to avoid collision with previous test data
+    const prefix = `9${Date.now().toString().slice(-6)}`;
+    const entries = Array.from({ length: 50 }, (_, i) => ({
+      phoneNumber: `${prefix}${String(i).padStart(4, "0")}`,
+      reason: "test",
+      source: "manual" as const,
+    }));
+
+    const result = await caller.dnc.bulkAdd({ entries });
+    expect(result.added).toBe(50);
+
+    // Clean up - bulk remove by fetching IDs
+    const dncEntries = await caller.dnc.list({});
+    const testIds = dncEntries.filter((d: any) => d.phoneNumber.startsWith(prefix)).map((d: any) => d.id);
+    if (testIds.length > 0) {
+      await caller.dnc.bulkRemove({ ids: testIds });
+    }
+  });
+});

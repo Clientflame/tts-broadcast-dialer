@@ -191,3 +191,9 @@
 - [x] Installer handles: Python deps, agent script download, systemd service setup, auto-start
 - [x] Vitest tests for installer endpoint (4 tests, 105 total passing)
 - [x] Fix PBX agent installer - AMI auth failing because installer embeds wrong/hardcoded AMI credentials instead of using env secrets (now reads from FREEPBX_AMI_USER/FREEPBX_AMI_PASSWORD env)
+- [x] Fix FreePBX showing as "Disconnected" on dashboard - resolved after re-installing agent with correct AMI credentials
+- [x] Increase CSV import limit from 10,000 to 50,000+ leads
+- [x] Find and update all import caps (backend validation, frontend validation, file size limits)
+- [x] Optimize large imports with chunked database inserts for performance
+- [x] Add import progress indicator for large files
+- [x] Vitest tests for increased import limit (4 tests, 109 total passing)

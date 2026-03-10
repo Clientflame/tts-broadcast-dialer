@@ -418,7 +418,7 @@ export default function Contacts() {
             {previewLoading ? (
               <div className="py-8 text-center text-muted-foreground">
                 <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full mx-auto mb-3" />
-                Analyzing CSV for duplicates and DNC matches...
+                Analyzing {parsedContacts.length.toLocaleString()} contacts for duplicates and DNC matches...
               </div>
             ) : previewData ? (
               <div className="space-y-4">
@@ -437,11 +437,11 @@ export default function Contacts() {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border p-3 text-center">
-                    <p className="text-2xl font-bold">{previewData.totalRows}</p>
+                    <p className="text-2xl font-bold">{previewData.totalRows.toLocaleString()}</p>
                     <p className="text-xs text-muted-foreground">Total Rows in CSV</p>
                   </div>
                   <div className="rounded-lg border p-3 text-center bg-green-500/10">
-                    <p className="text-2xl font-bold text-green-600">{previewData.willImport}</p>
+                    <p className="text-2xl font-bold text-green-600">{previewData.willImport.toLocaleString()}</p>
                     <p className="text-xs text-muted-foreground">Will Be Imported</p>
                   </div>
                 </div>
@@ -505,7 +505,12 @@ export default function Contacts() {
                 onClick={confirmImport}
                 disabled={!previewData || previewData.willImport === 0 || importContacts.isPending}
               >
-                {importContacts.isPending ? "Importing..." : `Import ${previewData?.willImport ?? 0} Contacts`}
+                {importContacts.isPending ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                    Importing {previewData?.willImport?.toLocaleString() ?? 0} contacts...
+                  </span>
+                ) : `Import ${previewData?.willImport?.toLocaleString() ?? 0} Contacts`}
               </Button>
             </DialogFooter>
           </DialogContent>

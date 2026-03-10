@@ -265,7 +265,7 @@ export const appRouter = router({
         state: z.string().optional(),
         databaseName: z.string().optional(),
         customFields: z.record(z.string(), z.string()).optional(),
-      })).min(1).max(10000),
+      })).min(1).max(50000),
     })).mutation(async ({ ctx, input }) => {
       const contactData = input.contacts.map(c => ({
         ...c, listId: input.listId, userId: ctx.user.id,
@@ -276,7 +276,7 @@ export const appRouter = router({
     }),
     previewImport: protectedProcedure.input(z.object({
       listId: z.number(),
-      phoneNumbers: z.array(z.string()).min(1).max(10000),
+      phoneNumbers: z.array(z.string()).min(1).max(50000),
     })).mutation(async ({ ctx, input }) => {
       return db.previewImport(input.phoneNumbers, ctx.user.id, input.listId);
     }),
@@ -522,7 +522,7 @@ export const appRouter = router({
         phoneNumber: z.string().min(1),
         reason: z.string().optional(),
         source: z.enum(["manual", "import", "opt-out", "complaint"]).optional(),
-      })).min(1).max(10000),
+      })).min(1).max(50000),
     })).mutation(async ({ ctx, input }) => {
       const data = input.entries.map(e => ({ ...e, userId: ctx.user.id, addedBy: ctx.user.name || "Unknown" }));
       const result = await db.bulkAddToDnc(data);
