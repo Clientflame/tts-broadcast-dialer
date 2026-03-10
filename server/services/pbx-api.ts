@@ -360,4 +360,205 @@ function startAgentOfflineMonitor() {
 // Start the monitor when the module loads
 startAgentOfflineMonitor();
 
-export { pbxRouter };
+// ─── Installer Script Endpoint (no auth - uses API key in query param) ──────
+// This endpoint is mounted BEFORE the auth middleware via a separate router
+import { Router as InstallerRouter } from "express";
+const installerRouter = InstallerRouter();
+
+installerRouter.get("/install", async (req: any, res: any) => {
+  const apiKey = req.query.key as string;
+  if (!apiKey) {
+    res.status(400).send("# Error: Missing API key parameter\nexit 1\n");
+    return;
+  }
+
+  // Validate the API key belongs to a real agent
+  const agent = await db.getPbxAgentByApiKey(apiKey);
+  if (!agent) {
+    res.status(403).send("# Error: Invalid API key\nexit 1\n");
+    return;
+  }
+
+  // Build the API URL from the request
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  const apiUrl = `${protocol}://${host}/api/pbx`;
+  const maxCalls = agent.maxCalls ?? 10;
+  const agentName = agent.name || "pbx-agent";
+
+  // Read the PBX agent Python script
+  const path = await import("path");
+  const fs = await import("fs");
+  let agentScript: string;
+  try {
+    // In production, the pbx-agent dir is at the project root
+    const scriptPath = path.resolve(process.cwd(), "pbx-agent", "pbx_agent.py");
+    agentScript = fs.readFileSync(scriptPath, "utf-8");
+  } catch {
+    try {
+      // Fallback: try relative to __dirname
+      const scriptPath = path.resolve(__dirname, "..", "..", "pbx-agent", "pbx_agent.py");
+      agentScript = fs.readFileSync(scriptPath, "utf-8");
+    } catch {
+      res.status(500).send("# Error: Could not read agent script\nexit 1\n");
+      return;
+    }
+  }
+
+  // Generate the installer script
+  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, agentName, agentScript);
+
+  res.setHeader("Content-Type", "text/plain");
+  res.send(script);
+});
+
+function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, agentName: string, agentScript: string): string {
+  // Escape backticks and dollar signs in the Python script for safe embedding in heredoc
+  // Using a quoted heredoc ('AGENT_SCRIPT_EOF') prevents shell expansion
+  const parts: string[] = [];
+  parts.push(`#!/bin/bash
+# ============================================================================
+# PBX Agent Installer for AI TTS Broadcast Dialer
+# Auto-generated installer - run on your FreePBX/Asterisk server
+# ============================================================================
+set -e
+
+echo ""
+echo "========================================"
+echo "  PBX Agent Installer"
+echo "  Agent: ${agentName}"
+echo "========================================"
+echo ""
+
+# Check if running as root
+if [ "\$(id -u)" -ne 0 ]; then
+  echo "ERROR: This installer must be run as root"
+  echo "  Try: sudo bash or run as root user"
+  exit 1
+fi
+
+# Check for Python 3
+if ! command -v python3 &> /dev/null; then
+  echo "ERROR: Python 3 is required but not installed"
+  echo "  Install it with: yum install python3  (CentOS/RHEL)"
+  echo "                   apt install python3  (Debian/Ubuntu)"
+  exit 1
+fi
+
+PYTHON_VERSION=\$(python3 --version 2>&1)
+echo "[OK] Found \$PYTHON_VERSION"
+
+# Check for ffmpeg
+if ! command -v ffmpeg &> /dev/null; then
+  echo "WARNING: ffmpeg not found - attempting to install..."
+  if command -v yum &> /dev/null; then
+    yum install -y ffmpeg 2>/dev/null || echo "  Could not install ffmpeg via yum. Audio conversion may fail."
+  elif command -v apt-get &> /dev/null; then
+    apt-get install -y ffmpeg 2>/dev/null || echo "  Could not install ffmpeg via apt. Audio conversion may fail."
+  fi
+fi
+
+if command -v ffmpeg &> /dev/null; then
+  echo "[OK] ffmpeg found"
+else
+  echo "[WARN] ffmpeg not found - audio conversion may fail"
+fi
+
+# Check for Asterisk
+if command -v asterisk &> /dev/null; then
+  echo "[OK] Asterisk found"
+else
+  echo "[WARN] Asterisk not detected - AMI connection may fail"
+fi
+
+# Stop existing service if running
+if systemctl is-active --quiet pbx-agent 2>/dev/null; then
+  echo "Stopping existing PBX agent..."
+  systemctl stop pbx-agent
+fi
+
+# Create installation directory
+INSTALL_DIR="/opt/pbx-agent"
+mkdir -p "\$INSTALL_DIR"
+echo ""
+echo "Installing to \$INSTALL_DIR ..."
+
+# Write the PBX agent script
+cat > "\$INSTALL_DIR/pbx_agent.py" << 'AGENT_SCRIPT_EOF'`);
+  parts.push(agentScript);
+  parts.push(`AGENT_SCRIPT_EOF
+
+chmod +x "\$INSTALL_DIR/pbx_agent.py"
+echo "[OK] Agent script installed"
+
+# Create audio directory
+mkdir -p /var/lib/asterisk/sounds/custom/broadcast
+if id asterisk &>/dev/null; then
+  chown asterisk:asterisk /var/lib/asterisk/sounds/custom/broadcast
+fi
+echo "[OK] Audio directory created"
+
+# Create systemd service with pre-configured credentials
+cat > /etc/systemd/system/pbx-agent.service << SERVICE_EOF
+[Unit]
+Description=PBX Agent for AI TTS Broadcast Dialer
+After=network.target asterisk.service
+Wants=asterisk.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/pbx-agent
+ExecStart=/usr/bin/python3 /opt/pbx-agent/pbx_agent.py
+Restart=always
+RestartSec=5
+Environment=PBX_AGENT_API_URL=${apiUrl}
+Environment=PBX_AGENT_API_KEY=${apiKey}
+Environment=AMI_HOST=127.0.0.1
+Environment=AMI_PORT=5038
+Environment=AMI_USER=broadcast_dialer
+Environment=AMI_SECRET=Br0adcast!D1aler2024
+Environment=POLL_INTERVAL=3
+Environment=MAX_CONCURRENT=${maxCalls}
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
+echo "[OK] Systemd service created"
+
+# Enable and start the service
+systemctl daemon-reload
+systemctl enable pbx-agent
+systemctl restart pbx-agent
+
+# Wait a moment and check status
+sleep 2
+if systemctl is-active --quiet pbx-agent; then
+  echo ""
+  echo "========================================"
+  echo "  Installation Complete!"
+  echo "========================================"
+  echo ""
+  echo "  Agent Name:  ${agentName}"
+  echo "  Install Dir: \$INSTALL_DIR"
+  echo "  Service:     pbx-agent.service"
+  echo "  Status:      RUNNING"
+  echo ""
+  echo "  Useful commands:"
+  echo "    systemctl status pbx-agent    # Check status"
+  echo "    journalctl -u pbx-agent -f    # View live logs"
+  echo "    systemctl restart pbx-agent   # Restart agent"
+  echo "    systemctl stop pbx-agent      # Stop agent"
+  echo ""
+  echo "  The agent should appear online in your dashboard within 10 seconds."
+else
+  echo ""
+  echo "[WARN] Service installed but may not be running."
+  echo "  Check logs: journalctl -u pbx-agent -n 20"
+fi
+echo ""`);
+  return parts.join("\n");
+}
+
+export { pbxRouter, installerRouter };

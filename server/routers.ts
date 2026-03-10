@@ -1365,11 +1365,9 @@ Return ONLY the message text, nothing else.`;
           apiKey,
           status: "offline",
         });
-        // Also update maxCalls
-        const agents = await db.getPbxAgents();
-        const agent = agents.find((a: any) => a.agentId === agentId);
-        if (agent) {
-          await db.updatePbxAgentHeartbeat(agentId); // just to ensure it exists
+        // Set maxCalls from input
+        if (input.maxCalls !== 10) {
+          await db.updatePbxAgentMaxCalls(agentId, input.maxCalls);
         }
         return { agentId, apiKey, name: input.name };
       }),
@@ -1445,6 +1443,22 @@ Return ONLY the message text, nothing else.`;
       }))
       .query(async ({ ctx, input }) => {
         return db.getAgentDailyStats(ctx.user.id, input.agentId, input.days);
+      }),
+
+    getInstallerCommand: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        origin: z.string().url(),
+      }))
+      .query(async ({ input }) => {
+        const agent = await db.getPbxAgentByAgentId(input.agentId);
+        if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        const apiUrl = `${input.origin}/api/pbx`;
+        const apiKey = agent.apiKey;
+        const maxCalls = agent.maxCalls ?? 10;
+        // Generate a one-liner curl command that downloads and runs the installer
+        const oneLiner = `curl -sSL "${input.origin}/api/pbx/install?key=${encodeURIComponent(apiKey)}" | bash`;
+        return { oneLiner, apiUrl, apiKey, maxCalls, agentName: agent.name };
       }),
   }),
 });

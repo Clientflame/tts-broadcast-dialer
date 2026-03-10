@@ -7,7 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { pbxRouter } from "../services/pbx-api";
+import { pbxRouter, installerRouter } from "../services/pbx-api";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,7 +36,9 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
-  // PBX Agent API (public endpoints with API key auth)
+  // PBX Agent installer (no auth - uses API key in query param)
+  app.use("/api/pbx", installerRouter);
+  // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
   // tRPC API
   app.use(

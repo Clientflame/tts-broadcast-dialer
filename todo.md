@@ -182,3 +182,11 @@
 - [x] Add duration stats to analytics (avg duration, total minutes, cost-per-minute)
 - [x] Update Cost Estimator with actual duration-based cost calculations
 - [x] Vitest tests for call duration tracking (6 tests, 101 total passing)
+- [x] Easier PBX Agent installation
+- [x] One-line curl installer script that auto-registers agent and deploys to FreePBX
+- [x] Server-side installer script generation endpoint with embedded API key
+- [x] Auto-registration API - installer script registers itself and gets API key automatically
+- [x] Redesign FreePBX integration page with step-by-step installation wizard
+- [x] Copy-paste one-liner command with pre-filled server URL and credentials
+- [x] Installer handles: Python deps, agent script download, systemd service setup, auto-start
+- [x] Vitest tests for installer endpoint (4 tests, 105 total passing)

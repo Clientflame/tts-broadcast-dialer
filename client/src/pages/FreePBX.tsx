@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,8 @@ import {
   Wifi, WifiOff, RefreshCw, Server, Loader2,
   CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
   Activity, Zap, Gauge, AlertTriangle, RotateCcw, ShieldAlert,
-  BarChart3, TrendingUp, Phone, PhoneOff, PhoneMissed
+  BarChart3, TrendingUp, Phone, PhoneOff, PhoneMissed,
+  Rocket, ChevronDown, ChevronUp, ClipboardCopy, ExternalLink
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -26,6 +27,112 @@ const SPEED_PRESETS = [
   { label: "Max", value: 100, color: "text-red-600" },
 ];
 
+// ─── One-Click Installer Component ──────────────────────────────────────────
+function InstallerWizard({ agentId, onDone }: { agentId: string; onDone: () => void }) {
+  const [copiedCmd, setCopiedCmd] = useState(false);
+  const { data: installer, isLoading } = trpc.freepbx.getInstallerCommand.useQuery(
+    { agentId, origin: window.location.origin },
+    { enabled: !!agentId }
+  );
+
+  const copyCommand = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedCmd(true);
+      toast.success("Install command copied to clipboard!");
+      setTimeout(() => setCopiedCmd(false), 3000);
+    }).catch(() => {
+      // Fallback
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        setCopiedCmd(true);
+        toast.success("Install command copied to clipboard!");
+        setTimeout(() => setCopiedCmd(false), 3000);
+      } catch {
+        toast.error("Failed to copy — please select and copy manually");
+      }
+      document.body.removeChild(textarea);
+    });
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="p-6 text-center">
+        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+        <p className="text-sm text-muted-foreground">Generating install command...</p>
+      </div>
+    );
+  }
+
+  if (!installer) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Step 1: SSH */}
+      <div className="flex items-start gap-3">
+        <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">1</div>
+        <div className="flex-1">
+          <p className="text-sm font-medium">SSH into your FreePBX server as root</p>
+          <code className="block mt-1.5 p-2.5 bg-muted rounded text-xs font-mono">ssh root@your-freepbx-server</code>
+        </div>
+      </div>
+
+      {/* Step 2: One-liner */}
+      <div className="flex items-start gap-3">
+        <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">2</div>
+        <div className="flex-1">
+          <p className="text-sm font-medium">Paste this single command and press Enter</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            This will automatically download, install, and start the PBX agent with your credentials pre-configured.
+          </p>
+          <div className="mt-2 relative group">
+            <div className="p-3 pr-24 bg-gray-900 dark:bg-black rounded-lg text-green-400 text-xs font-mono break-all select-all border border-gray-700">
+              {installer.oneLiner}
+            </div>
+            <Button
+              size="sm"
+              className={`absolute top-2 right-2 h-8 transition-all ${
+                copiedCmd
+                  ? "bg-green-600 hover:bg-green-600 text-white"
+                  : "bg-white/10 hover:bg-white/20 text-white border-gray-600"
+              }`}
+              variant="outline"
+              onClick={() => copyCommand(installer.oneLiner)}
+            >
+              {copiedCmd ? (
+                <><Check className="h-3.5 w-3.5 mr-1" />Copied!</>
+              ) : (
+                <><ClipboardCopy className="h-3.5 w-3.5 mr-1" />Copy</>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Step 3: Verify */}
+      <div className="flex items-start gap-3">
+        <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">3</div>
+        <div className="flex-1">
+          <p className="text-sm font-medium">Wait for the agent to appear online</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            The installer will show a success message. The agent should appear as "Online" on this page within 10 seconds.
+          </p>
+        </div>
+      </div>
+
+      <Button variant="outline" size="sm" onClick={onDone} className="ml-10">
+        <Check className="h-3.5 w-3.5 mr-1.5" />Done — I've run the command
+      </Button>
+    </div>
+  );
+}
+
+// ─── Agent Metrics Dashboard ────────────────────────────────────────────────
 function AgentMetricsDashboard() {
   const { data: metrics = [], isLoading } = trpc.freepbx.agentMetrics.useQuery(undefined, { refetchInterval: 15000 });
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -118,7 +225,6 @@ function AgentMetricsDashboard() {
                       </div>
                     </div>
                   </div>
-                  {/* Mini progress bar */}
                   {m.totalCalls > 0 && (
                     <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden flex">
                       <div className="bg-green-500 h-full" style={{ width: `${(m.answered / m.totalCalls) * 100}%` }} />
@@ -153,26 +259,15 @@ function AgentMetricsDashboard() {
               </div>
             </div>
 
-            {/* Daily Call Volume Chart */}
             {dailyStats.length > 0 ? (
               <div>
                 <p className="text-xs text-muted-foreground mb-2">Daily Call Volume</p>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={dailyStats}>
                     <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis
-                      dataKey="day"
-                      tick={{ fontSize: 10 }}
-                      tickFormatter={(v: string) => {
-                        const d = new Date(v);
-                        return `${d.getMonth() + 1}/${d.getDate()}`;
-                      }}
-                    />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(v: string) => { const d = new Date(v); return `${d.getMonth() + 1}/${d.getDate()}`; }} />
                     <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
-                    />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} labelFormatter={(v: string) => new Date(v).toLocaleDateString()} />
                     <Legend wrapperStyle={{ fontSize: 10 }} />
                     <Bar dataKey="answered" name="Answered" fill="#22c55e" stackId="a" radius={[0, 0, 0, 0]} />
                     <Bar dataKey="busy" name="Busy" fill="#eab308" stackId="a" />
@@ -185,41 +280,22 @@ function AgentMetricsDashboard() {
               <div className="text-center py-6 text-sm text-muted-foreground">No call data for this time range</div>
             )}
 
-            {/* Answer Rate Trend */}
             {dailyStats.length > 0 && (
               <div>
                 <p className="text-xs text-muted-foreground mb-2">Answer Rate Trend</p>
                 <ResponsiveContainer width="100%" height={160}>
                   <AreaChart data={dailyStats}>
                     <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis
-                      dataKey="day"
-                      tick={{ fontSize: 10 }}
-                      tickFormatter={(v: string) => {
-                        const d = new Date(v);
-                        return `${d.getMonth() + 1}/${d.getDate()}`;
-                      }}
-                    />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickFormatter={(v: string) => { const d = new Date(v); return `${d.getMonth() + 1}/${d.getDate()}`; }} />
                     <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
-                      formatter={(value: number) => [`${value}%`, "Answer Rate"]}
-                    />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} labelFormatter={(v: string) => new Date(v).toLocaleDateString()} formatter={(value: number) => [`${value}%`, "Answer Rate"]} />
                     <defs>
                       <linearGradient id="answerRateGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
                         <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <Area
-                      type="monotone"
-                      dataKey="answerRate"
-                      name="Answer Rate"
-                      stroke="#8b5cf6"
-                      fill="url(#answerRateGradient)"
-                      strokeWidth={2}
-                    />
+                    <Area type="monotone" dataKey="answerRate" stroke="#8b5cf6" fill="url(#answerRateGradient)" strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -231,6 +307,7 @@ function AgentMetricsDashboard() {
   );
 }
 
+// ─── Throttle History Table ─────────────────────────────────────────────────
 function ThrottleHistoryTable() {
   const { data: history = [], isLoading } = trpc.freepbx.throttleHistory.useQuery(undefined, { refetchInterval: 15000 });
 
@@ -291,6 +368,7 @@ function ThrottleHistoryTable() {
   );
 }
 
+// ─── Main FreePBX Page ──────────────────────────────────────────────────────
 export default function FreePBX() {
   const amiStatus = trpc.freepbx.status.useQuery(undefined, { refetchInterval: 10000 });
   const testConnection = trpc.freepbx.testConnection.useMutation({
@@ -307,8 +385,9 @@ export default function FreePBX() {
   const queueStats = trpc.freepbx.queueStats.useQuery(undefined, { refetchInterval: 5000 });
   const registerAgent = trpc.freepbx.registerAgent.useMutation({
     onSuccess: (data: any) => {
-      toast.success("PBX Agent registered! Copy the API key below.");
-      setNewAgentKey(data.apiKey);
+      toast.success("Agent registered! Follow the install steps below.");
+      setNewAgentId(data.agentId);
+      setShowInstaller(true);
       setAgentName("");
       setMaxCalls(10);
       agents.refetch();
@@ -327,8 +406,10 @@ export default function FreePBX() {
 
   const [agentName, setAgentName] = useState("");
   const [maxCalls, setMaxCalls] = useState(10);
-  const [newAgentKey, setNewAgentKey] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [newAgentId, setNewAgentId] = useState("");
+  const [showInstaller, setShowInstaller] = useState(false);
+  const [showInstallerForAgent, setShowInstallerForAgent] = useState<string | null>(null);
+  const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
   const updateMaxCalls = trpc.freepbx.updateAgentMaxCalls.useMutation({
     onSuccess: () => {
@@ -357,11 +438,11 @@ export default function FreePBX() {
     });
   };
 
-  const copyToClipboard = useCallback((text: string) => {
+  const copyToClipboard = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      toast.success("API key copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
+      setCopiedStates(prev => ({ ...prev, [key]: true }));
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopiedStates(prev => ({ ...prev, [key]: false })), 2000);
     }).catch(() => {
       const textarea = document.createElement("textarea");
       textarea.value = text;
@@ -371,15 +452,18 @@ export default function FreePBX() {
       textarea.select();
       try {
         document.execCommand("copy");
-        setCopied(true);
-        toast.success("API key copied to clipboard");
-        setTimeout(() => setCopied(false), 2000);
+        setCopiedStates(prev => ({ ...prev, [key]: true }));
+        toast.success("Copied to clipboard");
+        setTimeout(() => setCopiedStates(prev => ({ ...prev, [key]: false })), 2000);
       } catch {
-        toast.error("Failed to copy — please select and copy manually");
+        toast.error("Failed to copy");
       }
       document.body.removeChild(textarea);
     });
   }, []);
+
+  const hasAgents = agents.data && agents.data.length > 0;
+  const hasOnlineAgents = agents.data?.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 30000);
 
   return (
     <DashboardLayout>
@@ -476,121 +560,136 @@ export default function FreePBX() {
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
-                  <span className="text-muted-foreground">Results reported back via HTTPS</span>
+                  <span className="text-muted-foreground">One-command install on any FreePBX</span>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* PBX Agents Management */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Terminal className="h-4 w-4" />PBX Agents
-            </CardTitle>
-            <CardDescription>
-              Register PBX agents that run on your FreePBX server to process calls
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Register new agent */}
-            <div className="p-4 rounded-lg border border-dashed space-y-3">
-              <div className="flex gap-3 items-end">
-                <div className="flex-1 space-y-1">
-                  <Label htmlFor="agentName" className="text-xs">Agent Name</Label>
-                  <Input
-                    id="agentName"
-                    placeholder="e.g., pbx-server-1"
-                    value={agentName}
-                    onChange={(e) => setAgentName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleRegister()}
-                  />
-                </div>
-                <Button onClick={handleRegister} disabled={registerAgent.isPending}>
-                  {registerAgent.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <><Plus className="h-4 w-4 mr-1" />Register</>
-                  )}
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center justify-between">
-                  <span>Max Concurrent Calls</span>
-                  <span className="font-bold text-primary">{maxCalls}</span>
-                </Label>
-                <Slider
-                  min={10}
-                  max={100}
-                  step={5}
-                  value={[maxCalls]}
-                  onValueChange={([v]) => setMaxCalls(v)}
-                />
-                {/* Speed Presets */}
-                <div className="flex gap-2">
-                  {SPEED_PRESETS.map((p) => (
-                    <Button
-                      key={p.label}
-                      variant={maxCalls === p.value ? "default" : "outline"}
-                      size="sm"
-                      className="flex-1 text-xs h-7"
-                      onClick={() => setMaxCalls(p.value)}
-                    >
-                      {p.label} ({p.value})
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Show new API key with prominent copy button */}
-            {newAgentKey && (
-              <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900">
-                <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">
-                  API Key Generated — Copy it now (it won't be shown again):
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 p-2.5 bg-white dark:bg-black rounded text-xs font-mono break-all select-all border border-green-200 dark:border-green-800">
-                    {newAgentKey}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant={copied ? "default" : "outline"}
-                    className={`shrink-0 min-w-[100px] transition-all ${
-                      copied
-                        ? "bg-green-600 hover:bg-green-600 text-white border-green-600"
-                        : "hover:bg-green-50 dark:hover:bg-green-950 border-green-300 dark:border-green-700"
-                    }`}
-                    onClick={() => copyToClipboard(newAgentKey)}
-                  >
-                    {copied ? (
-                      <><Check className="h-4 w-4 mr-1.5" />Copied!</>
+        {/* Quick Setup Card - shown when no agents exist */}
+        {!hasAgents && (
+          <Card className="border-2 border-dashed border-primary/30 bg-primary/5">
+            <CardContent className="py-8 text-center">
+              <Rocket className="h-12 w-12 mx-auto mb-4 text-primary opacity-70" />
+              <h3 className="text-lg font-semibold mb-2">Get Started in 2 Minutes</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6">
+                Register a PBX agent below, then paste a single command on your FreePBX server.
+                No manual file copying, no config editing — everything is automatic.
+              </p>
+              <div className="max-w-md mx-auto space-y-3">
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1 text-left space-y-1">
+                    <Label htmlFor="quickAgentName" className="text-xs">Agent Name</Label>
+                    <Input
+                      id="quickAgentName"
+                      placeholder="e.g., pbx-server-1"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleRegister()}
+                    />
+                  </div>
+                  <Button onClick={handleRegister} disabled={registerAgent.isPending} size="lg">
+                    {registerAgent.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <><Copy className="h-4 w-4 mr-1.5" />Copy Key</>
+                      <><Rocket className="h-4 w-4 mr-1.5" />Create & Install</>
                     )}
                   </Button>
                 </div>
-                <p className="text-xs text-green-700 dark:text-green-300 mt-2">
-                  Use this key as <code className="bg-green-100 dark:bg-green-900 px-1 rounded">PBX_AGENT_API_KEY</code> when installing the PBX agent on your FreePBX server.
-                </p>
+                <div className="space-y-2 text-left">
+                  <Label className="text-xs flex items-center justify-between">
+                    <span>Max Concurrent Calls</span>
+                    <span className="font-bold text-primary">{maxCalls}</span>
+                  </Label>
+                  <Slider min={10} max={100} step={5} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
+                  <div className="flex gap-2">
+                    {SPEED_PRESETS.map((p) => (
+                      <Button
+                        key={p.label}
+                        variant={maxCalls === p.value ? "default" : "outline"}
+                        size="sm"
+                        className="flex-1 text-xs h-7"
+                        onClick={() => setMaxCalls(p.value)}
+                      >
+                        {p.label} ({p.value})
+                      </Button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            )}
+            </CardContent>
+          </Card>
+        )}
 
-            {/* Agent list */}
-            {agents.data && agents.data.length > 0 ? (
-              <div className="space-y-3">
-                {agents.data.map((agent: any) => {
-                  const isOnline = agent.lastHeartbeat &&
-                    Date.now() - new Date(agent.lastHeartbeat).getTime() < 30000;
-                  const isThrottled = agent.effectiveMaxCalls != null && agent.effectiveMaxCalls < (agent.maxCalls ?? 10);
-                  const effectiveSpeed = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+        {/* Installer wizard shown after registration */}
+        {showInstaller && newAgentId && (
+          <Card className="border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2 text-green-800 dark:text-green-200">
+                <Rocket className="h-4 w-4" />Install PBX Agent
+              </CardTitle>
+              <CardDescription className="text-green-700 dark:text-green-300">
+                Your agent is registered. Follow these steps to install it on your FreePBX server.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <InstallerWizard
+                agentId={newAgentId}
+                onDone={() => {
+                  setShowInstaller(false);
+                  setNewAgentId("");
+                  agents.refetch();
+                  amiStatus.refetch();
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
 
-                  return (
-                    <div
-                      key={agent.id}
-                      className={`p-4 rounded-lg border ${isThrottled ? "border-orange-300 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20" : "bg-muted/50"}`}
-                    >
+        {/* PBX Agents Management */}
+        {hasAgents && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Terminal className="h-4 w-4" />PBX Agents
+                  </CardTitle>
+                  <CardDescription>
+                    Manage registered agents and their speed settings
+                  </CardDescription>
+                </div>
+                {/* Add new agent button */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Agent name"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleRegister()}
+                    className="w-40 h-8 text-xs"
+                  />
+                  <Button size="sm" onClick={handleRegister} disabled={registerAgent.isPending}>
+                    {registerAgent.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <><Plus className="h-3.5 w-3.5 mr-1" />Add Agent</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {agents.data?.map((agent: any) => {
+                const isOnline = agent.lastHeartbeat &&
+                  Date.now() - new Date(agent.lastHeartbeat).getTime() < 30000;
+                const isThrottled = agent.effectiveMaxCalls != null && agent.effectiveMaxCalls < (agent.maxCalls ?? 10);
+                const effectiveSpeed = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+                const showingInstaller = showInstallerForAgent === agent.agentId;
+
+                return (
+                  <div key={agent.id} className="space-y-0">
+                    <div className={`p-4 rounded-lg border ${isThrottled ? "border-orange-300 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20" : "bg-muted/50"}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${isOnline ? "bg-green-500" : "bg-gray-400"}`} />
@@ -618,6 +717,17 @@ export default function FreePBX() {
                           <Badge variant={isOnline ? "default" : "outline"}>
                             {isOnline ? "Online" : "Offline"}
                           </Badge>
+                          {!isOnline && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => setShowInstallerForAgent(showingInstaller ? null : agent.agentId)}
+                            >
+                              <Download className="h-3 w-3 mr-1" />
+                              {showingInstaller ? "Hide" : "Re-install"}
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -662,7 +772,6 @@ export default function FreePBX() {
                               }}
                             />
                           </div>
-                          {/* Speed preset buttons */}
                           <div className="flex gap-1">
                             {SPEED_PRESETS.map((p) => (
                               <Button
@@ -719,18 +828,29 @@ export default function FreePBX() {
                         )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-muted-foreground">
-                <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">No PBX agents registered</p>
-                <p className="text-xs mt-1">Register an agent above, then install it on your FreePBX server</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+
+                    {/* Inline installer for this agent */}
+                    {showingInstaller && (
+                      <div className="ml-4 mt-2 p-4 rounded-lg border border-dashed border-blue-300 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+                        <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mb-3">
+                          Re-install or update agent "{agent.name}" on your FreePBX server:
+                        </p>
+                        <InstallerWizard
+                          agentId={agent.agentId}
+                          onDone={() => {
+                            setShowInstallerForAgent(null);
+                            agents.refetch();
+                            amiStatus.refetch();
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Throttle History */}
         <Card>
@@ -750,64 +870,21 @@ export default function FreePBX() {
         {/* Agent Performance Metrics */}
         <AgentMetricsDashboard />
 
-        {/* Installation Guide */}
+        {/* How It Works (collapsed by default) */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Download className="h-4 w-4" />Installation Guide
+              <Zap className="h-4 w-4" />How It Works
             </CardTitle>
-            <CardDescription>
-              One-time setup to install the PBX agent on your FreePBX server
-            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">1</div>
-                <div>
-                  <p className="text-sm font-medium">Register a PBX Agent</p>
-                  <p className="text-xs text-muted-foreground">Use the form above to create an agent and copy the API key</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">2</div>
-                <div>
-                  <p className="text-sm font-medium">SSH into your FreePBX server</p>
-                  <code className="block mt-1 p-2 bg-muted rounded text-xs font-mono">ssh root@your-freepbx-server</code>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">3</div>
-                <div>
-                  <p className="text-sm font-medium">Download and run the installer</p>
-                  <div className="mt-1 p-2 bg-muted rounded text-xs font-mono space-y-1">
-                    <p>mkdir -p /opt/pbx-agent && cd /opt/pbx-agent</p>
-                    <p># Copy pbx_agent.py and install.sh to this directory</p>
-                    <p>chmod +x install.sh</p>
-                    <p>PBX_AGENT_API_URL="https://your-app.manus.space/api/pbx" \</p>
-                    <p>PBX_AGENT_API_KEY="your-api-key" \</p>
-                    <p>./install.sh</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">4</div>
-                <div>
-                  <p className="text-sm font-medium">Verify the agent is running</p>
-                  <code className="block mt-1 p-2 bg-muted rounded text-xs font-mono">systemctl status pbx-agent</code>
-                  <p className="text-xs text-muted-foreground mt-1">The agent status should show "Online" above within 10 seconds</p>
-                </div>
-              </div>
-            </div>
-
+          <CardContent>
             <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 text-sm">
-              <p className="font-medium text-blue-800 dark:text-blue-200">How it works:</p>
-              <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-300 text-xs mt-1">
+              <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-300 text-xs">
                 <li>The PBX agent runs on your FreePBX server as a systemd service</li>
                 <li>It polls this web app every 3 seconds for pending calls (outbound HTTPS only)</li>
                 <li>When calls are found, it downloads audio from S3 and converts it locally</li>
                 <li>Calls are originated via local AMI (localhost:5038) — no firewall issues</li>
-                <li>Call results are reported back to the web app via HTTPS</li>
+                <li>Call results (answered/busy/failed + duration) are reported back via HTTPS</li>
               </ol>
             </div>
           </CardContent>

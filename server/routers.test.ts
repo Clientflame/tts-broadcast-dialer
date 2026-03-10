@@ -488,3 +488,66 @@ describe("costEstimator.getSettings", () => {
     expect(result).toHaveProperty("avgCallDurationSecs");
   });
 });
+
+
+describe("freepbx.getInstallerCommand", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.freepbx.getInstallerCommand({ agentId: "agent-test", origin: "https://example.com" })
+    ).rejects.toThrow();
+  });
+
+  it("throws NOT_FOUND for non-existent agent", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.freepbx.getInstallerCommand({ agentId: "agent-nonexistent-xyz", origin: "https://example.com" })
+    ).rejects.toThrow();
+  });
+
+  it("requires a valid URL for origin", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.freepbx.getInstallerCommand({ agentId: "agent-test", origin: "not-a-url" })
+    ).rejects.toThrow();
+  });
+
+  it("returns installer command with correct structure for a registered agent", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+
+    // First register an agent
+    const agent = await caller.freepbx.registerAgent({ name: "installer-test-agent", maxCalls: 15 });
+
+    // Now get the installer command
+    const result = await caller.freepbx.getInstallerCommand({
+      agentId: agent.agentId,
+      origin: "https://test-app.manus.space",
+    });
+
+    expect(result).toHaveProperty("oneLiner");
+    expect(result).toHaveProperty("apiUrl");
+    expect(result).toHaveProperty("apiKey");
+    expect(result).toHaveProperty("maxCalls");
+    expect(result).toHaveProperty("agentName");
+
+    // Verify the one-liner contains curl command
+    expect(result.oneLiner).toContain("curl");
+    expect(result.oneLiner).toContain("/api/pbx/install");
+
+    // Verify the API URL is constructed from the origin
+    expect(result.apiUrl).toBe("https://test-app.manus.space/api/pbx");
+
+    // Verify agent name matches
+    expect(result.agentName).toBe("installer-test-agent");
+
+    // Verify maxCalls matches what was set
+    expect(result.maxCalls).toBe(15);
+
+    // Clean up
+    await caller.freepbx.deleteAgent({ agentId: agent.agentId });
+  });
+});
