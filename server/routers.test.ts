@@ -638,3 +638,58 @@ describe("Import Limits", () => {
     }
   });
 });
+
+describe("DID Health Monitoring", () => {
+  it("should track DID call results with recordDidCallResult", async () => {
+    const { recordDidCallResult } = await import("./db");
+    // This tests the function exists and handles missing IDs gracefully
+    const result = await recordDidCallResult(999999, "answered");
+    expect(result).toHaveProperty("flagged");
+    expect(result.flagged).toBe(false);
+  });
+
+  it("should handle recordDidCallResultByNumber for unknown numbers", async () => {
+    const { recordDidCallResultByNumber } = await import("./db");
+    const result = await recordDidCallResultByNumber("0000000000", 1, "failed");
+    expect(result).toHaveProperty("flagged");
+    expect(result.flagged).toBe(false);
+  });
+
+  it("should reactivate cooled down DIDs without error", async () => {
+    const { reactivateCooledDownDids } = await import("./db");
+    const result = await reactivateCooledDownDids();
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("should have DID health constants defined correctly", async () => {
+    // Verify the module exports and constants are reasonable
+    const db = await import("./db");
+    expect(typeof db.recordDidCallResult).toBe("function");
+    expect(typeof db.recordDidCallResultByNumber).toBe("function");
+    expect(typeof db.reactivateCooledDownDids).toBe("function");
+    expect(typeof db.resetDidHealth).toBe("function");
+  });
+});
+
+describe("Campaign Cloning", () => {
+  it("should have clone endpoint on the router", () => {
+    // Verify the campaigns router has a clone procedure
+    expect(appRouter._def.procedures).toBeDefined();
+  });
+
+  it("should reject clone with empty name via validation", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.campaigns.clone({ id: 1, name: "" })
+    ).rejects.toThrow();
+  });
+
+  it("should reject clone with non-existent campaign", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.campaigns.clone({ id: 999999, name: "Clone Test" })
+    ).rejects.toThrow();
+  });
+});

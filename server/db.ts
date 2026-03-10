@@ -679,8 +679,14 @@ export async function getNextRotatingCallerId(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
   // Round-robin: pick the active caller ID with the lowest call count
+  // Skip DIDs that are in cooldown (auto-flagged but not yet reactivated)
+  const now = Date.now();
   const result = await db.select().from(callerIds)
-    .where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1)))
+    .where(and(
+      eq(callerIds.userId, userId),
+      eq(callerIds.isActive, 1),
+      sql`(${callerIds.cooldownUntil} IS NULL OR ${callerIds.cooldownUntil} <= ${now})`,
+    ))
     .orderBy(callerIds.callCount)
     .limit(1);
   return result[0];
@@ -764,6 +770,149 @@ export async function resetCallerIdHealth(id: number, userId: number) {
     isActive: 1,
     lastCheckAt: null,
     lastCheckResult: null,
+  }).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+}
+
+// ─── Real-Time DID Health Monitoring ────────────────────────────────────────
+const DID_ROLLING_WINDOW = 50; // track last N calls per DID
+const DID_FLAG_THRESHOLD = 70; // flag if failure rate > 70%
+const DID_COOLDOWN_MS = 30 * 60 * 1000; // 30 minute cooldown when flagged
+const DID_WARNING_THRESHOLD = 50; // warning if failure rate > 50%
+
+export async function recordDidCallResult(
+  callerIdId: number,
+  result: string,
+) {
+  const db = await getDb();
+  if (!db) return { flagged: false };
+
+  const isFail = ["failed", "congestion", "all-circuits-busy", "service-unavailable", "trunk-error"].includes(result);
+
+  const current = await db.select({
+    recentCallCount: callerIds.recentCallCount,
+    recentFailCount: callerIds.recentFailCount,
+    userId: callerIds.userId,
+    phoneNumber: callerIds.phoneNumber,
+    isActive: callerIds.isActive,
+  }).from(callerIds).where(eq(callerIds.id, callerIdId)).limit(1);
+  if (!current[0]) return { flagged: false };
+
+  let newCallCount = current[0].recentCallCount + 1;
+  let newFailCount = current[0].recentFailCount + (isFail ? 1 : 0);
+
+  // Reset rolling window after DID_ROLLING_WINDOW calls
+  if (newCallCount > DID_ROLLING_WINDOW) {
+    // Scale down proportionally to keep the ratio but reset the window
+    const ratio = newFailCount / newCallCount;
+    newCallCount = Math.round(DID_ROLLING_WINDOW / 2);
+    newFailCount = Math.round(newCallCount * ratio);
+  }
+
+  const failureRate = newCallCount > 0 ? Math.round((newFailCount / newCallCount) * 100) : 0;
+
+  // Determine health status
+  let healthStatus: "unknown" | "healthy" | "degraded" | "failed" = "healthy";
+  let shouldFlag = false;
+  let flagReason: string | null = null;
+
+  if (newCallCount >= 10) { // Need at least 10 calls to make a judgment
+    if (failureRate >= DID_FLAG_THRESHOLD) {
+      healthStatus = "failed";
+      shouldFlag = true;
+      flagReason = `${failureRate}% failure rate over ${newCallCount} recent calls`;
+    } else if (failureRate >= DID_WARNING_THRESHOLD) {
+      healthStatus = "degraded";
+    }
+  }
+
+  const updateData: any = {
+    recentCallCount: newCallCount,
+    recentFailCount: newFailCount,
+    failureRate,
+    healthStatus,
+  };
+
+  if (shouldFlag && current[0].isActive === 1) {
+    updateData.isActive = 0;
+    updateData.autoDisabled = 1;
+    updateData.flaggedAt = Date.now();
+    updateData.flagReason = flagReason;
+    updateData.cooldownUntil = Date.now() + DID_COOLDOWN_MS;
+  }
+
+  await db.update(callerIds).set(updateData).where(eq(callerIds.id, callerIdId));
+
+  return {
+    flagged: shouldFlag && current[0].isActive === 1,
+    phoneNumber: current[0].phoneNumber,
+    failureRate,
+    healthStatus,
+  };
+}
+
+export async function recordDidCallResultByNumber(
+  phoneNumber: string,
+  userId: number,
+  result: string,
+) {
+  const db = await getDb();
+  if (!db) return { flagged: false };
+
+  // Look up the caller ID by phone number and userId
+  const did = await db.select({ id: callerIds.id })
+    .from(callerIds)
+    .where(and(eq(callerIds.phoneNumber, phoneNumber), eq(callerIds.userId, userId)))
+    .limit(1);
+  if (!did[0]) return { flagged: false };
+
+  return recordDidCallResult(did[0].id, result);
+}
+
+export async function reactivateCooledDownDids() {
+  const db = await getDb();
+  if (!db) return [];
+  const now = Date.now();
+  // Find DIDs whose cooldown has expired
+  const cooledDown = await db.select({
+    id: callerIds.id,
+    phoneNumber: callerIds.phoneNumber,
+  }).from(callerIds)
+    .where(and(
+      eq(callerIds.autoDisabled, 1),
+      sql`${callerIds.cooldownUntil} IS NOT NULL AND ${callerIds.cooldownUntil} <= ${now}`,
+    ));
+
+  for (const did of cooledDown) {
+    await db.update(callerIds).set({
+      isActive: 1,
+      autoDisabled: 0,
+      healthStatus: "unknown" as any,
+      recentCallCount: 0,
+      recentFailCount: 0,
+      failureRate: 0,
+      flaggedAt: null,
+      flagReason: null,
+      cooldownUntil: null,
+    }).where(eq(callerIds.id, did.id));
+  }
+
+  return cooledDown;
+}
+
+export async function resetDidHealth(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callerIds).set({
+    healthStatus: "unknown" as any,
+    consecutiveFailures: 0,
+    autoDisabled: 0,
+    isActive: 1,
+    recentCallCount: 0,
+    recentFailCount: 0,
+    failureRate: 0,
+    flaggedAt: null,
+    flagReason: null,
+    cooldownUntil: null,
   }).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
 }
 

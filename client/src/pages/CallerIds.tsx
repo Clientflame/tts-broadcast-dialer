@@ -15,12 +15,16 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar } from "lucide-react";
 
-function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures }: {
+function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
   autoDisabled: number;
   lastCheckAt: number | null;
   lastCheckResult: string | null;
   consecutiveFailures: number;
+  failureRate?: number;
+  recentCallCount?: number;
+  flagReason?: string | null;
+  cooldownUntil?: number | null;
 }) {
   const config: Record<string, { icon: React.ReactNode; label: string; variant: "default" | "secondary" | "destructive" | "outline"; color: string }> = {
     unknown: { icon: <ShieldQuestion className="h-3 w-3" />, label: "Unchecked", variant: "outline", color: "text-muted-foreground" },
@@ -30,21 +34,32 @@ function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, conse
   };
   const c = config[status] || config.unknown;
 
+  const isCoolingDown = cooldownUntil && cooldownUntil > Date.now();
+  const cooldownRemaining = isCoolingDown ? Math.ceil((cooldownUntil - Date.now()) / 60000) : 0;
+
   const tooltipContent = [
-    lastCheckAt ? `Last checked: ${new Date(lastCheckAt).toLocaleString()}` : "Never checked",
-    lastCheckResult ? `Result: ${lastCheckResult}` : null,
-    consecutiveFailures > 0 ? `Consecutive failures: ${consecutiveFailures}` : null,
-    autoDisabled ? "Auto-disabled due to repeated failures" : null,
+    recentCallCount && recentCallCount > 0 ? `Failure rate: ${failureRate || 0}% (${recentCallCount} recent calls)` : null,
+    lastCheckAt ? `Last health check: ${new Date(lastCheckAt).toLocaleString()}` : null,
+    lastCheckResult ? `Check result: ${lastCheckResult}` : null,
+    consecutiveFailures > 0 ? `Consecutive check failures: ${consecutiveFailures}` : null,
+    flagReason ? `Flagged: ${flagReason}` : null,
+    isCoolingDown ? `Cooldown: ${cooldownRemaining} min remaining` : null,
+    autoDisabled && !isCoolingDown ? "Auto-disabled — reset to re-enable" : null,
   ].filter(Boolean).join("\n");
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <Badge variant={c.variant} className={`text-xs gap-1 ${autoDisabled ? "border-red-400 bg-red-50 text-red-700" : ""}`}>
-              {c.icon} {autoDisabled ? "Auto-Disabled" : c.label}
+              {c.icon} {isCoolingDown ? "Cooldown" : autoDisabled ? "Flagged" : c.label}
             </Badge>
+            {recentCallCount && recentCallCount >= 10 && !autoDisabled ? (
+              <span className={`text-[10px] font-mono ${(failureRate || 0) >= 50 ? "text-yellow-600" : "text-muted-foreground"}`}>
+                {failureRate || 0}%
+              </span>
+            ) : null}
           </div>
         </TooltipTrigger>
         <TooltipContent className="whitespace-pre-line text-xs max-w-xs">
@@ -272,8 +287,8 @@ export default function CallerIds() {
             <CardContent className="py-3 px-4">
               <div className="flex items-center gap-2 text-red-700 text-sm">
                 <ShieldX className="h-4 w-4" />
-                <span className="font-medium">{autoDisabledCount} caller ID{autoDisabledCount > 1 ? "s" : ""} auto-disabled</span>
-                <span className="text-red-600/80">due to repeated health check failures. Reset health status to re-enable.</span>
+                <span className="font-medium">{autoDisabledCount} DID{autoDisabledCount > 1 ? "s" : ""} auto-flagged</span>
+                <span className="text-red-600/80">and removed from rotation due to high failure rates. Flagged DIDs enter a 30-minute cooldown then auto-reactivate, or you can reset manually.</span>
               </div>
             </CardContent>
           </Card>
@@ -391,6 +406,10 @@ export default function CallerIds() {
                           lastCheckAt={cid.lastCheckAt}
                           lastCheckResult={cid.lastCheckResult}
                           consecutiveFailures={cid.consecutiveFailures}
+                          failureRate={(cid as any).failureRate}
+                          recentCallCount={(cid as any).recentCallCount}
+                          flagReason={(cid as any).flagReason}
+                          cooldownUntil={(cid as any).cooldownUntil}
                         />
                       </td>
                       <td className="p-3 text-muted-foreground text-xs">

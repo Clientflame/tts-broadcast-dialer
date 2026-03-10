@@ -10,6 +10,16 @@ let intervalHandle: ReturnType<typeof setInterval> | null = null;
  */
 async function runScheduledChecks() {
   try {
+    // Check for DIDs whose cooldown has expired and reactivate them
+    try {
+      const reactivated = await db.reactivateCooledDownDids();
+      if (reactivated.length > 0) {
+        console.log(`[HealthScheduler] Reactivated ${reactivated.length} cooled-down DIDs: ${reactivated.map(d => d.phoneNumber).join(", ")}`);
+      }
+    } catch (err) {
+      console.warn("[HealthScheduler] Error reactivating cooled-down DIDs:", err);
+    }
+
     const dueSchedules = await db.getDueHealthCheckSchedules();
     for (const schedule of dueSchedules) {
       try {

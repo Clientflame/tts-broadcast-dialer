@@ -206,6 +206,22 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
           await recordCarrierError(agent.agentId, result);
         }
 
+        // Feed DID health monitoring - track per-DID failure rates
+        if (queueItem.callerIdStr) {
+          try {
+            const didResult = await db.recordDidCallResultByNumber(queueItem.callerIdStr, queueItem.userId, result);
+            if (didResult.flagged) {
+              console.log(`[PBX-API] DID ${didResult.phoneNumber} auto-flagged: ${didResult.failureRate}% failure rate`);
+              notifyOwner({
+                title: `DID Auto-Flagged: ${didResult.phoneNumber}`,
+                content: `Caller ID ${didResult.phoneNumber} has been automatically removed from rotation due to a high failure rate (${didResult.failureRate}%).\n\nThe DID will be placed on a 30-minute cooldown and then automatically re-enabled.\n\nYou can manually re-enable it from the Caller IDs page.`,
+              }).catch(err => console.warn("[PBX-API] Failed to send DID flag notification:", err));
+            }
+          } catch (err) {
+            console.warn("[PBX-API] DID health tracking error:", err);
+          }
+        }
+
         // Check if campaign is complete
         const pending = await db.getPendingCallLogs(queueItem.campaignId);
         const activeCount = await db.getActiveCallCount(queueItem.campaignId);

@@ -264,6 +264,13 @@ export const callerIds = mysqlTable("caller_ids", {
   lastCheckResult: text("lastCheckResult"),
   consecutiveFailures: int("consecutiveFailures").default(0).notNull(),
   autoDisabled: int("autoDisabled").default(0).notNull(),
+  // Rolling call result tracking for real-time DID health
+  recentCallCount: int("recentCallCount").default(0).notNull(),
+  recentFailCount: int("recentFailCount").default(0).notNull(),
+  failureRate: int("failureRate").default(0).notNull(), // percentage 0-100
+  flaggedAt: bigint("flaggedAt", { mode: "number" }),
+  flagReason: varchar("flagReason", { length: 255 }),
+  cooldownUntil: bigint("cooldownUntil", { mode: "number" }),
 });
 
 export type CallerId = typeof callerIds.$inferSelect;

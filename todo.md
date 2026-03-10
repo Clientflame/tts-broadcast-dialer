@@ -209,3 +209,14 @@
 - [x] Update FreePBX page UI with CPS configuration slider (1-10)
 - [x] Update Campaign creation dialog with CPS setting
 - [x] Vitest tests for CPS rate limiting (109 total passing, auto-throttle test updated)
+- [x] DID rotation health monitoring ---
+- [x] Track per-DID failure rates (failed/total calls ratio over rolling window of 50 calls)
+- [x] Auto-flag DIDs with high failure rates (>70% failure in last 50 calls)
+- [x] Temporarily remove flagged DIDs from rotation (30-min cooldown, auto-reactivate)
+- [x] Show DID health status on Caller IDs page (healthy/degraded/flagged/cooldown indicators with failure rate %)
+- [x] Notify owner when a DID gets auto-flagged
+- [x] Campaign cloning --- (already existed in codebase)
+- [x] One-click clone endpoint that duplicates all campaign settings
+- [x] Clone button on campaign cards in the UI (already existed)
+- [x] Cloned campaign gets "Copy of [name]" with draft status
+- [x] Vitest tests for DID health monitoring and campaign cloning (7 new tests, 116 total passing)
