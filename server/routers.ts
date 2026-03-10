@@ -170,6 +170,9 @@ export const appRouter = router({
     dialerLive: protectedProcedure.query(async ({ ctx }) => {
       return getDialerLiveStats(ctx.user.id);
     }),
+    callActivity: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional()).query(async ({ ctx, input }) => {
+      return db.getRecentCallActivity(ctx.user.id, input?.limit ?? 50);
+    }),
   }),
 
   contactLists: router({

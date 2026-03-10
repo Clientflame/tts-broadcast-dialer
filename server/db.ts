@@ -1646,3 +1646,54 @@ export async function getAgentDailyStats(userId: number, agentId: string, days: 
     answerRate: data.total > 0 ? Math.round((data.answered / data.total) * 100) : 0,
   }));
 }
+
+// ─── Call Activity Feed ─────────────────────────────────────────────────
+export async function getRecentCallActivity(userId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select({
+    id: callQueue.id,
+    phoneNumber: callQueue.phoneNumber,
+    status: callQueue.status,
+    result: callQueue.result,
+    claimedBy: callQueue.claimedBy,
+    claimedAt: callQueue.claimedAt,
+    callerIdStr: callQueue.callerIdStr,
+    campaignId: callQueue.campaignId,
+    campaignName: campaigns.name,
+    audioName: callQueue.audioName,
+    createdAt: callQueue.createdAt,
+    updatedAt: callQueue.updatedAt,
+  })
+    .from(callQueue)
+    .leftJoin(campaigns, eq(callQueue.campaignId, campaigns.id))
+    .where(eq(callQueue.userId, userId))
+    .orderBy(desc(callQueue.updatedAt))
+    .limit(limit);
+
+  // Also get agent names for attribution
+  const agentIds = Array.from(new Set(rows.filter((r: any) => r.claimedBy).map((r: any) => r.claimedBy!)));
+  let agentMap: Record<string, string> = {};
+  if (agentIds.length > 0) {
+    const agents = await db.select({ agentId: pbxAgents.agentId, name: pbxAgents.name })
+      .from(pbxAgents)
+      .where(inArray(pbxAgents.agentId, agentIds));
+    agentMap = Object.fromEntries(agents.map((a: any) => [a.agentId, a.name || a.agentId]));
+  }
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    phoneNumber: r.phoneNumber,
+    status: r.status,
+    result: r.result,
+    agentId: r.claimedBy,
+    agentName: r.claimedBy ? (agentMap[r.claimedBy] || r.claimedBy) : null,
+    callerIdStr: r.callerIdStr,
+    campaignId: r.campaignId,
+    campaignName: r.campaignName || "Quick Test",
+    audioName: r.audioName,
+    createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
+    updatedAt: r.updatedAt ? new Date(r.updatedAt).getTime() : null,
+    claimedAt: r.claimedAt,
+  }));
+}

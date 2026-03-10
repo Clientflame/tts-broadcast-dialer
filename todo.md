@@ -170,3 +170,7 @@
 - [x] Stacked bar chart showing daily call volume per agent (answered/busy/no-answer/failed)
 - [x] Area chart showing answer rate trend per agent over time
 - [x] Agent performance summary cards (total calls, answered, answer rate) with per-agent breakdown
+- [x] Real-time call activity feed on dashboard - live scrolling feed of call events
+- [x] Server-side endpoint for recent call activity with agent name lookup and campaign join
+- [x] Call activity feed UI with 3s auto-refresh, color-coded status badges, and pulse animation for active calls
+- [x] Activity feed shows campaign name, phone number, agent name, caller ID, status badge, and relative timestamp

@@ -375,3 +375,52 @@ describe("freepbx.queueStats", () => {
     expect(typeof stats.pending).toBe("number");
   });
 });
+
+describe("dashboard.callActivity", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dashboard.callActivity()).rejects.toThrow();
+  });
+
+  it("returns an array for authenticated users", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.callActivity();
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("accepts optional limit parameter", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.callActivity({ limit: 10 });
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(10);
+  });
+
+  it("rejects limit below 1", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dashboard.callActivity({ limit: 0 })).rejects.toThrow();
+  });
+
+  it("rejects limit above 100", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dashboard.callActivity({ limit: 101 })).rejects.toThrow();
+  });
+
+  it("returns items with expected shape", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.dashboard.callActivity({ limit: 5 });
+    if (result.length > 0) {
+      const item = result[0];
+      expect(item).toHaveProperty("id");
+      expect(item).toHaveProperty("phoneNumber");
+      expect(item).toHaveProperty("status");
+      expect(item).toHaveProperty("campaignName");
+      expect(item).toHaveProperty("updatedAt");
+    }
+  });
+});
