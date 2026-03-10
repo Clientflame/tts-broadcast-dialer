@@ -190,3 +190,4 @@
 - [x] Copy-paste one-liner command with pre-filled server URL and credentials
 - [x] Installer handles: Python deps, agent script download, systemd service setup, auto-start
 - [x] Vitest tests for installer endpoint (4 tests, 105 total passing)
+- [x] Fix PBX agent installer - AMI auth failing because installer embeds wrong/hardcoded AMI credentials instead of using env secrets (now reads from FREEPBX_AMI_USER/FREEPBX_AMI_PASSWORD env)

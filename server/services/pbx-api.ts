@@ -386,6 +386,11 @@ installerRouter.get("/install", async (req: any, res: any) => {
   const maxCalls = agent.maxCalls ?? 10;
   const agentName = agent.name || "pbx-agent";
 
+  // Read AMI credentials from environment secrets
+  const amiUser = process.env.FREEPBX_AMI_USER || "admin";
+  const amiPassword = process.env.FREEPBX_AMI_PASSWORD || "";
+  const amiPort = process.env.FREEPBX_AMI_PORT || "5038";
+
   // Read the PBX agent Python script
   const path = await import("path");
   const fs = await import("fs");
@@ -406,13 +411,13 @@ installerRouter.get("/install", async (req: any, res: any) => {
   }
 
   // Generate the installer script
-  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, agentName, agentScript);
+  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, agentName, agentScript, amiUser, amiPassword, amiPort);
 
   res.setHeader("Content-Type", "text/plain");
   res.send(script);
 });
 
-function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, agentName: string, agentScript: string): string {
+function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, agentName: string, agentScript: string, amiUser: string, amiPassword: string, amiPort: string): string {
   // Escape backticks and dollar signs in the Python script for safe embedding in heredoc
   // Using a quoted heredoc ('AGENT_SCRIPT_EOF') prevents shell expansion
   const parts: string[] = [];
@@ -515,9 +520,9 @@ RestartSec=5
 Environment=PBX_AGENT_API_URL=${apiUrl}
 Environment=PBX_AGENT_API_KEY=${apiKey}
 Environment=AMI_HOST=127.0.0.1
-Environment=AMI_PORT=5038
-Environment=AMI_USER=broadcast_dialer
-Environment=AMI_SECRET=Br0adcast!D1aler2024
+Environment=AMI_PORT=${amiPort}
+Environment=AMI_USER=${amiUser}
+Environment=AMI_SECRET=${amiPassword}
 Environment=POLL_INTERVAL=3
 Environment=MAX_CONCURRENT=${maxCalls}
 
