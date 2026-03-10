@@ -14,6 +14,15 @@
 import * as db from "../db";
 import { notifyOwner } from "../_core/notification";
 
+// Log throttle events to the database
+async function logThrottleEvent(agentId: string, eventType: "throttle_triggered" | "ramp_up" | "full_recovery" | "manual_reset", data: { previousMaxCalls?: number; newMaxCalls?: number; carrierErrors?: number; reason?: string; agentName?: string }) {
+  try {
+    await db.createThrottleEvent({ agentId, agentName: data.agentName, eventType, ...data });
+  } catch (err) {
+    console.error(`[AutoThrottle] Failed to log throttle event:`, err);
+  }
+}
+
 // In-memory tracking per agent
 interface AgentThrottleState {
   recentErrors: number[];       // timestamps of recent carrier errors
@@ -115,6 +124,15 @@ async function applyThrottle(agentId: string, state: AgentThrottleState): Promis
 
       console.log(`[AutoThrottle] Agent ${agentId}: throttled ${currentEffective} → ${newEffective} (${state.recentErrors.length} errors in window)`);
 
+      // Log to throttle history
+      await logThrottleEvent(agentId, "throttle_triggered", {
+        previousMaxCalls: currentEffective,
+        newMaxCalls: newEffective,
+        carrierErrors: state.recentErrors.length,
+        reason: `${state.recentErrors.length} carrier errors in ${THROTTLE_WINDOW_MS / 1000}s`,
+        agentName: agent.name || undefined,
+      });
+
       // Notify owner (with cooldown)
       const now = Date.now();
       if (!state.notifiedAt || now - state.notifiedAt > NOTIFICATION_COOLDOWN_MS) {
@@ -187,6 +205,21 @@ export async function attemptRampUp(agentId: string): Promise<void> {
 
     if (newEffective >= maxCalls) {
       state.isThrottled = false;
+      // Log full recovery
+      await logThrottleEvent(agentId, "full_recovery", {
+        previousMaxCalls: currentEffective,
+        newMaxCalls: maxCalls,
+        reason: "Fully recovered from throttle",
+        agentName: agent.name || undefined,
+      });
+    } else {
+      // Log ramp-up step
+      await logThrottleEvent(agentId, "ramp_up", {
+        previousMaxCalls: currentEffective,
+        newMaxCalls: newEffective,
+        reason: `Ramping up: ${newEffective}/${maxCalls}`,
+        agentName: agent.name || undefined,
+      });
     }
   } catch (err) {
     console.error(`[AutoThrottle] Failed to ramp up ${agentId}:`, err);
@@ -209,6 +242,11 @@ export async function resetThrottle(agentId: string): Promise<void> {
     throttleReason: null,
     throttleStartedAt: null,
     throttleCarrierErrors: 0,
+  });
+
+  // Log manual reset
+  await logThrottleEvent(agentId, "manual_reset", {
+    reason: "Throttle manually reset by user",
   });
 
   console.log(`[AutoThrottle] Agent ${agentId}: throttle manually reset`);

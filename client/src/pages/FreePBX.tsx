@@ -21,6 +21,66 @@ const SPEED_PRESETS = [
   { label: "Max", value: 100, color: "text-red-600" },
 ];
 
+function ThrottleHistoryTable() {
+  const { data: history = [], isLoading } = trpc.freepbx.throttleHistory.useQuery(undefined, { refetchInterval: 15000 });
+
+  if (isLoading) return <div className="text-center py-4 text-sm text-muted-foreground">Loading history...</div>;
+  if (history.length === 0) return <div className="text-center py-6 text-sm text-muted-foreground">No throttle events recorded yet</div>;
+
+  const eventColors: Record<string, string> = {
+    throttle_triggered: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+    ramp_up: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+    full_recovery: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300",
+    manual_reset: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300",
+  };
+
+  const eventLabels: Record<string, string> = {
+    throttle_triggered: "Throttled",
+    ramp_up: "Ramp Up",
+    full_recovery: "Recovered",
+    manual_reset: "Manual Reset",
+  };
+
+  return (
+    <div className="max-h-[300px] overflow-y-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 bg-background">
+          <tr className="border-b text-left">
+            <th className="py-2 pr-3 text-xs font-medium text-muted-foreground">Time</th>
+            <th className="py-2 pr-3 text-xs font-medium text-muted-foreground">Agent</th>
+            <th className="py-2 pr-3 text-xs font-medium text-muted-foreground">Event</th>
+            <th className="py-2 pr-3 text-xs font-medium text-muted-foreground">Speed Change</th>
+            <th className="py-2 text-xs font-medium text-muted-foreground">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.map((e: any) => (
+            <tr key={e.id} className="border-b border-border/50 hover:bg-muted/30">
+              <td className="py-2 pr-3 text-xs text-muted-foreground whitespace-nowrap">
+                {new Date(e.createdAt).toLocaleString()}
+              </td>
+              <td className="py-2 pr-3 text-xs">{e.agentName || e.agentId}</td>
+              <td className="py-2 pr-3">
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${eventColors[e.eventType] || "bg-gray-100 text-gray-800"}`}>
+                  {eventLabels[e.eventType] || e.eventType}
+                </span>
+              </td>
+              <td className="py-2 pr-3 text-xs">
+                {e.previousMaxCalls != null && e.newMaxCalls != null ? (
+                  <span>{e.previousMaxCalls} → {e.newMaxCalls}</span>
+                ) : "—"}
+              </td>
+              <td className="py-2 text-xs text-muted-foreground truncate max-w-[200px]" title={e.reason || ""}>
+                {e.reason || "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function FreePBX() {
   const amiStatus = trpc.freepbx.status.useQuery(undefined, { refetchInterval: 10000 });
   const testConnection = trpc.freepbx.testConnection.useMutation({
@@ -459,6 +519,21 @@ export default function FreePBX() {
                 <p className="text-xs mt-1">Register an agent above, then install it on your FreePBX server</p>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Throttle History */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4" />Throttle History
+            </CardTitle>
+            <CardDescription>
+              Log of auto-throttle events across all agents
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ThrottleHistoryTable />
           </CardContent>
         </Card>
 

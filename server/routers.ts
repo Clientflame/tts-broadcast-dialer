@@ -711,6 +711,11 @@ export const appRouter = router({
       await db.deleteBroadcastTemplate(input.id, ctx.user.id);
       return { success: true };
     }),
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      const deleted = await db.bulkDeleteBroadcastTemplates(input.ids, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "template.bulkDelete", resource: "template", details: { count: deleted } });
+      return { deleted };
+    }),
   }),
 
   analytics: router({
@@ -1409,6 +1414,11 @@ Return ONLY the message text, nothing else.`;
           throttleStartedAt: agent?.throttleStartedAt ?? null,
           carrierErrors: agent?.throttleCarrierErrors ?? 0,
         };
+      }),
+    throttleHistory: protectedProcedure
+      .input(z.object({ agentId: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        return db.getThrottleHistory(input?.agentId, 100);
       }),
   }),
 });

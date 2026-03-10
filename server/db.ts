@@ -18,6 +18,7 @@ import {
   localAuth, InsertLocalAuth,
   callScripts, InsertCallScript,
   healthCheckSchedule, InsertHealthCheckSchedule,
+  throttleHistory, InsertThrottleHistory,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1435,4 +1436,68 @@ export async function getDueHealthCheckSchedules() {
       eq(healthCheckSchedule.enabled, 1),
       sql`${healthCheckSchedule.nextRunAt} <= NOW()`
     ));
+}
+
+
+// ─── Throttle History ──────────────────────────────────────────────────────
+export async function createThrottleEvent(data: {
+  agentId: string;
+  agentName?: string | null;
+  eventType: "throttle_triggered" | "ramp_up" | "full_recovery" | "manual_reset";
+  previousMaxCalls?: number;
+  newMaxCalls?: number;
+  carrierErrors?: number;
+  reason?: string;
+}): Promise<void> {
+  const dbInst = await getDb();
+  if (!dbInst) return;
+  await dbInst.insert(throttleHistory).values({
+    agentId: data.agentId,
+    agentName: data.agentName || null,
+    eventType: data.eventType,
+    previousMaxCalls: data.previousMaxCalls || null,
+    newMaxCalls: data.newMaxCalls || null,
+    carrierErrors: data.carrierErrors || 0,
+    reason: data.reason || null,
+  });
+}
+
+export async function getThrottleHistory(agentId?: string, limit = 50): Promise<any[]> {
+  const dbInst = await getDb();
+  if (!dbInst) return [];
+  if (agentId) {
+    return dbInst.select().from(throttleHistory)
+      .where(eq(throttleHistory.agentId, agentId))
+      .orderBy(desc(throttleHistory.createdAt))
+      .limit(limit);
+  }
+  return dbInst.select().from(throttleHistory)
+    .orderBy(desc(throttleHistory.createdAt))
+    .limit(limit);
+}
+
+// ─── Broadcast Template Bulk Delete ────────────────────────────────────────
+export async function bulkDeleteBroadcastTemplates(ids: number[], userId: number): Promise<number> {
+  const dbInst = await getDb();
+  if (!dbInst) return 0;
+  let deleted = 0;
+  for (const id of ids) {
+    const result = await dbInst.delete(broadcastTemplates)
+      .where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+    if ((result as any)[0]?.affectedRows > 0) deleted++;
+  }
+  return deleted;
+}
+
+
+// ─── Call Queue Helpers ────────────────────────────────────────────────────
+export async function getPendingCallQueueCount(): Promise<number> {
+  const dbInst = await getDb();
+  if (!dbInst) return 0;
+  const { callQueue } = await import("../drizzle/schema");
+  const { eq, count: countFn } = await import("drizzle-orm");
+  const result = await dbInst.select({ cnt: countFn() })
+    .from(callQueue)
+    .where(eq(callQueue.status, "pending"));
+  return result[0]?.cnt ?? 0;
 }

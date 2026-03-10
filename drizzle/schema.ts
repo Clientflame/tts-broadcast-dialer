@@ -430,3 +430,19 @@ export const healthCheckSchedule = mysqlTable("health_check_schedule", {
 });
 export type HealthCheckSchedule = typeof healthCheckSchedule.$inferSelect;
 export type InsertHealthCheckSchedule = typeof healthCheckSchedule.$inferInsert;
+
+
+// ─── Throttle History Log ──────────────────────────────────────────────────
+export const throttleHistory = mysqlTable("throttle_history", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: varchar("agentId", { length: 64 }).notNull(),
+  agentName: varchar("agentName", { length: 255 }),
+  eventType: mysqlEnum("eventType", ["throttle_triggered", "ramp_up", "full_recovery", "manual_reset"]).notNull(),
+  previousMaxCalls: int("previousMaxCalls"),
+  newMaxCalls: int("newMaxCalls"),
+  carrierErrors: int("carrierErrors").default(0),
+  reason: text("reason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ThrottleHistory = typeof throttleHistory.$inferSelect;
+export type InsertThrottleHistory = typeof throttleHistory.$inferInsert;

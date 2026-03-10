@@ -158,3 +158,10 @@
 - [x] Speed auto-throttle - tracks carrier errors in sliding window, reduces speed 50% on threshold, ramps up on heartbeat
 - [x] Throttle indicators on agent cards (orange border, badge, reason, reset button)
 - [x] Vitest tests for auto-throttle (4 tests, 89 total passing)
+- [x] Throttle history log - store each throttle event (trigger, reduction, recovery) in database
+- [x] Throttle history UI - scrollable table on FreePBX page with event type badges and speed changes
+- [x] Agent load balancing - weighted distribution based on agent capacity ratio across online agents
+- [x] Load balancing via proportional claim limits in poll endpoint
+- [x] Broadcast template edit - full edit dialog with all template fields
+- [x] Broadcast template bulk delete - checkbox selection with delete count button
+- [x] Broadcast template duplicate - one-click clone with "(copy)" suffix

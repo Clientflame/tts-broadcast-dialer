@@ -31,6 +31,7 @@ pbxRouter.use(authenticateAgent);
 
 // ─── Poll for pending calls ─────────────────────────────────────────────────
 // PBX agent calls this every 2-3 seconds to get work
+// Uses weighted load balancing: each agent gets calls proportional to its available capacity
 pbxRouter.post("/poll", async (req: Request, res: Response) => {
   try {
     const agent = (req as any).pbxAgent;
@@ -39,7 +40,41 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     // Per-campaign speed cap: if the request includes a campaignMaxCalls, cap the limit
     const campaignMax = req.body.campaignMaxCalls || agentMax;
     const effectiveLimit = Math.min(agentMax, campaignMax);
-    const limit = Math.min(req.body.limit || 10, effectiveLimit);
+
+    // Load balancing: calculate this agent's fair share based on capacity
+    const activeCalls = req.body.activeCalls || 0;
+    const availableSlots = Math.max(0, effectiveLimit - activeCalls);
+
+    // Get all online agents to calculate proportional share
+    let limit = availableSlots;
+    try {
+      const allAgents = await db.getPbxAgents();
+      const onlineAgents = allAgents.filter((a: any) => {
+        if (a.agentId === agent.agentId) return true; // Always include self
+        if (!a.lastHeartbeat) return false;
+        const lastSeen = new Date(a.lastHeartbeat).getTime();
+        return Date.now() - lastSeen < 30000; // Online if heartbeat within 30s
+      });
+
+      if (onlineAgents.length > 1) {
+        // Weighted distribution: agent gets share proportional to its max capacity
+        const totalCapacity = onlineAgents.reduce((sum: number, a: any) => {
+          const aMax = a.effectiveMaxCalls ?? a.maxCalls ?? 10;
+          return sum + aMax;
+        }, 0);
+        const agentWeight = effectiveLimit / totalCapacity;
+        // Get total pending calls to distribute
+        const pendingCount = await db.getPendingCallQueueCount();
+        const fairShare = Math.ceil(pendingCount * agentWeight);
+        // Limit to available slots but at least 1 if there's capacity
+        limit = Math.min(availableSlots, Math.max(fairShare, availableSlots > 0 ? 1 : 0));
+      }
+    } catch (lbErr) {
+      // Fallback to simple available slots on error
+      console.warn("[PBX-API] Load balance calc failed, using simple limit:", lbErr);
+    }
+
+    limit = Math.max(0, Math.min(limit, effectiveLimit));
 
     // Release stale claims first (agent crashed without reporting)
     await db.releaseStaleClaimedCalls(120000);
