@@ -604,13 +604,13 @@ export async function getRecentlyCalledPhoneNumbers(userId: number, hoursAgo: nu
   const db = await getDb();
   if (!db) return new Set();
   const cutoff = Date.now() - (hoursAgo * 60 * 60 * 1000);
-  // Query call_logs for phone numbers called within the time window
+  // Only count calls that were actually dialed (not pending/cancelled)
   const rows = await db.select({ phoneNumber: callLogs.phoneNumber })
     .from(callLogs)
     .where(and(
       eq(callLogs.userId, userId),
       gte(callLogs.createdAt, new Date(cutoff)),
-      inArray(callLogs.status, ["pending", "dialing", "ringing", "answered", "busy", "no-answer", "failed", "completed"])
+      inArray(callLogs.status, ["dialing", "ringing", "answered", "busy", "no-answer", "failed", "completed"])
     ));
   return new Set(rows.map(r => r.phoneNumber.replace(/\D/g, "")));
 }

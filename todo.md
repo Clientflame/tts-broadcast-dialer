@@ -253,3 +253,4 @@
 - [x] Reset Call History button on Campaigns page - clear old call_logs for a campaign to allow re-dialing before 48h dedup
 - [x] Backend endpoint to delete call_logs and call_queue for a given campaign, reset to draft
 - [x] Confirmation dialog before resetting call history (with detailed warning)
+- [x] Fix Reset Call History button not working - dedup was counting 'pending' status call_logs as recently called, blocking all contacts
