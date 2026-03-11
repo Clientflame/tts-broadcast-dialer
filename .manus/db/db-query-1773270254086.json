@@ -1,0 +1,139 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'campaigns' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'campaigns' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "name"
+    },
+    {
+      "COLUMN_NAME": "description"
+    },
+    {
+      "COLUMN_NAME": "contactListId"
+    },
+    {
+      "COLUMN_NAME": "audioFileId"
+    },
+    {
+      "COLUMN_NAME": "messageText"
+    },
+    {
+      "COLUMN_NAME": "voice"
+    },
+    {
+      "COLUMN_NAME": "callerIdNumber"
+    },
+    {
+      "COLUMN_NAME": "callerIdName"
+    },
+    {
+      "COLUMN_NAME": "status"
+    },
+    {
+      "COLUMN_NAME": "maxConcurrentCalls"
+    },
+    {
+      "COLUMN_NAME": "retryAttempts"
+    },
+    {
+      "COLUMN_NAME": "retryDelay"
+    },
+    {
+      "COLUMN_NAME": "scheduledAt"
+    },
+    {
+      "COLUMN_NAME": "timezone"
+    },
+    {
+      "COLUMN_NAME": "timeWindowStart"
+    },
+    {
+      "COLUMN_NAME": "timeWindowEnd"
+    },
+    {
+      "COLUMN_NAME": "totalContacts"
+    },
+    {
+      "COLUMN_NAME": "completedCalls"
+    },
+    {
+      "COLUMN_NAME": "answeredCalls"
+    },
+    {
+      "COLUMN_NAME": "failedCalls"
+    },
+    {
+      "COLUMN_NAME": "startedAt"
+    },
+    {
+      "COLUMN_NAME": "completedAt"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "ivrEnabled"
+    },
+    {
+      "COLUMN_NAME": "ivrOptions"
+    },
+    {
+      "COLUMN_NAME": "abTestGroup"
+    },
+    {
+      "COLUMN_NAME": "abTestVariant"
+    },
+    {
+      "COLUMN_NAME": "targetStates"
+    },
+    {
+      "COLUMN_NAME": "targetAreaCodes"
+    },
+    {
+      "COLUMN_NAME": "useGeoCallerIds"
+    },
+    {
+      "COLUMN_NAME": "usePersonalizedTTS"
+    },
+    {
+      "COLUMN_NAME": "ttsSpeed"
+    },
+    {
+      "COLUMN_NAME": "useDidRotation"
+    },
+    {
+      "COLUMN_NAME": "pacingMode"
+    },
+    {
+      "COLUMN_NAME": "pacingTargetDropRate"
+    },
+    {
+      "COLUMN_NAME": "pacingMinConcurrent"
+    },
+    {
+      "COLUMN_NAME": "pacingMaxConcurrent"
+    },
+    {
+      "COLUMN_NAME": "scriptId"
+    },
+    {
+      "COLUMN_NAME": "callbackNumber"
+    },
+    {
+      "COLUMN_NAME": "cpsLimit"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nuserId\nname\ndescription\ncontactListId\naudioFileId\nmessageText\nvoice\ncallerIdNumber\ncallerIdName\nstatus\nmaxConcurrentCalls\nretryAttempts\nretryDelay\nscheduledAt\ntimezone\ntimeWindowStart\ntimeWindowEnd\ntotalContacts\ncompletedCalls\nansweredCalls\nfailedCalls\nstartedAt\ncompletedAt\ncreatedAt\nupdatedAt\nivrEnabled\nivrOptions\nabTestGroup\nabTestVariant\ntargetStates\ntargetAreaCodes\nuseGeoCallerIds\nusePersonalizedTTS\nttsSpeed\nuseDidRotation\npacingMode\npacingTargetDropRate\npacingMinConcurrent\npacingMaxConcurrent\nscriptId\ncallbackNumber\ncpsLimit\n",
+  "stderr": "",
+  "execution_time_ms": 89
+}

@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `useDidCallbackNumber` int DEFAULT 0 NOT NULL;

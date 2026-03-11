@@ -1,0 +1,354 @@
+{
+  "query": "DESCRIBE campaigns;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute DESCRIBE campaigns;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "name",
+      "Type": "varchar(255)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "description",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "contactListId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "audioFileId",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "messageText",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "voice",
+      "Type": "varchar(50)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "alloy",
+      "Extra": ""
+    },
+    {
+      "Field": "callerIdNumber",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "callerIdName",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "status",
+      "Type": "enum('draft','scheduled','running','paused','completed','cancelled')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "draft",
+      "Extra": ""
+    },
+    {
+      "Field": "maxConcurrentCalls",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "retryAttempts",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "retryDelay",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "300",
+      "Extra": ""
+    },
+    {
+      "Field": "scheduledAt",
+      "Type": "bigint",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "timezone",
+      "Type": "varchar(64)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "America/New_York",
+      "Extra": ""
+    },
+    {
+      "Field": "timeWindowStart",
+      "Type": "varchar(5)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "09:00",
+      "Extra": ""
+    },
+    {
+      "Field": "timeWindowEnd",
+      "Type": "varchar(5)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "21:00",
+      "Extra": ""
+    },
+    {
+      "Field": "totalContacts",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "completedCalls",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "answeredCalls",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "failedCalls",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "startedAt",
+      "Type": "bigint",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "completedAt",
+      "Type": "bigint",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    },
+    {
+      "Field": "ivrEnabled",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "ivrOptions",
+      "Type": "json",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "abTestGroup",
+      "Type": "varchar(50)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "abTestVariant",
+      "Type": "varchar(10)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "targetStates",
+      "Type": "json",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "targetAreaCodes",
+      "Type": "json",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "useGeoCallerIds",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "usePersonalizedTTS",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "ttsSpeed",
+      "Type": "varchar(10)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "1.0",
+      "Extra": ""
+    },
+    {
+      "Field": "useDidRotation",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "pacingMode",
+      "Type": "enum('fixed','adaptive','predictive')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "fixed",
+      "Extra": ""
+    },
+    {
+      "Field": "pacingTargetDropRate",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "3",
+      "Extra": ""
+    },
+    {
+      "Field": "pacingMinConcurrent",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "1",
+      "Extra": ""
+    },
+    {
+      "Field": "pacingMaxConcurrent",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "5",
+      "Extra": ""
+    },
+    {
+      "Field": "scriptId",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "callbackNumber",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "cpsLimit",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "3",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nuserId\tint\tNO\t\tNULL\t\nname\tvarchar(255)\tNO\t\tNULL\t\ndescription\ttext\tYES\t\tNULL\t\ncontactListId\tint\tNO\t\tNULL\t\naudioFileId\tint\tYES\t\tNULL\t\nmessageText\ttext\tYES\t\tNULL\t\nvoice\tvarchar(50)\tYES\t\talloy\t\ncallerIdNumber\tvarchar(20)\tYES\t\tNULL\t\ncallerIdName\tvarchar(100)\tYES\t\tNULL\t\nstatus\tenum('draft','scheduled','running','paused','completed','cancelled')\tNO\t\tdraft\t\nmaxConcurrentCalls\tint\tNO\t\t1\t\nretryAttempts\tint\tNO\t\t0\t\nretryDelay\tint\tNO\t\t300\t\nscheduledAt\tbigint\tYES\t\tNULL\t\ntimezone\tvarchar(64)\tYES\t\tAmerica/New_York\t\ntimeWindowStart\tvarchar(5)\tYES\t\t09:00\t\ntimeWindowEnd\tvarchar(5)\tYES\t\t21:00\t\ntotalContacts\tint\tNO\t\t0\t\ncompletedCalls\tint\tNO\t\t0\t\nansweredCalls\tint\tNO\t\t0\t\nfailedCalls\tint\tNO\t\t0\t\nstartedAt\tbigint\tYES\t\tNULL\t\ncompletedAt\tbigint\tYES\t\tNULL\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\nivrEnabled\tint\tNO\t\t0\t\nivrOptions\tjson\tYES\t\tNULL\t\nabTestGroup\tvarchar(50)\tYES\t\tNULL\t\nabTestVariant\tvarchar(10)\tYES\t\tNULL\t\ntargetStates\tjson\tYES\t\tNULL\t\ntargetAreaCodes\tjson\tYES\t\tNULL\t\nuseGeoCallerIds\tint\tNO\t\t0\t\nusePersonalizedTTS\tint\tNO\t\t0\t\nttsSpeed\tvarchar(10)\tYES\t\t1.0\t\nuseDidRotation\tint\tNO\t\t0\t\npacingMode\tenum('fixed','adaptive','predictive')\tNO\t\tfixed\t\npacingTargetDropRate\tint\tNO\t\t3\t\npacingMinConcurrent\tint\tNO\t\t1\t\npacingMaxConcurrent\tint\tNO\t\t5\t\nscriptId\tint\tYES\t\tNULL\t\ncallbackNumber\tvarchar(20)\tYES\t\tNULL\t\ncpsLimit\tint\tNO\t\t3\t\n",
+  "stderr": "",
+  "execution_time_ms": 79
+}

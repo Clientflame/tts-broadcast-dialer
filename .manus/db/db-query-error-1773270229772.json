@@ -1,0 +1,8 @@
+{
+  "query": "SELECT c.id, c.name, c.status, c.created_at, c.updated_at, c.started_at, c.completed_at, c.concurrent_calls, c.cps_limit, c.retry_attempts, c.max_retries FROM campaigns c ORDER BY c.started_at DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT c.id, c.name, c.status, c.created_at, c.updated_at, c.started_at, c.completed_at, c.concurrent_calls, c.cps_limit, c.retry_attempts, c.max_retries FROM campaigns c ORDER BY c.started_at DESC LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'c.started_at' in 'order clause'"
+  ]
+}

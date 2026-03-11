@@ -33,6 +33,7 @@ interface ActiveCampaign {
   // Script-based campaigns
   scriptSegments: ScriptSegment[] | null;
   callbackNumber: string | null;
+  useDidCallbackNumber: boolean;
   // Hopper: remaining contacts not yet converted to call_logs
   remainingContacts: Array<{ id: number; phoneNumber: string; firstName?: string | null; lastName?: string | null; company?: string | null; state?: string | null; databaseName?: string | null }>;
   totalEligible: number;
@@ -219,6 +220,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     pacingConfig,
     scriptSegments,
     callbackNumber,
+    useDidCallbackNumber: !!(campaign as any).useDidCallbackNumber,
     remainingContacts,
     totalEligible: contactsList.length,
     dedupSkipped,
@@ -367,6 +369,11 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
     CALLID: `broadcast-${callLog.campaignId}-${callLog.id}-${Date.now()}`,
   };
 
+  // Resolve callback number: use DID rotation number if enabled, otherwise static callbackNumber
+  const effectiveCallbackNumber = active.useDidCallbackNumber && callerIdNumber
+    ? callerIdNumber
+    : active.callbackNumber;
+
   // Track multi-segment audio URLs for script-based campaigns
   let audioUrls: string[] | null = null;
 
@@ -386,7 +393,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
           state: contact?.state,
           databaseName: contact?.databaseName,
         },
-        callbackNumber: active.callbackNumber,
+        callbackNumber: effectiveCallbackNumber,
         campaignId: callLog.campaignId,
         contactId: callLog.contactId,
       });

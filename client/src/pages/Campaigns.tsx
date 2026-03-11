@@ -88,7 +88,7 @@ type FormState = {
   targetStates: string[]; useGeoCallerIds: boolean;
   usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
   useDidRotation: boolean;
-  scriptId: number; callbackNumber: string;
+  scriptId: number; callbackNumber: string; useDidCallbackNumber: boolean;
   pacingMode: "fixed" | "adaptive" | "predictive";
   pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
 };
@@ -101,7 +101,7 @@ const DEFAULT_FORM: FormState = {
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-  useDidRotation: false, scriptId: 0, callbackNumber: "",
+  useDidRotation: false, scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
 };
 
@@ -308,10 +308,28 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 <p className="text-xs text-muted-foreground mt-1">Scripts contain ordered TTS and recorded segments. TTS segments support merge fields for personalization.</p>
               </div>
               <div>
-                <Label>Callback Number</Label>
-                <Input value={form.callbackNumber} onChange={e => setForm(p => ({ ...p, callbackNumber: e.target.value }))}
-                  placeholder="e.g. 4075551234" className="font-mono" />
-                <p className="text-xs text-muted-foreground mt-0.5">Used for {'{'}{'{'} callback_number {'}'}{'}'}  merge field (spoken as digits in TTS)</p>
+                <div className="flex items-center justify-between mb-2">
+                  <Label>Callback Number</Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Use DID Rotation #</Label>
+                    <Switch checked={form.useDidCallbackNumber} onCheckedChange={v => setForm(p => ({ ...p, useDidCallbackNumber: v }))} />
+                  </div>
+                </div>
+                {form.useDidCallbackNumber ? (
+                  <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>Callback number will match the rotating DID used for each call</span>
+                    </p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Each contact hears the same number that appeared on their caller ID</p>
+                  </div>
+                ) : (
+                  <>
+                    <Input value={form.callbackNumber} onChange={e => setForm(p => ({ ...p, callbackNumber: e.target.value }))}
+                      placeholder="e.g. 4075551234" className="font-mono" />
+                    <p className="text-xs text-muted-foreground mt-0.5">Used for {'{'}{'{'} callback_number {'}'}{'}'}  merge field (spoken as digits in TTS)</p>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -735,6 +753,7 @@ export default function Campaigns() {
       pacingMaxConcurrent: (c as any).pacingMaxConcurrent || 10,
       scriptId: (c as any).scriptId || 0,
       callbackNumber: (c as any).callbackNumber || "",
+      useDidCallbackNumber: !!(c as any).useDidCallbackNumber,
     });
     setEditOpen(true);
   };
@@ -773,6 +792,7 @@ export default function Campaigns() {
       pacingMaxConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMaxConcurrent : undefined,
       scriptId: editForm.scriptId || undefined,
       callbackNumber: editForm.callbackNumber || undefined,
+      useDidCallbackNumber: editForm.useDidCallbackNumber ? 1 : 0,
     });
   };
 
@@ -808,6 +828,7 @@ export default function Campaigns() {
       pacingMaxConcurrent: form.pacingMode !== "fixed" ? form.pacingMaxConcurrent : undefined,
       scriptId: form.scriptId || undefined,
       callbackNumber: form.callbackNumber || undefined,
+      useDidCallbackNumber: form.useDidCallbackNumber ? 1 : 0,
     });
   };
 

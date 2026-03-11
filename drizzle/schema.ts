@@ -148,6 +148,7 @@ export const campaigns = mysqlTable("campaigns", {
   // Call Script (mixed TTS + recorded segments)
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),
+  useDidCallbackNumber: int("useDidCallbackNumber").default(0).notNull(),
   // Call pacing
   pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
   pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
