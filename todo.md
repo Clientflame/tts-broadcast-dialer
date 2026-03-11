@@ -258,3 +258,8 @@
 - [x] Add area code distribution tracking to Call Activity Feed on Dashboard
 - [x] Backend endpoint to aggregate call_logs by area code for active/recent campaigns
 - [x] UI component showing area code breakdown with counts and percentages
+- [x] Fix dashboard not refreshing - totalCalls now excludes 'pending' status, renamed to 'Calls Dialed'
+- [x] Fix hopper label - renamed to 'Remaining Leads' (shows total left to dial, hopper batches 150 internally)
+- [x] Fix stop button - now pauses campaign instead of cancelling; separate Cancel button on paused state
+- [x] Add reactivate button for cancelled campaigns (sets back to draft status)
+- [x] Provide max concurrent limit recommendation for improving answer rates

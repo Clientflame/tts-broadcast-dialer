@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -659,12 +659,17 @@ export default function Campaigns() {
   });
 
   const pauseCampaign = trpc.campaigns.pause.useMutation({
-    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign paused"); },
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign stopped"); },
     onError: (e) => toast.error(e.message),
   });
 
   const cancelCampaign = trpc.campaigns.cancel.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign cancelled"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const reactivateCampaign = trpc.campaigns.reactivate.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); toast.success("Campaign reactivated — set to draft"); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -849,17 +854,24 @@ export default function Campaigns() {
               )}
               {c.status === "running" && (
                 <>
-                  <Button variant="outline" onClick={() => pauseCampaign.mutate({ id: c.id })} disabled={pauseCampaign.isPending}>
-                    <Pause className="h-4 w-4 mr-2" />Pause
-                  </Button>
-                  <Button variant="destructive" onClick={() => cancelCampaign.mutate({ id: c.id })} disabled={cancelCampaign.isPending}>
+                  <Button variant="destructive" onClick={() => pauseCampaign.mutate({ id: c.id })} disabled={pauseCampaign.isPending}>
                     <StopCircle className="h-4 w-4 mr-2" />Stop
                   </Button>
                 </>
               )}
               {c.status === "paused" && (
-                <Button onClick={() => startCampaign.mutate({ id: c.id })} disabled={startCampaign.isPending}>
-                  <Play className="h-4 w-4 mr-2" />Resume
+                <>
+                  <Button onClick={() => startCampaign.mutate({ id: c.id })} disabled={startCampaign.isPending}>
+                    <Play className="h-4 w-4 mr-2" />Resume
+                  </Button>
+                  <Button variant="outline" className="text-destructive border-destructive/30" onClick={() => { if (confirm("Cancel this campaign? This will permanently stop it. You can reactivate it later.")) cancelCampaign.mutate({ id: c.id }); }} disabled={cancelCampaign.isPending}>
+                    <XCircle className="h-4 w-4 mr-2" />Cancel
+                  </Button>
+                </>
+              )}
+              {c.status === "cancelled" && (
+                <Button variant="outline" onClick={() => reactivateCampaign.mutate({ id: c.id })} disabled={reactivateCampaign.isPending}>
+                  <RotateCcw className="h-4 w-4 mr-2" />{reactivateCampaign.isPending ? "Reactivating..." : "Reactivate"}
                 </Button>
               )}
               {(c.status === "draft" || c.status === "completed" || c.status === "cancelled") && (

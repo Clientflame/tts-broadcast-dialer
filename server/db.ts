@@ -500,10 +500,10 @@ export async function getDashboardStats(userId: number) {
   const [contactStats] = await db.select({ total: count() }).from(contacts).where(eq(contacts.userId, userId));
   const [listStats] = await db.select({ total: count() }).from(contactLists).where(eq(contactLists.userId, userId));
   const [callStats] = await db.select({
-    total: count(),
+    total: sql<number>`SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END)`,
     answered: sql<number>`SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END)`,
-    totalDuration: sql<number>`COALESCE(SUM(duration), 0)`,
-    avgDuration: sql<number>`COALESCE(AVG(CASE WHEN duration > 0 THEN duration END), 0)`,
+    totalDuration: sql<number>`COALESCE(SUM(CASE WHEN status != 'pending' THEN duration ELSE 0 END), 0)`,
+    avgDuration: sql<number>`COALESCE(AVG(CASE WHEN duration > 0 AND status != 'pending' THEN duration END), 0)`,
   }).from(callLogs).where(eq(callLogs.userId, userId));
   return {
     totalCampaigns: campaignStats?.total ?? 0,

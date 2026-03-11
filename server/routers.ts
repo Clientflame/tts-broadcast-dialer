@@ -467,6 +467,14 @@ export const appRouter = router({
       await cancelCampaign(input.id, ctx.user.id);
       return { success: true };
     }),
+    reactivate: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      if (campaign.status !== "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Only cancelled campaigns can be reactivated" });
+      await db.updateCampaign(input.id, ctx.user.id, { status: "draft" });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.reactivate", resource: "campaign", resourceId: input.id });
+      return { success: true };
+    }),
     stats: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
       const campaign = await db.getCampaign(input.id, ctx.user.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });

@@ -374,12 +374,12 @@ export default function Home() {
               <div className="rounded-lg border p-4 text-center space-y-1">
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
                   <Timer className="h-4 w-4" />
-                  <span className="text-xs font-medium uppercase tracking-wider">Leads in Hopper</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Remaining Leads</span>
                 </div>
                 <div className={`text-4xl font-bold tabular-nums ${isDialerActive ? "text-amber-500" : ""}`}>
                   {dialerLive.data?.leadsInHopper ?? 0}
                 </div>
-                <p className="text-xs text-muted-foreground">Queued and waiting to be dialed</p>
+                <p className="text-xs text-muted-foreground">Total leads left to dial</p>
               </div>
 
               <div className="rounded-lg border p-4 text-center space-y-1">
@@ -465,7 +465,7 @@ export default function Home() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Total Calls</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Calls Dialed</CardTitle>
               <Phone className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
