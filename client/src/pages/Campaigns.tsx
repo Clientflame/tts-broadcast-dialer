@@ -380,6 +380,28 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   <div className="flex justify-between text-xs text-muted-foreground"><span>0.25x</span><span>1.0x</span><span>4.0x</span></div>
                 </div>
               </div>
+
+              {/* Callback Number for Personalized TTS */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label>Callback Number</Label>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">Use DID Rotation #</Label>
+                    <Switch checked={form.useDidCallbackNumber} onCheckedChange={v => setForm(p => ({ ...p, useDidCallbackNumber: v }))} />
+                  </div>
+                </div>
+                {form.useDidCallbackNumber ? (
+                  <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>The <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900/50 px-1 rounded">{'{{caller_id}}'}</code> merge field will match the rotating DID used for each call</span>
+                    </p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Each contact hears the same number that appeared on their caller ID</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Enable to dynamically set <code className="font-mono">{'{{caller_id}}'}</code> to the rotating DID for each call. Otherwise it uses the outbound caller ID.</p>
+                )}
+              </div>
             </div>
           ) : !form.scriptId ? (
             <>

@@ -430,6 +430,10 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 
       const voice = active.campaign.voice || "alloy";
       const isGoogleVoice = voice.startsWith("en-US-");
+      // When useDidCallbackNumber is enabled, override callerIdNumber with the rotating DID
+      const ttsCallerIdNumber = active.useDidCallbackNumber && callerIdNumber
+        ? callerIdNumber
+        : callerIdNumber;
       const ttsParams = {
         messageTemplate: active.campaign.messageText,
         voice: voice as any,
@@ -442,7 +446,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
           state: contact?.state,
           databaseName: contact?.databaseName,
         },
-        callerIdNumber,
+        callerIdNumber: ttsCallerIdNumber,
         campaignId: callLog.campaignId,
         contactId: callLog.contactId,
       };

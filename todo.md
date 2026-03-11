@@ -273,3 +273,5 @@
 - [x] Add "Use DID Rotation Number as Callback Number" option in Campaign create/edit forms under audio source section
 - [x] UI: checkbox/toggle in audio source area that sets callback number to use rotating DID
 - [x] Backend: store and handle useDidCallbackNumber flag on campaigns
+- [x] Add "Use DID Rotation # as Callback Number" toggle to Personalized TTS section in campaign create/edit
+- [x] Wire useDidCallbackNumber through dialer engine for personalized TTS calls (resolve caller_id merge field from rotating DID)
