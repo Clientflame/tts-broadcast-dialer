@@ -6,6 +6,11 @@ import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import * as db from "../db";
 import type { Campaign, CallLog, ScriptSegment } from "../../drizzle/schema";
 
+// Hopper batch size: how many call_logs to create at a time
+const HOPPER_BATCH_SIZE = 150;
+// Dedup window: prevent calling the same number within this many hours
+const DEDUP_HOURS = 48;
+
 interface ActiveCampaign {
   campaign: Campaign;
   intervalId: ReturnType<typeof setInterval> | null;
@@ -18,6 +23,10 @@ interface ActiveCampaign {
   // Script-based campaigns
   scriptSegments: ScriptSegment[] | null;
   callbackNumber: string | null;
+  // Hopper: remaining contacts not yet converted to call_logs
+  remainingContacts: Array<{ id: number; phoneNumber: string; firstName?: string | null; lastName?: string | null; company?: string | null; state?: string | null; databaseName?: string | null }>;
+  totalEligible: number;
+  dedupSkipped: number;
 }
 
 const activeCampaigns = new Map<number, ActiveCampaign>();
@@ -35,7 +44,7 @@ export async function getDialerLiveStats(userId: number) {
   let activeCalls = 0;
   let leadsInHopper = 0;
   let concurrentLimit = 0;
-  const campaignDetails: Array<{ id: number; name: string; activeCalls: number; pending: number; maxConcurrent: number; pacing: any }> = [];
+  const campaignDetails: Array<{ id: number; name: string; activeCalls: number; pending: number; pendingCallLogs: number; remainingContacts: number; totalEligible: number; dedupSkipped: number; maxConcurrent: number; pacing: any }> = [];
 
   for (const campaignId of activeIds) {
     const active = activeCampaigns.get(campaignId);
@@ -46,15 +55,20 @@ export async function getDialerLiveStats(userId: number) {
     const effectiveConcurrent = getCurrentConcurrent(campaignId, active.pacingConfig);
     const pacingInfo = getPacingStats(campaignId, active.pacingConfig);
 
+    const remainingInHopper = pendingCalls.length + active.remainingContacts.length;
     activeCalls += activeCallCount;
-    leadsInHopper += pendingCalls.length;
+    leadsInHopper += remainingInHopper;
     concurrentLimit += effectiveConcurrent;
 
     campaignDetails.push({
       id: campaignId,
       name: active.campaign.name,
       activeCalls: activeCallCount,
-      pending: pendingCalls.length,
+      pending: remainingInHopper,
+      pendingCallLogs: pendingCalls.length,
+      remainingContacts: active.remainingContacts.length,
+      totalEligible: active.totalEligible,
+      dedupSkipped: active.dedupSkipped,
       maxConcurrent: effectiveConcurrent,
       pacing: pacingInfo ? {
         mode: pacingInfo.mode,
@@ -94,22 +108,36 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     console.log(`[Dialer] Audio ready: ${audioName}`);
   }
 
-  // Get contacts and filter out DNC numbers
+  // Get contacts and filter out DNC numbers + 48-hour dedup
   const allContacts = await db.getActiveContactsForCampaign(campaign.contactListId);
   if (allContacts.length === 0) throw new Error("No active contacts in the list");
 
   const dncNumbers = await db.getDncPhoneNumbers(userId);
+  const recentlyCalled = await db.getRecentlyCalledPhoneNumbers(userId, DEDUP_HOURS);
+
+  let dncFiltered = 0;
+  let dedupSkipped = 0;
   const contactsList = allContacts.filter(c => {
     const normalized = c.phoneNumber.replace(/\D/g, "");
-    return !dncNumbers.has(normalized);
+    if (dncNumbers.has(normalized)) { dncFiltered++; return false; }
+    if (recentlyCalled.has(normalized)) { dedupSkipped++; return false; }
+    return true;
   });
-  const dncFiltered = allContacts.length - contactsList.length;
-  if (contactsList.length === 0) throw new Error(`All ${allContacts.length} contacts are on the DNC list`);
-  if (dncFiltered > 0) {
-    console.log(`[Dialer] Filtered ${dncFiltered} DNC numbers from campaign ${campaignId}`);
-  }
 
-  const callLogData = contactsList.map(contact => ({
+  if (contactsList.length === 0) {
+    const reasons = [];
+    if (dncFiltered > 0) reasons.push(`${dncFiltered} on DNC`);
+    if (dedupSkipped > 0) reasons.push(`${dedupSkipped} called within ${DEDUP_HOURS}h`);
+    throw new Error(`No eligible contacts (${reasons.join(", ")})`);
+  }
+  if (dncFiltered > 0) console.log(`[Dialer] Filtered ${dncFiltered} DNC numbers from campaign ${campaignId}`);
+  if (dedupSkipped > 0) console.log(`[Dialer] Skipped ${dedupSkipped} numbers called within ${DEDUP_HOURS}h for campaign ${campaignId}`);
+
+  // Create only the first batch of call_logs (hopper approach)
+  const firstBatch = contactsList.slice(0, HOPPER_BATCH_SIZE);
+  const remainingContacts = contactsList.slice(HOPPER_BATCH_SIZE);
+
+  const callLogData = firstBatch.map(contact => ({
     campaignId: campaign.id,
     contactId: contact.id,
     userId,
@@ -120,6 +148,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   }));
 
   await db.bulkCreateCallLogs(callLogData);
+  console.log(`[Dialer] Hopper: loaded ${firstBatch.length} of ${contactsList.length} eligible contacts (${remainingContacts.length} remaining)`);
 
   await db.updateCampaign(campaignId, userId, {
     status: "running",
@@ -176,6 +205,9 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     pacingConfig,
     scriptSegments,
     callbackNumber,
+    remainingContacts,
+    totalEligible: contactsList.length,
+    dedupSkipped,
   };
 
   activeCampaigns.set(campaignId, active);
@@ -221,9 +253,32 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
   if (activeCount >= maxConcurrent) return;
 
   // Get pending calls
-  const pendingCalls = await db.getPendingCallLogs(campaignId);
+  let pendingCalls = await db.getPendingCallLogs(campaignId);
+
+  // Hopper refill: if pending call_logs are running low and we have remaining contacts, load next batch
+  if (pendingCalls.length < maxConcurrent * 2 && active.remainingContacts.length > 0) {
+    const nextBatch = active.remainingContacts.splice(0, HOPPER_BATCH_SIZE);
+    const callLogData = nextBatch.map(contact => ({
+      campaignId,
+      contactId: contact.id,
+      userId,
+      phoneNumber: contact.phoneNumber,
+      contactName: [contact.firstName, contact.lastName].filter(Boolean).join(" ") || undefined,
+      status: "pending" as const,
+      attempt: 1,
+    }));
+    await db.bulkCreateCallLogs(callLogData);
+    console.log(`[Dialer] Hopper refill: loaded ${nextBatch.length} more contacts (${active.remainingContacts.length} remaining)`);
+    // Re-fetch pending calls after refill
+    pendingCalls = await db.getPendingCallLogs(campaignId);
+  }
+
   if (pendingCalls.length === 0) {
-    // No more pending call_logs — check if all in-flight calls are also done
+    // No more pending call_logs and no remaining contacts — check if all in-flight calls are also done
+    if (active.remainingContacts.length > 0) {
+      // Still have contacts to load, don't complete yet
+      return;
+    }
     const stats = await db.getCampaignStats(campaignId);
     // Also check the call_queue for any pending/claimed items
     const dbInst = await db.getDb();

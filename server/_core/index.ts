@@ -1,4 +1,7 @@
 import "dotenv/config";
+// Set server timezone to Eastern Time (Florida)
+process.env.TZ = "America/New_York";
+
 import express from "express";
 import { createServer } from "http";
 import net from "net";

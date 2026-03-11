@@ -35,7 +35,7 @@ function formatMinutes(totalSecs: number): string {
 
 export default function Analytics() {
   const { data: analytics, isLoading } = trpc.analytics.overview.useQuery();
-  const { data: stats } = trpc.dashboard.stats.useQuery();
+  const { data: stats } = trpc.dashboard.stats.useQuery(undefined, { refetchInterval: 15000 });
   const { data: costSettings } = trpc.costEstimator.getSettings.useQuery();
 
   if (isLoading) {

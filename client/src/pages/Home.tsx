@@ -214,7 +214,7 @@ function CallActivityFeed() {
 
 export default function Home() {
   const { user } = useAuth();
-  const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user });
+  const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
   const amiStatus = trpc.dashboard.amiStatus.useQuery(undefined, { enabled: !!user, refetchInterval: 15000 });
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 

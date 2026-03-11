@@ -245,3 +245,8 @@
 - [x] Update agent registration and speed presets for new 1-10 range
 - [x] Update campaign CPS settings UI with pacing mode selector
 - [x] Update PBX agent poll endpoint to return pacing interval alongside CPS limit
+- [x] Set server timezone to Eastern Time (America/New_York) for Florida location
+- [x] Add 48-hour call dedup - prevent same phone number from being called twice within 48 hours
+- [x] Fix dashboard not reflecting updated info (live refresh issue - added 10s auto-refresh)
+- [x] Limit hopper batch size to 150 leads at a time (instead of flooding queue with all contacts)
+- [x] Fix total calls count being 3-4x the contact list size (48-hour dedup prevents re-dialing same numbers)

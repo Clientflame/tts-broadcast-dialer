@@ -1,0 +1,8 @@
+{
+  "query": "SELECT \n  cq.id,\n  cq.phoneNumber,\n  cq.callerIdStr AS callerId,\n  cq.status,\n  cq.result,\n  cq.errorMessage,\n  cq.callDuration,\n  cq.createdAt,\n  cq.claimedAt,\n  cq.completedAt,\n  c.name AS campaignName,\n  pa.name AS agentName\nFROM call_queue cq\nLEFT JOIN campaigns c ON cq.campaignId = c.id\nLEFT JOIN pbx_agents pa ON cq.agentId = pa.agentId\nWHERE cq.completedAt > (UNIX_TIMESTAMP() * 1000 - 600000)\n   OR cq.claimedAt > (UNIX_TIMESTAMP() * 1000 - 600000)\n   OR cq.createdAt > (UNIX_TIMESTAMP() * 1000 - 600000)\nORDER BY cq.id DESC\nLIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT \n  cq.id,\n  cq.phoneNumber,\n  cq.callerIdStr AS callerId,\n  cq.status,\n  cq.result,\n  cq.errorMessage,\n  cq.callDuration,\n  cq.createdAt,\n  cq.claimedAt,\n  cq.completedAt,\n  c.name AS campaignName,\n  pa.name AS agentName\nFROM call_queue cq\nLEFT JOIN campaigns c ON cq.campaignId = c.id\nLEFT JOIN pbx_agents pa ON cq.agentId = pa.agentId\nWHERE cq.completedAt > (UNIX_TIMESTAMP() * 1000 - 600000)\n   OR cq.claimedAt > (UNIX_TIMESTAMP() * 1000 - 600000)\n   OR cq.createdAt > (UNIX_TIMESTAMP() * 1000 - 600000)\nORDER BY cq.id DESC\nLIMIT 20;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'cq.agentid' in 'on clause'"
+  ]
+}

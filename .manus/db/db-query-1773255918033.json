@@ -1,0 +1,73 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'call_queue' ORDER BY ORDINAL_POSITION;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'call_queue' ORDER BY ORDINAL_POSITION;",
+  "rows": [
+    {
+      "COLUMN_NAME": "id"
+    },
+    {
+      "COLUMN_NAME": "userId"
+    },
+    {
+      "COLUMN_NAME": "campaignId"
+    },
+    {
+      "COLUMN_NAME": "callLogId"
+    },
+    {
+      "COLUMN_NAME": "phoneNumber"
+    },
+    {
+      "COLUMN_NAME": "channel"
+    },
+    {
+      "COLUMN_NAME": "context"
+    },
+    {
+      "COLUMN_NAME": "callerIdStr"
+    },
+    {
+      "COLUMN_NAME": "audioUrl"
+    },
+    {
+      "COLUMN_NAME": "audioName"
+    },
+    {
+      "COLUMN_NAME": "variables"
+    },
+    {
+      "COLUMN_NAME": "status"
+    },
+    {
+      "COLUMN_NAME": "priority"
+    },
+    {
+      "COLUMN_NAME": "claimedBy"
+    },
+    {
+      "COLUMN_NAME": "claimedAt"
+    },
+    {
+      "COLUMN_NAME": "result"
+    },
+    {
+      "COLUMN_NAME": "resultDetails"
+    },
+    {
+      "COLUMN_NAME": "createdAt"
+    },
+    {
+      "COLUMN_NAME": "updatedAt"
+    },
+    {
+      "COLUMN_NAME": "audioUrls"
+    },
+    {
+      "COLUMN_NAME": "callDuration"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nid\nuserId\ncampaignId\ncallLogId\nphoneNumber\nchannel\ncontext\ncallerIdStr\naudioUrl\naudioName\nvariables\nstatus\npriority\nclaimedBy\nclaimedAt\nresult\nresultDetails\ncreatedAt\nupdatedAt\naudioUrls\ncallDuration\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}
