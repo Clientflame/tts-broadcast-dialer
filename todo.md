@@ -267,3 +267,6 @@
 - [x] Fix DID Analytics garbled numbers - switched from call_queue to call_logs table with Number() conversion
 - [x] Fix DID Analytics stale data - now uses call_logs with clean callerIdUsed field
 - [x] Generate report from the latest campaign run (3.11.26: 59% answer rate, 13% fail rate)
+- [x] Add "Skip Duplicate Check" toggle to contact import flow for testing
+- [x] Backend: accept skipDupeCheck flag in import endpoint, bypass dedup when true
+- [x] UI: toggle switch in import preview step with warning label

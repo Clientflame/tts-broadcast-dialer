@@ -12,7 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit, AlertTriangle, ShieldX, Copy, FileText } from "lucide-react";
+import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit, AlertTriangle, ShieldX, Copy, FileText, FlaskConical } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 type ParsedContact = {
   phoneNumber: string;
@@ -51,6 +52,7 @@ export default function Contacts() {
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [skipDupeCheck, setSkipDupeCheck] = useState(false);
 
   const utils = trpc.useUtils();
   const lists = trpc.contactLists.list.useQuery();
@@ -182,6 +184,7 @@ export default function Contacts() {
         const preview = await previewImport.mutateAsync({
           listId: selectedListId,
           phoneNumbers: parsed.map(c => c.phoneNumber),
+          skipDupeCheck,
         });
         setPreviewData(preview);
       } catch (err: any) {
@@ -192,11 +195,11 @@ export default function Contacts() {
     };
     reader.readAsText(file);
     e.target.value = "";
-  }, [selectedListId, previewImport]);
+  }, [selectedListId, previewImport, skipDupeCheck]);
 
   const confirmImport = () => {
     if (!selectedListId || parsedContacts.length === 0) return;
-    importContacts.mutate({ listId: selectedListId, contacts: parsedContacts });
+    importContacts.mutate({ listId: selectedListId, contacts: parsedContacts, skipDupeCheck });
   };
 
   const handleExportCSV = useCallback(() => {
@@ -315,6 +318,12 @@ export default function Contacts() {
                       <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>
                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="h-3.5 w-3.5 mr-1" />Import CSV</Button>
                       <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVFile} />
+                      <div className="flex items-center gap-1.5 ml-1 border rounded-md px-2 py-1">
+                        <Switch id="skipDupe" checked={skipDupeCheck} onCheckedChange={setSkipDupeCheck} className="scale-75" />
+                        <Label htmlFor="skipDupe" className="text-xs cursor-pointer whitespace-nowrap flex items-center gap-1">
+                          <FlaskConical className="h-3 w-3" />Skip Dedup
+                        </Label>
+                      </div>
                       <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!contacts.data?.length}><Download className="h-3.5 w-3.5 mr-1" />Export</Button>
                       {selectedContacts.length > 0 && (
                         <Button variant="destructive" size="sm" onClick={() => deleteContactsMut.mutate({ ids: selectedContacts })}>
@@ -486,6 +495,13 @@ export default function Contacts() {
                         <Badge variant="destructive">{previewData.dncMatches}</Badge>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {skipDupeCheck && (
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-center text-sm text-blue-700 dark:text-blue-400 flex items-center justify-center gap-2">
+                    <FlaskConical className="h-4 w-4" />
+                    Duplicate checks skipped (testing mode)
                   </div>
                 )}
 

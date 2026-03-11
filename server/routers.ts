@@ -269,19 +269,21 @@ export const appRouter = router({
         databaseName: z.string().optional(),
         customFields: z.record(z.string(), z.string()).optional(),
       })).min(1).max(50000),
+      skipDupeCheck: z.boolean().optional(),
     })).mutation(async ({ ctx, input }) => {
       const contactData = input.contacts.map(c => ({
         ...c, listId: input.listId, userId: ctx.user.id,
       })) as any;
-      const result = await db.bulkCreateContacts(contactData);
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contacts.import", resource: "contacts", resourceId: input.listId, details: { count: result.count, dupes: result.duplicatesOmitted, dnc: result.dncOmitted } });
+      const result = await db.bulkCreateContacts(contactData, { skipDupeCheck: input.skipDupeCheck });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contacts.import", resource: "contacts", resourceId: input.listId, details: { count: result.count, dupes: result.duplicatesOmitted, dnc: result.dncOmitted, skipDupeCheck: input.skipDupeCheck } });
       return result;
     }),
     previewImport: protectedProcedure.input(z.object({
       listId: z.number(),
       phoneNumbers: z.array(z.string()).min(1).max(50000),
+      skipDupeCheck: z.boolean().optional(),
     })).mutation(async ({ ctx, input }) => {
-      return db.previewImport(input.phoneNumbers, ctx.user.id, input.listId);
+      return db.previewImport(input.phoneNumbers, ctx.user.id, input.listId, { skipDupeCheck: input.skipDupeCheck });
     }),
   }),
 

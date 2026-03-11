@@ -151,7 +151,7 @@ export async function createContact(data: InsertContact) {
   return { id: result[0].insertId };
 }
 
-export async function bulkCreateContacts(data: InsertContact[], options?: { skipDnc?: boolean }) {
+export async function bulkCreateContacts(data: InsertContact[], options?: { skipDnc?: boolean; skipDupeCheck?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (data.length === 0) return { count: 0, duplicatesOmitted: 0, dncOmitted: 0, crossListDupes: 0, duplicatePhones: [] as string[], dncPhones: [] as string[] };
@@ -160,39 +160,49 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
   const userId = data[0].userId;
 
   // --- Step 1: Intra-file dedup (keep first occurrence) ---
-  const seenInFile = new Set<string>();
-  const intraFileDupes: string[] = [];
-  const uniqueInFile = data.filter(c => {
-    const normalized = normalizePhone(c.phoneNumber);
-    if (seenInFile.has(normalized)) {
-      intraFileDupes.push(c.phoneNumber);
-      return false;
-    }
-    seenInFile.add(normalized);
-    return true;
-  });
+  let intraFileDupes: string[] = [];
+  let uniqueInFile: typeof data;
+  if (options?.skipDupeCheck) {
+    uniqueInFile = data;
+  } else {
+    const seenInFile = new Set<string>();
+    uniqueInFile = data.filter(c => {
+      const normalized = normalizePhone(c.phoneNumber);
+      if (seenInFile.has(normalized)) {
+        intraFileDupes.push(c.phoneNumber);
+        return false;
+      }
+      seenInFile.add(normalized);
+      return true;
+    });
+  }
 
   // --- Step 2: Cross-list dedup - check against ALL contact lists for this user ---
-  const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
-    .from(contacts)
-    .where(eq(contacts.userId, userId));
-  const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
-  const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
+  let sameListDupes: string[] = [];
+  let crossListDupePhones: string[] = [];
+  let afterDedup: typeof data;
+  if (options?.skipDupeCheck) {
+    afterDedup = uniqueInFile;
+  } else {
+    const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
+      .from(contacts)
+      .where(eq(contacts.userId, userId));
+    const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
+    const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
 
-  const sameListDupes: string[] = [];
-  const crossListDupePhones: string[] = [];
-  const afterDedup = uniqueInFile.filter(c => {
-    const normalized = normalizePhone(c.phoneNumber);
-    if (sameListPhones.has(normalized)) {
-      sameListDupes.push(c.phoneNumber);
-      return false;
-    }
-    if (existingPhones.has(normalized)) {
-      crossListDupePhones.push(c.phoneNumber);
-      return false;
-    }
-    return true;
-  });
+    afterDedup = uniqueInFile.filter(c => {
+      const normalized = normalizePhone(c.phoneNumber);
+      if (sameListPhones.has(normalized)) {
+        sameListDupes.push(c.phoneNumber);
+        return false;
+      }
+      if (existingPhones.has(normalized)) {
+        crossListDupePhones.push(c.phoneNumber);
+        return false;
+      }
+      return true;
+    });
+  }
 
   // --- Step 3: DNC check - remove contacts on the DNC list ---
   const dncPhoneSet = await getDncPhoneNumbers(userId);
@@ -230,9 +240,30 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
 }
 
 /** Preview an import without actually inserting - returns dedup/DNC stats */
-export async function previewImport(phoneNumbers: string[], userId: number, listId: number) {
+export async function previewImport(phoneNumbers: string[], userId: number, listId: number, options?: { skipDupeCheck?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+
+  if (options?.skipDupeCheck) {
+    // Skip all dedup checks - just count DNC matches
+    const dncPhoneSet = await getDncPhoneNumbers(userId);
+    let dncMatches = 0;
+    for (const phone of phoneNumbers) {
+      const normalized = normalizePhone(phone);
+      if (dncPhoneSet.has(normalized) || dncPhoneSet.has(phone.replace(/\D/g, ""))) {
+        dncMatches++;
+      }
+    }
+    return {
+      totalRows: phoneNumbers.length,
+      intraFileDupes: 0,
+      sameListDupes: 0,
+      crossListDupes: 0,
+      dncMatches,
+      willImport: phoneNumbers.length - dncMatches,
+      skipDupeCheck: true,
+    };
+  }
 
   // Intra-file dedup
   const seenInFile = new Set<string>();
