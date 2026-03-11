@@ -11,6 +11,16 @@ const HOPPER_BATCH_SIZE = 150;
 // Dedup window: prevent calling the same number within this many hours
 const DEDUP_HOURS = 48;
 
+// Fisher-Yates shuffle for randomizing contact order
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 interface ActiveCampaign {
   campaign: Campaign;
   intervalId: ReturnType<typeof setInterval> | null;
@@ -133,9 +143,13 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   if (dncFiltered > 0) console.log(`[Dialer] Filtered ${dncFiltered} DNC numbers from campaign ${campaignId}`);
   if (dedupSkipped > 0) console.log(`[Dialer] Skipped ${dedupSkipped} numbers called within ${DEDUP_HOURS}h for campaign ${campaignId}`);
 
+  // Randomize contact order to avoid sequential dialing patterns
+  const shuffledContacts = shuffleArray(contactsList);
+  console.log(`[Dialer] Shuffled ${shuffledContacts.length} contacts for random dialing order`);
+
   // Create only the first batch of call_logs (hopper approach)
-  const firstBatch = contactsList.slice(0, HOPPER_BATCH_SIZE);
-  const remainingContacts = contactsList.slice(HOPPER_BATCH_SIZE);
+  const firstBatch = shuffledContacts.slice(0, HOPPER_BATCH_SIZE);
+  const remainingContacts = shuffledContacts.slice(HOPPER_BATCH_SIZE);
 
   const callLogData = firstBatch.map(contact => ({
     campaignId: campaign.id,
