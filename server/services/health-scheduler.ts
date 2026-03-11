@@ -4,13 +4,35 @@ const CHECK_INTERVAL_MS = 60_000; // Check every minute if any schedules are due
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
 
 /**
+ * Check if the current time is within business hours: 8am-8pm EST, Monday-Friday.
+ * Uses America/New_York timezone which handles EST/EDT automatically.
+ */
+function isWithinBusinessHours(): boolean {
+  const now = new Date();
+  // Convert to Eastern Time
+  const estStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+  const estDate = new Date(estStr);
+  
+  const hour = estDate.getHours();     // 0-23
+  const dayOfWeek = estDate.getDay();  // 0=Sunday, 1=Monday, ..., 6=Saturday
+  
+  // Monday (1) through Friday (5)
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+  // 8am (8) through 7:59pm (19) — i.e., before 8pm (20)
+  const isBusinessHour = hour >= 8 && hour < 20;
+  
+  return isWeekday && isBusinessHour;
+}
+
+/**
  * Runs the scheduled health check loop.
  * Every minute, checks if any user's health check schedule is due,
  * and if so, queues health checks for all their active caller IDs.
+ * Only runs during business hours: 8am-8pm EST, Monday-Friday.
  */
 async function runScheduledChecks() {
   try {
-    // Check for DIDs whose cooldown has expired and reactivate them
+    // Always reactivate cooled-down DIDs regardless of business hours
     try {
       const reactivated = await db.reactivateCooledDownDids();
       if (reactivated.length > 0) {
@@ -18,6 +40,11 @@ async function runScheduledChecks() {
       }
     } catch (err) {
       console.warn("[HealthScheduler] Error reactivating cooled-down DIDs:", err);
+    }
+
+    // Only run health checks during business hours (8am-8pm EST, Mon-Fri)
+    if (!isWithinBusinessHours()) {
+      return; // Skip health checks outside business hours
     }
 
     const dueSchedules = await db.getDueHealthCheckSchedules();
@@ -56,7 +83,7 @@ async function runScheduledChecks() {
         }
 
         await db.markHealthCheckRun(schedule.userId);
-        console.log(`[HealthScheduler] User ${schedule.userId}: queued ${queued} health checks`);
+        console.log(`[HealthScheduler] User ${schedule.userId}: queued ${queued} health checks (business hours)`);
         
         await db.createAuditLog({
           userId: schedule.userId,
@@ -75,7 +102,7 @@ async function runScheduledChecks() {
 
 export function startHealthCheckScheduler() {
   if (intervalHandle) return; // Already running
-  console.log("[HealthScheduler] Started - checking every 60s for due schedules");
+  console.log("[HealthScheduler] Started - checking every 60s for due schedules (business hours: 8am-8pm EST, Mon-Fri)");
   intervalHandle = setInterval(runScheduledChecks, CHECK_INTERVAL_MS);
   // Run once immediately on startup
   setTimeout(runScheduledChecks, 5000);
@@ -88,3 +115,6 @@ export function stopHealthCheckScheduler() {
     console.log("[HealthScheduler] Stopped");
   }
 }
+
+// Export for testing
+export { isWithinBusinessHours };

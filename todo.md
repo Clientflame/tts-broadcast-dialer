@@ -230,3 +230,4 @@
 - [x] UI: DID flagging history timeline
 - [x] Add route to sidebar navigation
 - [x] Vitest tests for per-DID analytics endpoints (5 new tests, 121 total passing)
+- [x] Restrict automatic health checks to business hours only: 8am-8pm EST, Monday through Friday
