@@ -1931,30 +1931,48 @@ export async function getDidAnalyticsSummary(userId: number) {
   // Get all caller IDs for the user
   const dids = await db.select().from(callerIds).where(eq(callerIds.userId, userId));
 
-  // Get per-DID call stats from call_queue
-  const stats = await db.select({
-    callerIdStr: callQueue.callerIdStr,
-    total: sql<number>`COUNT(*)`,
-    answered: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN 1 ELSE 0 END)`,
-    failed: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'failed' THEN 1 ELSE 0 END)`,
-    noAnswer: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'no-answer' THEN 1 ELSE 0 END)`,
-    busy: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'busy' THEN 1 ELSE 0 END)`,
-    congestion: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'congestion' THEN 1 ELSE 0 END)`,
-    avgDuration: sql<number>`AVG(CASE WHEN ${callQueue.result} = 'answered' AND ${callQueue.callDuration} > 0 THEN ${callQueue.callDuration} ELSE NULL END)`,
-    totalDuration: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN COALESCE(${callQueue.callDuration}, 0) ELSE 0 END)`,
-    firstUsed: sql<string>`MIN(${callQueue.createdAt})`,
-    lastUsed: sql<string>`MAX(${callQueue.createdAt})`,
-  })
-    .from(callQueue)
-    .where(and(
-      eq(callQueue.userId, userId),
-      isNotNull(callQueue.callerIdStr),
-      isNotNull(callQueue.result),
-    ))
-    .groupBy(callQueue.callerIdStr);
+  // Use call_logs table (has clean callerIdUsed field) instead of call_queue (polluted callerIdStr)
+  // Exclude 'pending' and 'cancelled' statuses - only count actually dialed calls
+  const rows = await db.execute(
+    sql`SELECT callerIdUsed,
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'answered' OR status = 'completed' THEN 1 ELSE 0 END) as answered,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+      SUM(CASE WHEN status = 'no-answer' THEN 1 ELSE 0 END) as noAnswer,
+      SUM(CASE WHEN status = 'busy' THEN 1 ELSE 0 END) as busy,
+      0 as congestion,
+      AVG(CASE WHEN (status = 'answered' OR status = 'completed') AND duration > 0 THEN duration ELSE NULL END) as avgDuration,
+      SUM(CASE WHEN (status = 'answered' OR status = 'completed') THEN COALESCE(duration, 0) ELSE 0 END) as totalDuration,
+      MIN(createdAt) as firstUsed,
+      MAX(createdAt) as lastUsed
+    FROM call_logs
+    WHERE userId = ${userId}
+      AND callerIdUsed IS NOT NULL
+      AND status NOT IN ('pending', 'cancelled')
+    GROUP BY callerIdUsed`
+  ) as any;
 
-  // Merge DID info with call stats
-  const statsMap = new Map(stats.map(s => [s.callerIdStr, s]));
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+
+  // Build stats map with forced Number() conversion to avoid MySQL string returns
+  const statsMap = new Map<string, any>();
+  for (const r of resultRows) {
+    const cid = String(r.callerIdUsed || "");
+    if (cid) {
+      statsMap.set(cid, {
+        total: Number(r.total) || 0,
+        answered: Number(r.answered) || 0,
+        failed: Number(r.failed) || 0,
+        noAnswer: Number(r.noAnswer) || 0,
+        busy: Number(r.busy) || 0,
+        congestion: Number(r.congestion) || 0,
+        avgDuration: Number(r.avgDuration) || 0,
+        totalDuration: Number(r.totalDuration) || 0,
+        firstUsed: r.firstUsed,
+        lastUsed: r.lastUsed,
+      });
+    }
+  }
 
   return dids.map(did => {
     const s = statsMap.get(did.phoneNumber);
@@ -1996,26 +2014,16 @@ export async function getDidCallVolume(userId: number, callerIdStr?: string, day
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const conditions = [
-    eq(callQueue.userId, userId),
-    isNotNull(callQueue.callerIdStr),
-    isNotNull(callQueue.result),
-    sql`${callQueue.createdAt} >= ${since}`,
-  ];
-  if (callerIdStr) {
-    conditions.push(eq(callQueue.callerIdStr, callerIdStr));
-  }
-
-  // Use db.execute with sql template to avoid MySQL only_full_group_by issues
+  // Use call_logs table with callerIdUsed for accurate DID tracking
   const baseQuery = callerIdStr
-    ? sql`SELECT callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN result = 'answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN result IN ('failed','congestion','trunk-error') THEN 1 ELSE 0 END) as failed FROM call_queue WHERE userId = ${userId} AND callerIdStr IS NOT NULL AND result IS NOT NULL AND createdAt >= ${since} AND callerIdStr = ${callerIdStr} GROUP BY callerIdStr, call_date ORDER BY call_date`
-    : sql`SELECT callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN result = 'answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN result IN ('failed','congestion','trunk-error') THEN 1 ELSE 0 END) as failed FROM call_queue WHERE userId = ${userId} AND callerIdStr IS NOT NULL AND result IS NOT NULL AND createdAt >= ${since} GROUP BY callerIdStr, call_date ORDER BY call_date`;
+    ? sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE userId = ${userId} AND callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} AND callerIdUsed = ${callerIdStr} GROUP BY callerIdUsed, call_date ORDER BY call_date`
+    : sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE userId = ${userId} AND callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} GROUP BY callerIdUsed, call_date ORDER BY call_date`;
 
   const rows = await db.execute(baseQuery) as any;
   const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
 
   return resultRows.map((r: any) => ({
-    callerIdStr: r.callerIdStr || "",
+    callerIdStr: String(r.callerIdStr || ""),
     date: r.call_date ? String(r.call_date) : "",
     total: Number(r.total) || 0,
     answered: Number(r.answered) || 0,
@@ -2051,33 +2059,38 @@ export async function getDidCampaignBreakdown(userId: number, callerIdStr: strin
   const db = await getDb();
   if (!db) return [];
 
-  const rows = await db.select({
-    campaignId: callQueue.campaignId,
-    campaignName: sql<string>`(SELECT name FROM campaigns WHERE id = ${callQueue.campaignId})`,
-    total: sql<number>`COUNT(*)`,
-    answered: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN 1 ELSE 0 END)`,
-    failed: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'failed' THEN 1 ELSE 0 END)`,
-    noAnswer: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'no-answer' THEN 1 ELSE 0 END)`,
-    avgDuration: sql<number>`AVG(CASE WHEN ${callQueue.result} = 'answered' AND ${callQueue.callDuration} > 0 THEN ${callQueue.callDuration} ELSE NULL END)`,
-  })
-    .from(callQueue)
-    .where(and(
-      eq(callQueue.userId, userId),
-      eq(callQueue.callerIdStr, callerIdStr),
-      isNotNull(callQueue.result),
-    ))
-    .groupBy(callQueue.campaignId);
+  // Use call_logs table with callerIdUsed for accurate DID tracking
+  const rows = await db.execute(
+    sql`SELECT campaignId,
+      (SELECT name FROM campaigns WHERE id = call_logs.campaignId) as campaignName,
+      COUNT(*) as total,
+      SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+      SUM(CASE WHEN status = 'no-answer' THEN 1 ELSE 0 END) as noAnswer,
+      AVG(CASE WHEN status IN ('answered','completed') AND duration > 0 THEN duration ELSE NULL END) as avgDuration
+    FROM call_logs
+    WHERE userId = ${userId}
+      AND callerIdUsed = ${callerIdStr}
+      AND status NOT IN ('pending','cancelled')
+    GROUP BY campaignId`
+  ) as any;
 
-  return rows.map(r => ({
-    campaignId: r.campaignId,
-    campaignName: r.campaignName || "Quick Test",
-    total: r.total || 0,
-    answered: r.answered || 0,
-    failed: r.failed || 0,
-    noAnswer: r.noAnswer || 0,
-    answerRate: r.total > 0 ? Math.round(((r.answered || 0) / r.total) * 100) : 0,
-    avgDuration: r.avgDuration ? Math.round(r.avgDuration) : 0,
-  }));
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+
+  return resultRows.map((r: any) => {
+    const total = Number(r.total) || 0;
+    const answered = Number(r.answered) || 0;
+    return {
+      campaignId: r.campaignId,
+      campaignName: r.campaignName || "Quick Test",
+      total,
+      answered,
+      failed: Number(r.failed) || 0,
+      noAnswer: Number(r.noAnswer) || 0,
+      answerRate: total > 0 ? Math.round((answered / total) * 100) : 0,
+      avgDuration: r.avgDuration ? Math.round(Number(r.avgDuration)) : 0,
+    };
+  });
 }
 
 // ─── Area Code Distribution ──────────────────────────────────────────────────

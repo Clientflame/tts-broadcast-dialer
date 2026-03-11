@@ -263,3 +263,7 @@
 - [x] Fix stop button - now pauses campaign instead of cancelling; separate Cancel button on paused state
 - [x] Add reactivate button for cancelled campaigns (sets back to draft status)
 - [x] Provide max concurrent limit recommendation for improving answer rates
+- [x] Investigate and fix DID Analytics page issues
+- [x] Fix DID Analytics garbled numbers - switched from call_queue to call_logs table with Number() conversion
+- [x] Fix DID Analytics stale data - now uses call_logs with clean callerIdUsed field
+- [x] Generate report from the latest campaign run (3.11.26: 59% answer rate, 13% fail rate)
