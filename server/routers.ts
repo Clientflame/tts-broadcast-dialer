@@ -173,6 +173,9 @@ export const appRouter = router({
     callActivity: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional()).query(async ({ ctx, input }) => {
       return db.getRecentCallActivity(ctx.user.id, input?.limit ?? 50);
     }),
+    areaCodeDistribution: protectedProcedure.input(z.object({ campaignId: z.number().optional(), hours: z.number().min(1).max(168).default(24) }).optional()).query(async ({ ctx, input }) => {
+      return db.getAreaCodeDistribution(ctx.user.id, input?.campaignId, input?.hours ?? 24);
+    }),
   }),
 
   contactLists: router({

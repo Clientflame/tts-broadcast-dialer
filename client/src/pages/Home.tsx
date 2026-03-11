@@ -11,6 +11,7 @@ import {
   ListChecks, Wifi, WifiOff, RefreshCw, Activity,
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
+  MapPin,
 } from "lucide-react";
 
 function formatPhone(phone: string) {
@@ -206,6 +207,96 @@ function CallActivityFeed() {
               </div>
             );
           })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AreaCodeDistribution() {
+  const { user } = useAuth();
+  const areaCodeData = trpc.dashboard.areaCodeDistribution.useQuery(
+    { hours: 24 },
+    { enabled: !!user, refetchInterval: 10000 }
+  );
+
+  const data = areaCodeData.data;
+  if (!data || data.total === 0) return null;
+
+  const topCodes = data.areaCodes.slice(0, 15);
+  const maxTotal = topCodes.length > 0 ? topCodes[0].total : 1;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-lg">Area Code Distribution</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {data.areaCodes.length} area codes
+            </Badge>
+            <Badge variant="outline">
+              {data.total} calls (24h)
+            </Badge>
+          </div>
+        </div>
+        <CardDescription>Call distribution by area code in the last 24 hours</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {topCodes.map((ac) => (
+            <div key={ac.areaCode} className="flex items-center gap-3">
+              <span className="font-mono text-sm font-medium w-10 text-right">{ac.areaCode}</span>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full flex rounded-full overflow-hidden" style={{ width: `${Math.max((ac.total / maxTotal) * 100, 2)}%` }}>
+                      {ac.answered > 0 && (
+                        <div
+                          className="h-full bg-green-500"
+                          style={{ width: `${(ac.answered / ac.total) * 100}%` }}
+                          title={`${ac.answered} answered`}
+                        />
+                      )}
+                      {ac.failed > 0 && (
+                        <div
+                          className="h-full bg-red-400"
+                          style={{ width: `${(ac.failed / ac.total) * 100}%` }}
+                          title={`${ac.failed} failed`}
+                        />
+                      )}
+                      {ac.noAnswer > 0 && (
+                        <div
+                          className="h-full bg-amber-400"
+                          style={{ width: `${(ac.noAnswer / ac.total) * 100}%` }}
+                          title={`${ac.noAnswer} no answer`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs text-muted-foreground w-16 text-right">
+                    {ac.total} ({ac.percentage}%)
+                  </span>
+                  <span className={`text-xs font-medium w-12 text-right ${ac.answerRate >= 30 ? "text-green-600" : ac.answerRate >= 15 ? "text-amber-600" : "text-red-500"}`}>
+                    {ac.answerRate}% ans
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {data.areaCodes.length > 15 && (
+            <p className="text-xs text-muted-foreground text-center pt-2">
+              + {data.areaCodes.length - 15} more area codes
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-4 mt-4 pt-3 border-t text-xs text-muted-foreground">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500 inline-block" /> Answered</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" /> Failed</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" /> No Answer</span>
         </div>
       </CardContent>
     </Card>
@@ -412,6 +503,9 @@ export default function Home() {
 
         {/* Real-time Call Activity Feed */}
         <CallActivityFeed />
+
+        {/* Area Code Distribution */}
+        <AreaCodeDistribution />
 
         <div className="grid gap-4 md:grid-cols-2">
           <Card>

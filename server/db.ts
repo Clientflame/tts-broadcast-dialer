@@ -2079,3 +2079,51 @@ export async function getDidCampaignBreakdown(userId: number, callerIdStr: strin
     avgDuration: r.avgDuration ? Math.round(r.avgDuration) : 0,
   }));
 }
+
+// ─── Area Code Distribution ──────────────────────────────────────────────────
+
+export async function getAreaCodeDistribution(userId: number, campaignId?: number, hours: number = 24) {
+  const db = await getDb();
+  if (!db) return { areaCodes: [], total: 0 };
+
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  // Build raw SQL to extract area code (first 3 digits after normalizing)
+  const campaignFilter = campaignId
+    ? sql`AND ${callQueue.campaignId} = ${campaignId}`
+    : sql``;
+
+  const rows = await db.execute(sql`
+    SELECT
+      SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE(phoneNumber, '-', ''), '(', ''), ')', ''), ' ', ''), 
+        CASE WHEN LEFT(REPLACE(REPLACE(REPLACE(REPLACE(phoneNumber, '-', ''), '(', ''), ')', ''), ' ', ''), 1) = '1' 
+             THEN 2 ELSE 1 END, 3) as areaCode,
+      COUNT(*) as total,
+      SUM(CASE WHEN result = 'answered' THEN 1 ELSE 0 END) as answered,
+      SUM(CASE WHEN result IN ('failed', 'congestion', 'trunk-error') THEN 1 ELSE 0 END) as failed,
+      SUM(CASE WHEN result = 'no-answer' THEN 1 ELSE 0 END) as noAnswer
+    FROM call_queue
+    WHERE userId = ${userId}
+      AND result IS NOT NULL
+      AND createdAt >= ${since}
+      ${campaignFilter}
+    GROUP BY areaCode
+    ORDER BY total DESC
+  `) as any;
+
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+  const total = resultRows.reduce((sum: number, r: any) => sum + Number(r.total || 0), 0);
+
+  return {
+    areaCodes: resultRows.map((r: any) => ({
+      areaCode: String(r.areaCode || "???"),
+      total: Number(r.total) || 0,
+      answered: Number(r.answered) || 0,
+      failed: Number(r.failed) || 0,
+      noAnswer: Number(r.noAnswer) || 0,
+      answerRate: Number(r.total) > 0 ? Math.round((Number(r.answered) / Number(r.total)) * 100) : 0,
+      percentage: total > 0 ? Math.round((Number(r.total) / total) * 1000) / 10 : 0,
+    })),
+    total,
+  };
+}

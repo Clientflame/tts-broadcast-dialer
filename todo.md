@@ -255,3 +255,6 @@
 - [x] Confirmation dialog before resetting call history (with detailed warning)
 - [x] Fix Reset Call History button not working - dedup was counting 'pending' status call_logs as recently called, blocking all contacts
 - [x] Add randomization to contact list dialing order (Fisher-Yates shuffle before loading into hopper)
+- [x] Add area code distribution tracking to Call Activity Feed on Dashboard
+- [x] Backend endpoint to aggregate call_logs by area code for active/recent campaigns
+- [x] UI component showing area code breakdown with counts and percentages
