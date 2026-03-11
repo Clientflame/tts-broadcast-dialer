@@ -250,3 +250,6 @@
 - [x] Fix dashboard not reflecting updated info (live refresh issue - added 10s auto-refresh)
 - [x] Limit hopper batch size to 150 leads at a time (instead of flooding queue with all contacts)
 - [x] Fix total calls count being 3-4x the contact list size (48-hour dedup prevents re-dialing same numbers)
+- [x] Reset Call History button on Campaigns page - clear old call_logs for a campaign to allow re-dialing before 48h dedup
+- [x] Backend endpoint to delete call_logs and call_queue for a given campaign, reset to draft
+- [x] Confirmation dialog before resetting call history (with detailed warning)

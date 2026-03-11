@@ -444,6 +444,14 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.bulkDelete", resource: "campaign", details: { deleted, skipped: skipped.length } });
       return { success: true, deleted, skipped: skipped.length };
     }),
+    resetCallHistory: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+      if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset call history while campaign is running" });
+      const result = await db.resetCampaignCallHistory(input.id, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.resetCallHistory", resource: "campaign", resourceId: input.id, details: { deletedLogs: result.deletedLogs } });
+      return { success: true, deletedLogs: result.deletedLogs };
+    }),
     start: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       await startCampaign(input.id, ctx.user.id);
       return { success: true };

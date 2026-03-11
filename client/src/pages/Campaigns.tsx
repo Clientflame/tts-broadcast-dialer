@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -673,6 +673,11 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const resetCallHistory = trpc.campaigns.resetCallHistory.useMutation({
+    onSuccess: (data) => { utils.campaigns.list.invalidate(); utils.campaigns.stats.invalidate(); utils.dashboard.stats.invalidate(); toast.success(`Call history reset — ${data.deletedLogs} call logs cleared. Campaign set back to draft.`); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const bulkDeleteCampaigns = trpc.campaigns.bulkDelete.useMutation({
     onSuccess: (r) => {
       utils.campaigns.list.invalidate();
@@ -827,6 +832,16 @@ export default function Campaigns() {
               <Button variant="outline" size="sm" onClick={() => { setCloneId(c.id); setCloneName(`${c.name} (Copy)`); setCloneOpen(true); }}>
                 <Copy className="h-4 w-4 mr-1" />Clone
               </Button>
+              {/* Reset Call History button - only for non-running campaigns */}
+              {c.status !== "running" && (
+                <Button variant="outline" size="sm" className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30" onClick={() => {
+                  if (confirm("Reset all call history for this campaign? This will:\n\n• Delete all call logs and queue items\n• Reset campaign status to Draft\n• Allow all contacts to be re-dialed (bypasses 48-hour dedup)\n\nThis action cannot be undone.")) {
+                    resetCallHistory.mutate({ id: c.id });
+                  }
+                }} disabled={resetCallHistory.isPending}>
+                  <RotateCcw className="h-4 w-4 mr-1" />{resetCallHistory.isPending ? "Resetting..." : "Reset History"}
+                </Button>
+              )}
               {c.status === "draft" && (
                 <Button onClick={() => startCampaign.mutate({ id: c.id })} disabled={startCampaign.isPending}>
                   <Play className="h-4 w-4 mr-2" />{startCampaign.isPending ? "Starting..." : "Start"}

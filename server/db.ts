@@ -394,6 +394,20 @@ export async function deleteCampaign(id: number, userId: number) {
   await db.delete(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)));
 }
 
+export async function resetCampaignCallHistory(campaignId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Delete all call_logs for this campaign
+  const logResult = await db.delete(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId)));
+  // Delete all call_queue items for this campaign
+  await db.delete(callQueue).where(and(eq(callQueue.campaignId, campaignId), eq(callQueue.userId, userId)));
+  // Reset campaign stats back to draft
+  await db.update(campaigns)
+    .set({ status: "draft" })
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
+  return { deletedLogs: logResult[0].affectedRows ?? 0 };
+}
+
 // ─── Call Logs ───────────────────────────────────────────────────────────────
 export async function createCallLog(data: InsertCallLog) {
   const db = await getDb();
