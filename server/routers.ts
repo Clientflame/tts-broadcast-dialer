@@ -666,6 +666,24 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.updateSchedule", resource: "callerId", details: { enabled: input.enabled, intervalHours: input.intervalHours } });
       return result;
     }),
+    // Per-DID Analytics endpoints
+    analyticsSummary: protectedProcedure.query(async ({ ctx }) => {
+      return db.getDidAnalyticsSummary(ctx.user.id);
+    }),
+    callVolume: protectedProcedure.input(z.object({
+      callerIdStr: z.string().optional(),
+      days: z.number().min(1).max(90).default(7),
+    }).optional()).query(async ({ ctx, input }) => {
+      return db.getDidCallVolume(ctx.user.id, input?.callerIdStr, input?.days || 7);
+    }),
+    flagHistory: protectedProcedure.query(async ({ ctx }) => {
+      return db.getDidFlagHistory(ctx.user.id);
+    }),
+    campaignBreakdown: protectedProcedure.input(z.object({
+      callerIdStr: z.string().min(1),
+    })).query(async ({ ctx, input }) => {
+      return db.getDidCampaignBreakdown(ctx.user.id, input.callerIdStr);
+    }),
   }),
 
   templates: router({

@@ -1350,7 +1350,7 @@ export async function getContact(id: number, userId: number) {
 
 // ─── Call Queue (PBX Agent Polling) ─────────────────────────────────────────
 import { callQueue, InsertCallQueueItem, pbxAgents, InsertPbxAgent } from "../drizzle/schema";
-import { lt, isNull, asc } from "drizzle-orm";
+import { lt, isNull, isNotNull, asc } from "drizzle-orm";
 
 export async function enqueueCall(data: InsertCallQueueItem) {
   const db = await getDb();
@@ -1879,5 +1879,164 @@ export async function getRecentCallActivity(userId: number, limit = 50) {
     createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
     updatedAt: r.updatedAt ? new Date(r.updatedAt).getTime() : null,
     claimedAt: r.claimedAt,
+  }));
+}
+
+
+// ─── Per-DID Analytics ──────────────────────────────────────────────────────
+
+export async function getDidAnalyticsSummary(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all caller IDs for the user
+  const dids = await db.select().from(callerIds).where(eq(callerIds.userId, userId));
+
+  // Get per-DID call stats from call_queue
+  const stats = await db.select({
+    callerIdStr: callQueue.callerIdStr,
+    total: sql<number>`COUNT(*)`,
+    answered: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN 1 ELSE 0 END)`,
+    failed: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'failed' THEN 1 ELSE 0 END)`,
+    noAnswer: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'no-answer' THEN 1 ELSE 0 END)`,
+    busy: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'busy' THEN 1 ELSE 0 END)`,
+    congestion: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'congestion' THEN 1 ELSE 0 END)`,
+    avgDuration: sql<number>`AVG(CASE WHEN ${callQueue.result} = 'answered' AND ${callQueue.callDuration} > 0 THEN ${callQueue.callDuration} ELSE NULL END)`,
+    totalDuration: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN COALESCE(${callQueue.callDuration}, 0) ELSE 0 END)`,
+    firstUsed: sql<string>`MIN(${callQueue.createdAt})`,
+    lastUsed: sql<string>`MAX(${callQueue.createdAt})`,
+  })
+    .from(callQueue)
+    .where(and(
+      eq(callQueue.userId, userId),
+      isNotNull(callQueue.callerIdStr),
+      isNotNull(callQueue.result),
+    ))
+    .groupBy(callQueue.callerIdStr);
+
+  // Merge DID info with call stats
+  const statsMap = new Map(stats.map(s => [s.callerIdStr, s]));
+
+  return dids.map(did => {
+    const s = statsMap.get(did.phoneNumber);
+    const total = s?.total || 0;
+    const answered = s?.answered || 0;
+    const answerRate = total > 0 ? Math.round((answered / total) * 100) : 0;
+
+    return {
+      id: did.id,
+      phoneNumber: did.phoneNumber,
+      label: did.label,
+      isActive: did.isActive,
+      healthStatus: did.healthStatus,
+      autoDisabled: did.autoDisabled,
+      failureRate: did.failureRate,
+      recentCallCount: did.recentCallCount,
+      flaggedAt: did.flaggedAt,
+      flagReason: did.flagReason,
+      cooldownUntil: did.cooldownUntil,
+      // Call stats
+      totalCalls: total,
+      answered,
+      failed: s?.failed || 0,
+      noAnswer: s?.noAnswer || 0,
+      busy: s?.busy || 0,
+      congestion: s?.congestion || 0,
+      answerRate,
+      avgDuration: s?.avgDuration ? Math.round(s.avgDuration) : 0,
+      totalDuration: s?.totalDuration || 0,
+      firstUsed: s?.firstUsed ? new Date(s.firstUsed).getTime() : null,
+      lastUsed: s?.lastUsed ? new Date(s.lastUsed).getTime() : null,
+    };
+  });
+}
+
+export async function getDidCallVolume(userId: number, callerIdStr?: string, days: number = 7) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const conditions = [
+    eq(callQueue.userId, userId),
+    isNotNull(callQueue.callerIdStr),
+    isNotNull(callQueue.result),
+    sql`${callQueue.createdAt} >= ${since}`,
+  ];
+  if (callerIdStr) {
+    conditions.push(eq(callQueue.callerIdStr, callerIdStr));
+  }
+
+  // Use db.execute with sql template to avoid MySQL only_full_group_by issues
+  const baseQuery = callerIdStr
+    ? sql`SELECT callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN result = 'answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN result IN ('failed','congestion','trunk-error') THEN 1 ELSE 0 END) as failed FROM call_queue WHERE userId = ${userId} AND callerIdStr IS NOT NULL AND result IS NOT NULL AND createdAt >= ${since} AND callerIdStr = ${callerIdStr} GROUP BY callerIdStr, call_date ORDER BY call_date`
+    : sql`SELECT callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN result = 'answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN result IN ('failed','congestion','trunk-error') THEN 1 ELSE 0 END) as failed FROM call_queue WHERE userId = ${userId} AND callerIdStr IS NOT NULL AND result IS NOT NULL AND createdAt >= ${since} GROUP BY callerIdStr, call_date ORDER BY call_date`;
+
+  const rows = await db.execute(baseQuery) as any;
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+
+  return resultRows.map((r: any) => ({
+    callerIdStr: r.callerIdStr || "",
+    date: r.call_date ? String(r.call_date) : "",
+    total: Number(r.total) || 0,
+    answered: Number(r.answered) || 0,
+    failed: Number(r.failed) || 0,
+  }));
+}
+
+export async function getDidFlagHistory(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get audit logs related to DID flagging
+  const logs = await db.select()
+    .from(auditLogs)
+    .where(and(
+      eq(auditLogs.userId, userId),
+      sql`${auditLogs.action} IN ('did.flagged', 'did.reactivated', 'callerId.healthCheck', 'callerId.create')`,
+    ))
+    .orderBy(sql`${auditLogs.createdAt} DESC`)
+    .limit(100);
+
+  return logs.map(l => ({
+    id: l.id,
+    action: l.action,
+    resource: l.resource,
+    resourceId: l.resourceId,
+    details: l.details,
+    createdAt: l.createdAt ? new Date(l.createdAt).getTime() : null,
+  }));
+}
+
+export async function getDidCampaignBreakdown(userId: number, callerIdStr: string) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db.select({
+    campaignId: callQueue.campaignId,
+    campaignName: sql<string>`(SELECT name FROM campaigns WHERE id = ${callQueue.campaignId})`,
+    total: sql<number>`COUNT(*)`,
+    answered: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'answered' THEN 1 ELSE 0 END)`,
+    failed: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'failed' THEN 1 ELSE 0 END)`,
+    noAnswer: sql<number>`SUM(CASE WHEN ${callQueue.result} = 'no-answer' THEN 1 ELSE 0 END)`,
+    avgDuration: sql<number>`AVG(CASE WHEN ${callQueue.result} = 'answered' AND ${callQueue.callDuration} > 0 THEN ${callQueue.callDuration} ELSE NULL END)`,
+  })
+    .from(callQueue)
+    .where(and(
+      eq(callQueue.userId, userId),
+      eq(callQueue.callerIdStr, callerIdStr),
+      isNotNull(callQueue.result),
+    ))
+    .groupBy(callQueue.campaignId);
+
+  return rows.map(r => ({
+    campaignId: r.campaignId,
+    campaignName: r.campaignName || "Quick Test",
+    total: r.total || 0,
+    answered: r.answered || 0,
+    failed: r.failed || 0,
+    noAnswer: r.noAnswer || 0,
+    answerRate: r.total > 0 ? Math.round(((r.answered || 0) / r.total) * 100) : 0,
+    avgDuration: r.avgDuration ? Math.round(r.avgDuration) : 0,
   }));
 }

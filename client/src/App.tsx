@@ -21,6 +21,7 @@ import Reports from "./pages/Reports";
 import UserManagement from "./pages/UserManagement";
 import Login from "./pages/Login";
 import Scripts from "./pages/Scripts";
+import DidAnalytics from "./pages/DidAnalytics";
 
 function Router() {
   return (
@@ -30,6 +31,7 @@ function Router() {
       <Route path={"/contacts"} component={Contacts} />
       <Route path={"/audio"} component={Audio} />
       <Route path={"/caller-ids"} component={CallerIds} />
+      <Route path={"/did-analytics"} component={DidAnalytics} />
       <Route path={"/scripts"} component={Scripts} />
       <Route path={"/templates"} component={Templates} />
       <Route path={"/analytics"} component={Analytics} />

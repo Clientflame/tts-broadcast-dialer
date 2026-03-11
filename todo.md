@@ -220,3 +220,13 @@
 - [x] Clone button on campaign cards in the UI (already existed)
 - [x] Cloned campaign gets "Copy of [name]" with draft status
 - [x] Vitest tests for DID health monitoring and campaign cloning (7 new tests, 116 total passing)
+- [x] Per-DID Analytics page ---
+- [x] Backend endpoint: per-DID call stats (total calls, answered, failed, no-answer, busy per DID)
+- [x] Backend endpoint: per-DID answer rate and avg duration
+- [x] Backend endpoint: per-DID flagging history (times flagged, cooldown events, current status)
+- [x] Backend endpoint: per-DID call volume over time (daily breakdown)
+- [x] UI: Per-DID analytics page with summary cards, performance table, and charts
+- [x] UI: DID comparison chart (answer rate across all DIDs)
+- [x] UI: DID flagging history timeline
+- [x] Add route to sidebar navigation
+- [x] Vitest tests for per-DID analytics endpoints (5 new tests, 121 total passing)

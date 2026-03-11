@@ -693,3 +693,73 @@ describe("Campaign Cloning", () => {
     ).rejects.toThrow();
   });
 });
+
+
+// ─── Per-DID Analytics Tests ────────────────────────────────────────────────
+
+describe("Per-DID Analytics", () => {
+  it("should return analytics summary for all DIDs", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const summary = await caller.callerIds.analyticsSummary();
+    expect(Array.isArray(summary)).toBe(true);
+    // Each item should have the expected fields
+    if (summary.length > 0) {
+      const first = summary[0];
+      expect(first).toHaveProperty("phoneNumber");
+      expect(first).toHaveProperty("totalCalls");
+      expect(first).toHaveProperty("answered");
+      expect(first).toHaveProperty("failed");
+      expect(first).toHaveProperty("answerRate");
+      expect(first).toHaveProperty("avgDuration");
+      expect(first).toHaveProperty("totalDuration");
+      expect(first).toHaveProperty("healthStatus");
+      expect(first).toHaveProperty("failureRate");
+    }
+  });
+
+  it("should return call volume data with default 7 days", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const volume = await caller.callerIds.callVolume({ days: 7 });
+    expect(Array.isArray(volume)).toBe(true);
+    if (volume.length > 0) {
+      expect(volume[0]).toHaveProperty("callerIdStr");
+      expect(volume[0]).toHaveProperty("date");
+      expect(volume[0]).toHaveProperty("total");
+      expect(volume[0]).toHaveProperty("answered");
+      expect(volume[0]).toHaveProperty("failed");
+    }
+  });
+
+  it("should return call volume for a specific DID", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const volume = await caller.callerIds.callVolume({ callerIdStr: "5551234567", days: 30 });
+    expect(Array.isArray(volume)).toBe(true);
+  });
+
+  it("should return flag history", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const history = await caller.callerIds.flagHistory();
+    expect(Array.isArray(history)).toBe(true);
+    if (history.length > 0) {
+      expect(history[0]).toHaveProperty("action");
+      expect(history[0]).toHaveProperty("createdAt");
+    }
+  });
+
+  it("should return campaign breakdown for a DID", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const breakdown = await caller.callerIds.campaignBreakdown({ callerIdStr: "5551234567" });
+    expect(Array.isArray(breakdown)).toBe(true);
+    if (breakdown.length > 0) {
+      expect(breakdown[0]).toHaveProperty("campaignName");
+      expect(breakdown[0]).toHaveProperty("total");
+      expect(breakdown[0]).toHaveProperty("answered");
+      expect(breakdown[0]).toHaveProperty("answerRate");
+    }
+  });
+});
