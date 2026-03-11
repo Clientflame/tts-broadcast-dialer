@@ -335,13 +335,13 @@ describe("freepbx.registerAgent", () => {
     await expect(caller.freepbx.registerAgent({ name: "", maxCalls: 5 })).rejects.toThrow();
   });
 
-  it("rejects maxCalls above 100", async () => {
+  it("rejects maxCalls above 10", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 101 })).rejects.toThrow();
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 11 })).rejects.toThrow();
   });
 
-  it("rejects maxCalls below 10", async () => {
+  it("rejects maxCalls below 1", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 0 })).rejects.toThrow();
@@ -520,7 +520,7 @@ describe("freepbx.getInstallerCommand", () => {
     const caller = appRouter.createCaller(ctx);
 
     // First register an agent
-    const agent = await caller.freepbx.registerAgent({ name: "installer-test-agent", maxCalls: 15 });
+    const agent = await caller.freepbx.registerAgent({ name: "installer-test-agent", maxCalls: 5 });
 
     // Now get the installer command
     const result = await caller.freepbx.getInstallerCommand({
@@ -545,7 +545,7 @@ describe("freepbx.getInstallerCommand", () => {
     expect(result.agentName).toBe("installer-test-agent");
 
     // Verify maxCalls matches what was set
-    expect(result.maxCalls).toBe(15);
+    expect(result.maxCalls).toBe(5);
 
     // Clean up
     await caller.freepbx.deleteAgent({ agentId: agent.agentId });

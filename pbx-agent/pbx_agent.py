@@ -33,7 +33,8 @@ CONFIG = {
     "ami_secret": os.environ.get("AMI_SECRET", "Br0adcast!D1aler2024"),
     "poll_interval": int(os.environ.get("POLL_INTERVAL", "3")),
     "max_concurrent": int(os.environ.get("MAX_CONCURRENT", "5")),
-    "cps_limit": int(os.environ.get("CPS_LIMIT", "3")),  # Calls per second rate limit
+    "cps_limit": int(os.environ.get("CPS_LIMIT", "1")),  # Calls per second rate limit
+    "cps_pacing_ms": int(os.environ.get("CPS_PACING_MS", "1000")),  # Milliseconds between calls (1000=1/s, 2000=1/2s, 3000=1/3s)
     "audio_dir": "/var/lib/asterisk/sounds/custom/broadcast",
     "trunk_name": "vitel-outbound",
 }
@@ -705,6 +706,7 @@ def main():
     log.info(f"AMI: {CONFIG['ami_host']}:{CONFIG['ami_port']}")
     log.info(f"Max concurrent: {CONFIG['max_concurrent']}")
     log.info(f"CPS limit: {CONFIG['cps_limit']}")
+    log.info(f"CPS pacing: {CONFIG['cps_pacing_ms']}ms between calls")
     log.info("=" * 60)
 
     if not CONFIG["api_url"] or not CONFIG["api_key"]:
@@ -752,14 +754,21 @@ def main():
                 calls = response["calls"]
                 log.info(f"Received {len(calls)} call(s) from queue")
 
-                # Update CPS limit from server response (server may override)
+                # Update CPS limit and pacing from server response (server may override)
                 server_cps = response.get("cpsLimit")
                 if server_cps and isinstance(server_cps, (int, float)) and server_cps > 0:
                     CONFIG["cps_limit"] = int(server_cps)
+                server_pacing = response.get("cpsPacingMs")
+                if server_pacing and isinstance(server_pacing, (int, float)) and server_pacing > 0:
+                    CONFIG["cps_pacing_ms"] = int(server_pacing)
 
-                # CPS rate limiting: stagger call initiation
+                # CPS rate limiting: use pacing interval (ms between calls)
+                # cpsPacingMs takes priority - it's the actual delay between calls
+                pacing_ms = CONFIG["cps_pacing_ms"]
                 cps = max(1, CONFIG["cps_limit"])
-                delay_between_calls = 1.0 / cps  # e.g., 3 CPS = 0.333s between calls
+                cps_delay = 1.0 / cps  # e.g., 1 CPS = 1.0s between calls
+                pacing_delay = pacing_ms / 1000.0  # e.g., 2000ms = 2.0s between calls
+                delay_between_calls = max(cps_delay, pacing_delay)  # use the slower of the two
 
                 for i, call_data in enumerate(calls):
                     try:

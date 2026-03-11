@@ -152,7 +152,7 @@ export const campaigns = mysqlTable("campaigns", {
   pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
   pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
   pacingMinConcurrent: int("pacingMinConcurrent").default(1).notNull(),
-  pacingMaxConcurrent: int("pacingMaxConcurrent").default(10).notNull(),
+  pacingMaxConcurrent: int("pacingMaxConcurrent").default(5).notNull(),
   status: mysqlEnum("status", [
     "draft",
     "scheduled",
@@ -378,13 +378,14 @@ export const pbxAgents = mysqlTable("pbx_agents", {
   lastHeartbeat: bigint("lastHeartbeat", { mode: "number" }),
   status: varchar("status", { length: 20 }).default("offline").notNull(), // online, offline
   activeCalls: int("activeCalls").default(0),
-  maxCalls: int("maxCalls").default(10),
+  maxCalls: int("maxCalls").default(5),
   // Auto-throttle fields
   effectiveMaxCalls: int("effectiveMaxCalls"),  // null = use maxCalls (no throttle active)
   throttleReason: text("throttleReason"),
   throttleStartedAt: bigint("throttleStartedAt", { mode: "number" }),
   throttleCarrierErrors: int("throttleCarrierErrors").default(0).notNull(),
   cpsLimit: int("cpsLimit").default(3),  // Calls per second rate limit (1-10)
+  cpsPacingMs: int("cpsPacingMs").default(1000),  // Milliseconds between calls (1000=1/s, 2000=1/2s, 3000=1/3s)
   ipAddress: varchar("ipAddress", { length: 45 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

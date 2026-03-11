@@ -36,7 +36,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
   try {
     const agent = (req as any).pbxAgent;
     // Use effectiveMaxCalls (throttled) if set, otherwise maxCalls
-    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
     // Per-campaign speed cap: if the request includes a campaignMaxCalls, cap the limit
     const campaignMax = req.body.campaignMaxCalls || agentMax;
     const effectiveLimit = Math.min(agentMax, campaignMax);
@@ -59,7 +59,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
       if (onlineAgents.length > 1) {
         // Weighted distribution: agent gets share proportional to its max capacity
         const totalCapacity = onlineAgents.reduce((sum: number, a: any) => {
-          const aMax = a.effectiveMaxCalls ?? a.maxCalls ?? 10;
+          const aMax = a.effectiveMaxCalls ?? a.maxCalls ?? 5;
           return sum + aMax;
         }, 0);
         const agentWeight = effectiveLimit / totalCapacity;
@@ -86,9 +86,11 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
 
     // Determine CPS limit: campaign-level overrides agent-level
-    const agentCps = agent.cpsLimit ?? 3;
+    const agentCps = agent.cpsLimit ?? 1;
+    const agentPacingMs = (agent as any).cpsPacingMs ?? 1000;
     // Check if all calls belong to the same campaign and it has a CPS override
     let effectiveCps = agentCps;
+    let effectivePacingMs = agentPacingMs;
     if (calls.length > 0) {
       try {
         const campaignId = calls[0].campaignId;
@@ -97,8 +99,12 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
           if (campaign?.cpsLimit && campaign.cpsLimit > 0) {
             effectiveCps = Math.min(agentCps, campaign.cpsLimit);
           }
+          // Campaign cpsPacingMs override (use the slower/higher value)
+          if ((campaign as any)?.cpsPacingMs && (campaign as any).cpsPacingMs > 0) {
+            effectivePacingMs = Math.max(agentPacingMs, (campaign as any).cpsPacingMs);
+          }
         }
-      } catch (_) { /* use agent CPS on error */ }
+      } catch (_) { /* use agent settings on error */ }
     }
 
     res.json({
@@ -117,6 +123,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         callLogId: c.callLogId,
       })),
       cpsLimit: effectiveCps,
+      cpsPacingMs: effectivePacingMs,
       maxConcurrent: effectiveLimit,
     });
   } catch (err) {
@@ -210,11 +217,15 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
         if (queueItem.callerIdStr) {
           try {
             const didResult = await db.recordDidCallResultByNumber(queueItem.callerIdStr, queueItem.userId, result);
-            if (didResult.flagged) {
+            if (didResult.flagged && 'phoneNumber' in didResult) {
               console.log(`[PBX-API] DID ${didResult.phoneNumber} auto-flagged: ${didResult.failureRate}% failure rate`);
               notifyOwner({
                 title: `DID Auto-Flagged: ${didResult.phoneNumber}`,
-                content: `Caller ID ${didResult.phoneNumber} has been automatically removed from rotation due to a high failure rate (${didResult.failureRate}%).\n\nThe DID will be placed on a 30-minute cooldown and then automatically re-enabled.\n\nYou can manually re-enable it from the Caller IDs page.`,
+                content: `Caller ID ${didResult.phoneNumber} has been automatically removed from rotation due to a high failure rate (${didResult.failureRate}%).
+
+The DID will be placed on a 30-minute cooldown and then automatically re-enabled.
+
+You can manually re-enable it from the Caller IDs page.`,
               }).catch(err => console.warn("[PBX-API] Failed to send DID flag notification:", err));
             }
           } catch (err) {
@@ -262,7 +273,7 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
     // Attempt auto-throttle ramp-up on each heartbeat
     await attemptRampUp(agent.agentId);
-    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+    const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
     res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
@@ -417,8 +428,9 @@ installerRouter.get("/install", async (req: any, res: any) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const apiUrl = `${protocol}://${host}/api/pbx`;
-  const maxCalls = agent.maxCalls ?? 10;
-  const cpsLimit = (agent as any).cpsLimit ?? 3;
+  const maxCalls = agent.maxCalls ?? 5;
+  const cpsLimit = (agent as any).cpsLimit ?? 1;
+  const cpsPacingMs = (agent as any).cpsPacingMs ?? 1000;
   const agentName = agent.name || "pbx-agent";
 
   // Read AMI credentials from environment secrets
@@ -446,13 +458,13 @@ installerRouter.get("/install", async (req: any, res: any) => {
   }
 
   // Generate the installer script
-  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, cpsLimit, agentName, agentScript, amiUser, amiPassword, amiPort);
+  const script = generateInstallerScript(apiUrl, apiKey, maxCalls, cpsLimit, cpsPacingMs, agentName, agentScript, amiUser, amiPassword, amiPort);
 
   res.setHeader("Content-Type", "text/plain");
   res.send(script);
 });
 
-function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, cpsLimit: number, agentName: string, agentScript: string, amiUser: string, amiPassword: string, amiPort: string): string {
+function generateInstallerScript(apiUrl: string, apiKey: string, maxCalls: number, cpsLimit: number, cpsPacingMs: number, agentName: string, agentScript: string, amiUser: string, amiPassword: string, amiPort: string): string {
   // Escape backticks and dollar signs in the Python script for safe embedding in heredoc
   // Using a quoted heredoc ('AGENT_SCRIPT_EOF') prevents shell expansion
   const parts: string[] = [];
@@ -561,6 +573,7 @@ Environment=AMI_SECRET=${amiPassword}
 Environment=POLL_INTERVAL=3
 Environment=MAX_CONCURRENT=${maxCalls}
 Environment=CPS_LIMIT=${cpsLimit}
+Environment=CPS_PACING_MS=${cpsPacingMs}
 
 [Install]
 WantedBy=multi-user.target

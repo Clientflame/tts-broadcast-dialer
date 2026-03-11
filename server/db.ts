@@ -1433,7 +1433,7 @@ export async function upsertPbxAgent(data: { agentId: string; apiKey: string; na
     apiKey: data.apiKey,
     name: data.name,
     ipAddress: data.ipAddress,
-    maxCalls: data.maxCalls || 10,
+    maxCalls: data.maxCalls || 5,
     status: "online",
     lastHeartbeat: Date.now(),
   }).onDuplicateKeyUpdate({
@@ -1474,7 +1474,7 @@ export async function registerPbxAgent(data: { agentId: string; name: string; ap
     name: data.name,
     apiKey: data.apiKey,
     status: data.status || "offline",
-    maxCalls: 10,
+    maxCalls: 5,
   });
   return { id: Number(result[0].insertId), agentId: data.agentId, name: data.name };
 }
@@ -1495,6 +1495,12 @@ export async function updatePbxAgentCps(agentId: string, cpsLimit: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(pbxAgents).set({ cpsLimit }).where(eq(pbxAgents.agentId, agentId));
+}
+
+export async function updatePbxAgentCpsPacing(agentId: string, cpsPacingMs: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(pbxAgents).set({ cpsPacingMs }).where(eq(pbxAgents.agentId, agentId));
 }
 
 export async function deletePbxAgentByAgentId(agentId: string) {
@@ -1726,7 +1732,7 @@ export async function getAgentMetrics(userId: number) {
       noAnswer,
       failed,
       answerRate,
-      maxCalls: agent.maxCalls ?? 10,
+      maxCalls: agent.maxCalls ?? 5,
       effectiveMaxCalls: agent.effectiveMaxCalls,
       isOnline: agent.lastHeartbeat ? Date.now() - (agent.lastHeartbeat ?? 0) < 30000 : false,
     });

@@ -21,10 +21,16 @@ import {
 } from "recharts";
 
 const SPEED_PRESETS = [
-  { label: "Low", value: 10, color: "text-blue-600" },
-  { label: "Medium", value: 25, color: "text-yellow-600" },
-  { label: "High", value: 50, color: "text-orange-600" },
-  { label: "Max", value: 100, color: "text-red-600" },
+  { label: "1", value: 1 },
+  { label: "3", value: 3 },
+  { label: "5", value: 5 },
+  { label: "10", value: 10 },
+];
+
+const PACING_OPTIONS = [
+  { label: "1 call/sec", value: 1000 },
+  { label: "1 call/2sec", value: 2000 },
+  { label: "1 call/3sec", value: 3000 },
 ];
 
 // ─── One-Click Installer Component ──────────────────────────────────────────
@@ -405,8 +411,9 @@ export default function FreePBX() {
   });
 
   const [agentName, setAgentName] = useState("");
-  const [maxCalls, setMaxCalls] = useState(10);
-  const [cpsLimit, setCpsLimit] = useState(3);
+  const [maxCalls, setMaxCalls] = useState(5);
+  const [cpsLimit, setCpsLimit] = useState(1);
+  const [cpsPacingMs, setCpsPacingMs] = useState(1000);
   const [newAgentId, setNewAgentId] = useState("");
   const [showInstaller, setShowInstaller] = useState(false);
   const [showInstallerForAgent, setShowInstallerForAgent] = useState<string | null>(null);
@@ -423,6 +430,14 @@ export default function FreePBX() {
   const updateCps = trpc.freepbx.updateAgentCps.useMutation({
     onSuccess: () => {
       toast.success("CPS limit updated");
+      agents.refetch();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const updateCpsPacing = trpc.freepbx.updateAgentCpsPacing.useMutation({
+    onSuccess: () => {
+      toast.success("Call pacing updated");
       agents.refetch();
     },
     onError: (e: any) => toast.error(e.message),
@@ -445,6 +460,7 @@ export default function FreePBX() {
       name: agentName.trim(),
       maxCalls: maxCalls,
       cpsLimit: cpsLimit,
+      cpsPacingMs: cpsPacingMs,
     });
   };
 
@@ -607,14 +623,14 @@ export default function FreePBX() {
                     )}
                   </Button>
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-left">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
                   <div className="space-y-2">
                     <Label className="text-xs flex items-center justify-between">
                       <span>Max Concurrent Calls</span>
                       <span className="font-bold text-primary">{maxCalls}</span>
                     </Label>
-                    <Slider min={10} max={100} step={5} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
-                    <div className="flex gap-2">
+                    <Slider min={1} max={10} step={1} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
+                    <div className="flex gap-1">
                       {SPEED_PRESETS.map((p) => (
                         <Button
                           key={p.label}
@@ -623,22 +639,41 @@ export default function FreePBX() {
                           className="flex-1 text-xs h-7"
                           onClick={() => setMaxCalls(p.value)}
                         >
-                          {p.label} ({p.value})
+                          {p.value}
                         </Button>
                       ))}
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs flex items-center justify-between">
-                      <span>Calls Per Second (CPS)</span>
+                      <span>Calls Per Second</span>
                       <span className="font-bold text-primary">{cpsLimit} CPS</span>
                     </Label>
                     <Slider min={1} max={10} step={1} value={[cpsLimit]} onValueChange={([v]) => setCpsLimit(v)} />
                     <div className="flex justify-between">
                       <span className="text-[10px] text-muted-foreground">1 (safe)</span>
-                      <span className="text-[10px] text-muted-foreground">5 (standard)</span>
-                      <span className="text-[10px] text-muted-foreground">10 (aggressive)</span>
+                      <span className="text-[10px] text-muted-foreground">10 (max)</span>
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs flex items-center justify-between">
+                      <span>Call Pacing</span>
+                      <span className="font-bold text-primary">{cpsPacingMs === 1000 ? "1/sec" : cpsPacingMs === 2000 ? "1/2sec" : "1/3sec"}</span>
+                    </Label>
+                    <div className="flex gap-1 mt-1">
+                      {PACING_OPTIONS.map((p) => (
+                        <Button
+                          key={p.value}
+                          variant={cpsPacingMs === p.value ? "default" : "outline"}
+                          size="sm"
+                          className="flex-1 text-xs h-7"
+                          onClick={() => setCpsPacingMs(p.value)}
+                        >
+                          {p.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Minimum delay between each call</p>
                   </div>
                 </div>
               </div>
@@ -707,8 +742,8 @@ export default function FreePBX() {
               {agents.data?.map((agent: any) => {
                 const isOnline = agent.lastHeartbeat &&
                   Date.now() - new Date(agent.lastHeartbeat).getTime() < 30000;
-                const isThrottled = agent.effectiveMaxCalls != null && agent.effectiveMaxCalls < (agent.maxCalls ?? 10);
-                const effectiveSpeed = agent.effectiveMaxCalls ?? agent.maxCalls ?? 10;
+                const isThrottled = agent.effectiveMaxCalls != null && agent.effectiveMaxCalls < (agent.maxCalls ?? 5);
+                const effectiveSpeed = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
                 const showingInstaller = showInstallerForAgent === agent.agentId;
 
                 return (
@@ -779,18 +814,18 @@ export default function FreePBX() {
                               <span className="text-sm font-bold text-primary">
                                 {isThrottled ? (
                                   <span className="text-orange-600 dark:text-orange-400">
-                                    {effectiveSpeed} <span className="text-xs font-normal text-muted-foreground">/ {agent.maxCalls ?? 10}</span>
+                                    {effectiveSpeed} <span className="text-xs font-normal text-muted-foreground">/ {agent.maxCalls ?? 5}</span>
                                   </span>
                                 ) : (
-                                  agent.maxCalls ?? 10
+                                  agent.maxCalls ?? 5
                                 )}
                               </span>
                             </div>
                             <Slider
-                              min={10}
-                              max={100}
-                              step={5}
-                              value={[agent.maxCalls ?? 10]}
+                              min={1}
+                              max={10}
+                              step={1}
+                              value={[agent.maxCalls ?? 5]}
                               onValueChange={([v]) => {
                                 updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: v });
                               }}
@@ -800,12 +835,12 @@ export default function FreePBX() {
                             {SPEED_PRESETS.map((p) => (
                               <Button
                                 key={p.label}
-                                variant={(agent.maxCalls ?? 10) === p.value ? "default" : "outline"}
+                                variant={(agent.maxCalls ?? 5) === p.value ? "default" : "outline"}
                                 size="sm"
                                 className="text-[10px] h-6 px-2"
                                 onClick={() => updateMaxCalls.mutate({ agentId: agent.agentId, maxCalls: p.value })}
                               >
-                                {p.label}
+                                {p.value}
                               </Button>
                             ))}
                           </div>
@@ -820,23 +855,51 @@ export default function FreePBX() {
                                 Calls Per Second (CPS)
                               </span>
                               <span className="text-sm font-bold text-primary">
-                                {(agent as any).cpsLimit ?? 3} CPS
+                                {(agent as any).cpsLimit ?? 1} CPS
                               </span>
                             </div>
                             <Slider
                               min={1}
                               max={10}
                               step={1}
-                              value={[(agent as any).cpsLimit ?? 3]}
+                              value={[(agent as any).cpsLimit ?? 1]}
                               onValueChange={([v]) => {
                                 updateCps.mutate({ agentId: agent.agentId, cpsLimit: v });
                               }}
                             />
                             <div className="flex justify-between mt-1">
-                              <span className="text-[10px] text-muted-foreground">1 CPS (safe)</span>
-                              <span className="text-[10px] text-muted-foreground">5 CPS (standard)</span>
-                              <span className="text-[10px] text-muted-foreground">10 CPS (aggressive)</span>
+                              <span className="text-[10px] text-muted-foreground">1 (safe)</span>
+                              <span className="text-[10px] text-muted-foreground">10 (max)</span>
                             </div>
+                          </div>
+                        </div>
+
+                        {/* Call Pacing control */}
+                        <div className="flex items-center gap-4 mt-3">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Gauge className="h-3 w-3" />
+                                Call Pacing (delay between calls)
+                              </span>
+                              <span className="text-sm font-bold text-primary">
+                                {((agent as any).cpsPacingMs ?? 1000) === 1000 ? "1/sec" : ((agent as any).cpsPacingMs ?? 1000) === 2000 ? "1/2sec" : "1/3sec"}
+                              </span>
+                            </div>
+                            <div className="flex gap-1">
+                              {PACING_OPTIONS.map((p) => (
+                                <Button
+                                  key={p.value}
+                                  variant={((agent as any).cpsPacingMs ?? 1000) === p.value ? "default" : "outline"}
+                                  size="sm"
+                                  className="flex-1 text-[10px] h-6"
+                                  onClick={() => updateCpsPacing.mutate({ agentId: agent.agentId, cpsPacingMs: p.value })}
+                                >
+                                  {p.label}
+                                </Button>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-1">Minimum delay between each call initiation</p>
                           </div>
                         </div>
 

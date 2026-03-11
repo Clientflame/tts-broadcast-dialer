@@ -360,7 +360,7 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
       cpsLimit: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
@@ -400,7 +400,7 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
       cpsLimit: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
@@ -706,7 +706,7 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -724,7 +724,7 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(100).optional(),
+      maxConcurrentCalls: z.number().min(1).max(10).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -1378,8 +1378,9 @@ Return ONLY the message text, nothing else.`;
     registerAgent: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
-        maxCalls: z.number().int().min(10).max(100).default(10),
-        cpsLimit: z.number().int().min(1).max(10).default(3),
+        maxCalls: z.number().int().min(1).max(10).default(5),
+        cpsLimit: z.number().int().min(1).max(10).default(1),
+        cpsPacingMs: z.number().int().min(333).max(3000).default(1000),
       }))
       .mutation(async ({ input }) => {
         const crypto = await import("crypto");
@@ -1391,12 +1392,15 @@ Return ONLY the message text, nothing else.`;
           apiKey,
           status: "offline",
         });
-        // Set maxCalls and cpsLimit from input
-        if (input.maxCalls !== 10) {
+        // Set maxCalls, cpsLimit, and cpsPacingMs from input
+        if (input.maxCalls !== 5) {
           await db.updatePbxAgentMaxCalls(agentId, input.maxCalls);
         }
-        if (input.cpsLimit !== 3) {
+        if (input.cpsLimit !== 1) {
           await db.updatePbxAgentCps(agentId, input.cpsLimit);
+        }
+        if (input.cpsPacingMs !== 1000) {
+          await db.updatePbxAgentCpsPacing(agentId, input.cpsPacingMs);
         }
         return { agentId, apiKey, name: input.name };
       }),
@@ -1404,7 +1408,7 @@ Return ONLY the message text, nothing else.`;
     updateAgentMaxCalls: protectedProcedure
       .input(z.object({
         agentId: z.string(),
-        maxCalls: z.number().int().min(10).max(100),
+        maxCalls: z.number().int().min(1).max(10),
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentMaxCalls(input.agentId, input.maxCalls);
@@ -1418,6 +1422,16 @@ Return ONLY the message text, nothing else.`;
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentCps(input.agentId, input.cpsLimit);
+        return { success: true };
+      }),
+
+    updateAgentCpsPacing: protectedProcedure
+      .input(z.object({
+        agentId: z.string(),
+        cpsPacingMs: z.number().int().min(333).max(3000),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updatePbxAgentCpsPacing(input.agentId, input.cpsPacingMs);
         return { success: true };
       }),
 
@@ -1449,7 +1463,7 @@ Return ONLY the message text, nothing else.`;
         return {
           ...status,
           effectiveMaxCalls: agent?.effectiveMaxCalls ?? null,
-          maxCalls: agent?.maxCalls ?? 10,
+          maxCalls: agent?.maxCalls ?? 5,
           throttleReason: agent?.throttleReason ?? null,
           throttleStartedAt: agent?.throttleStartedAt ?? null,
           carrierErrors: agent?.throttleCarrierErrors ?? 0,
@@ -1494,7 +1508,7 @@ Return ONLY the message text, nothing else.`;
         if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
         const apiUrl = `${input.origin}/api/pbx`;
         const apiKey = agent.apiKey;
-        const maxCalls = agent.maxCalls ?? 10;
+        const maxCalls = agent.maxCalls ?? 5;
         // Generate a one-liner curl command that downloads and runs the installer
         const oneLiner = `curl -sSL "${input.origin}/api/pbx/install?key=${encodeURIComponent(apiKey)}" | bash`;
         return { oneLiner, apiUrl, apiKey, maxCalls, agentName: agent.name };

@@ -240,3 +240,8 @@
 - [x] Fix mobile responsiveness: Campaigns page not visible/usable on mobile devices
 - [x] Fix mobile responsiveness: Contact Lists page not visible/usable on mobile devices
 - [x] Review and fix mobile layout for DashboardLayout sidebar on small screens
+- [x] Change max concurrent calls range from 10-100 to 1-10 (schema, server, UI)
+- [x] Add CPS pacing mode: calls per second, calls per 2 seconds, calls per 3 seconds
+- [x] Update agent registration and speed presets for new 1-10 range
+- [x] Update campaign CPS settings UI with pacing mode selector
+- [x] Update PBX agent poll endpoint to return pacing interval alongside CPS limit

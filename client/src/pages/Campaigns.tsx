@@ -96,7 +96,7 @@ type FormState = {
 const DEFAULT_FORM: FormState = {
   name: "", description: "", contactListId: 0, audioFileId: 0,
   voice: "alloy", ttsProvider: "openai", callerIdNumber: "", callerIdName: "",
-  maxConcurrentCalls: 10, cpsLimit: 3, retryAttempts: 0, retryDelay: 300,
+  maxConcurrentCalls: 5, cpsLimit: 1, retryAttempts: 0, retryDelay: 300,
   timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
@@ -424,21 +424,21 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               <span className="font-bold text-primary">{form.maxConcurrentCalls}</span>
             </Label>
             <Slider
-              min={10}
-              max={100}
-              step={5}
+              min={1}
+              max={10}
+              step={1}
               value={[form.maxConcurrentCalls]}
               onValueChange={([v]) => setForm(p => ({ ...p, maxConcurrentCalls: v }))}
               className="mt-2"
             />
             <div className="flex gap-1.5 mt-2">
-              {[{l:"Low",v:10},{l:"Med",v:25},{l:"High",v:50},{l:"Max",v:100}].map(p => (
+              {[{l:"1",v:1},{l:"3",v:3},{l:"5",v:5},{l:"10",v:10}].map(p => (
                 <Button key={p.l} type="button" variant={form.maxConcurrentCalls === p.v ? "default" : "outline"} size="sm" className="flex-1 text-xs h-6" onClick={() => setForm(f => ({ ...f, maxConcurrentCalls: p.v }))}>
-                  {p.l} ({p.v})
+                  {p.v}
                 </Button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Caps the agent speed for this campaign (10-100). Cannot exceed agent's max.</p>
+            <p className="text-xs text-muted-foreground mt-1">Maximum simultaneous calls for this campaign (1-10). Cannot exceed agent's max.</p>
           </div>
 
           <div>
@@ -455,11 +455,10 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               className="mt-2"
             />
             <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-muted-foreground">1 CPS (safe)</span>
-              <span className="text-[10px] text-muted-foreground">5 CPS (standard)</span>
-              <span className="text-[10px] text-muted-foreground">10 CPS (aggressive)</span>
+              <span className="text-[10px] text-muted-foreground">1 (safe)</span>
+              <span className="text-[10px] text-muted-foreground">10 (max)</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Controls how fast new calls are initiated. Lower values reduce carrier errors. Campaign CPS overrides agent CPS.</p>
+            <p className="text-xs text-muted-foreground mt-1">Controls how fast new calls are initiated. Lower values reduce carrier errors.</p>
           </div>
 
           {/* Call Pacing Mode */}
@@ -703,8 +702,8 @@ export default function Campaigns() {
       ttsProvider: isGoogleVoice ? "google" : "openai",
       callerIdNumber: c.callerIdNumber || "",
       callerIdName: c.callerIdName || "",
-      maxConcurrentCalls: c.maxConcurrentCalls || 3,
-      cpsLimit: (c as any).cpsLimit || 3,
+      maxConcurrentCalls: c.maxConcurrentCalls || 5,
+      cpsLimit: (c as any).cpsLimit || 1,
       retryAttempts: c.retryAttempts || 0,
       retryDelay: c.retryDelay || 300,
       timezone: c.timezone || "America/New_York",
