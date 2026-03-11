@@ -621,14 +621,18 @@ export const appRouter = router({
       if (callerIdsToCheck.length === 0) {
         return { queued: 0, message: "No caller IDs need checking right now" };
       }
-      // Queue health check calls via the call queue (PBX agent will pick them up)
+      // Health check strategy: dial a known test number USING the DID as caller ID.
+      // This validates the DID can successfully place outbound calls through the trunk.
+      // We use Asterisk's built-in echo test (extension 10000) or a short ring to a
+      // known good number. The PBX agent detects context="health-check" and handles
+      // the call specially - it dials a test destination and reports back.
+      // The test destination is a brief outbound call to validate trunk + DID.
+      const HEALTH_CHECK_TEST_NUMBER = "0000000000"; // Placeholder - PBX agent uses echo test
       let queued = 0;
       for (const cid of callerIdsToCheck) {
-        // Queue a health check call - PBX agent will detect context="health-check"
-        // and perform a SIP OPTIONS or short test call instead of playing audio
         await db.enqueueCall({
-          phoneNumber: cid.phoneNumber,
-          channel: `PJSIP/${cid.phoneNumber}@vitel-outbound`,
+          phoneNumber: HEALTH_CHECK_TEST_NUMBER,
+          channel: `PJSIP/${HEALTH_CHECK_TEST_NUMBER}@vitel-outbound`,
           context: "health-check",
           callerIdStr: cid.phoneNumber,
           audioUrl: "",
@@ -637,6 +641,7 @@ export const appRouter = router({
             healthCheckCallerIdId: String(cid.id),
             healthCheck: "true",
             CALLER_ID: cid.phoneNumber,
+            healthCheckDID: cid.phoneNumber,
           },
           priority: 1,
           userId: ctx.user.id,

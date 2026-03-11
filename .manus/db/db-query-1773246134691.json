@@ -1,0 +1,30 @@
+{
+  "query": "SELECT status, COUNT(*) as cnt, AVG(duration) as avg_dur FROM call_logs GROUP BY status ORDER BY cnt DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT status, COUNT(*) as cnt, AVG(duration) as avg_dur FROM call_logs GROUP BY status ORDER BY cnt DESC;",
+  "rows": [
+    {
+      "status": "pending",
+      "cnt": "25445",
+      "avg_dur": "NULL"
+    },
+    {
+      "status": "failed",
+      "cnt": "108",
+      "avg_dur": "3.9780"
+    },
+    {
+      "status": "answered",
+      "cnt": "63",
+      "avg_dur": "6.4194"
+    },
+    {
+      "status": "no-answer",
+      "cnt": "54",
+      "avg_dur": "4.3409"
+    }
+  ],
+  "messages": [],
+  "stdout": "status\tcnt\tavg_dur\npending\t25445\tNULL\nfailed\t108\t3.9780\nanswered\t63\t6.4194\nno-answer\t54\t4.3409\n",
+  "stderr": "",
+  "execution_time_ms": 74
+}

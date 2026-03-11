@@ -1,0 +1,31 @@
+{
+  "query": "SELECT \n  status, \n  COUNT(*) as count,\n  AVG(duration) as avg_duration,\n  MIN(startedAt) as first_call,\n  MAX(startedAt) as last_call\nFROM call_logs \nWHERE startedAt > UNIX_TIMESTAMP(CURDATE()) * 1000\nGROUP BY status\nORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT \n  status, \n  COUNT(*) as count,\n  AVG(duration) as avg_duration,\n  MIN(startedAt) as first_call,\n  MAX(startedAt) as last_call\nFROM call_logs \nWHERE startedAt > UNIX_TIMESTAMP(CURDATE()) * 1000\nGROUP BY status\nORDER BY count DESC;",
+  "rows": [
+    {
+      "status": "failed",
+      "count": "88",
+      "avg_duration": "3.8816",
+      "first_call": "1773244194359",
+      "last_call": "1773244796109"
+    },
+    {
+      "status": "answered",
+      "count": "53",
+      "avg_duration": "5.5769",
+      "first_call": "1773244207920",
+      "last_call": "1773244780952"
+    },
+    {
+      "status": "no-answer",
+      "count": "45",
+      "avg_duration": "4.4167",
+      "first_call": "1773244203113",
+      "last_call": "1773244795645"
+    }
+  ],
+  "messages": [],
+  "stdout": "status\tcount\tavg_duration\tfirst_call\tlast_call\nfailed\t88\t3.8816\t1773244194359\t1773244796109\nanswered\t53\t5.5769\t1773244207920\t1773244780952\nno-answer\t45\t4.4167\t1773244203113\t1773244795645\n",
+  "stderr": "",
+  "execution_time_ms": 211
+}

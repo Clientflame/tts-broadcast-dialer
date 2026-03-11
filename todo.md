@@ -231,3 +231,8 @@
 - [x] Add route to sidebar navigation
 - [x] Vitest tests for per-DID analytics endpoints (5 new tests, 121 total passing)
 - [x] Restrict automatic health checks to business hours only: 8am-8pm EST, Monday through Friday
+- [x] Fix DID health checks not updating status - Health Check All button clicked multiple times but status stays "Unchecked"
+- [x] Fix DID health check: dial a known test number (Asterisk echo test 10000) using the DID as caller ID, instead of dialing the DID itself
+- [x] Update PBX agent to detect health-check context and report results back via /health-check-result endpoint
+- [x] Update server-side health check enqueue to use test number as destination
+- [x] Generate call failure analysis report from today's call data

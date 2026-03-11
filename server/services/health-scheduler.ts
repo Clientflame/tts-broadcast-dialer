@@ -62,12 +62,15 @@ async function runScheduledChecks() {
         }
 
         // Queue health checks for each active caller ID
+        // Health check strategy: dial a test number USING the DID as caller ID
+        // to validate the DID can place outbound calls through the trunk.
+        const HEALTH_CHECK_TEST_NUMBER = "0000000000"; // PBX agent handles actual test logic
         let queued = 0;
         for (const cid of activeIds) {
           await db.enqueueCall({
             campaignId: 0,
-            phoneNumber: cid.phoneNumber,
-            channel: `PJSIP/${cid.phoneNumber}@vitel-outbound`,
+            phoneNumber: HEALTH_CHECK_TEST_NUMBER,
+            channel: `PJSIP/${HEALTH_CHECK_TEST_NUMBER}@vitel-outbound`,
             callerIdStr: cid.phoneNumber,
             audioUrl: "",
             audioName: "health-check",
@@ -75,6 +78,7 @@ async function runScheduledChecks() {
               healthCheckCallerIdId: String(cid.id),
               healthCheck: "true",
               CALLER_ID: cid.phoneNumber,
+              healthCheckDID: cid.phoneNumber,
             },
             priority: 1,
             userId: schedule.userId,

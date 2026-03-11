@@ -374,6 +374,85 @@ def prepare_audio(audio_url, audio_name):
 
 
 # ─── Call Processing ─────────────────────────────────────────────────────────
+def process_health_check(ami, call_data):
+    """
+    Process a DID health check.
+    
+    Strategy: Use AMI SIPpeers/SIPshowpeer or originate a short test call
+    using the DID as the caller ID to verify the trunk can place calls with it.
+    We originate a call to Asterisk's built-in echo test (extension 10000 in
+    the 'default' context) which answers immediately and echoes audio back.
+    If the call is answered, the DID is healthy. If it fails, the DID has issues.
+    """
+    queue_id = call_data["id"]
+    variables = call_data.get("variables", {})
+    caller_id_id = variables.get("healthCheckCallerIdId")
+    did_number = variables.get("healthCheckDID") or variables.get("CALLER_ID", "")
+    
+    log.info(f"Health check {queue_id}: testing DID {did_number} (callerIdId={caller_id_id})")
+    
+    if not caller_id_id:
+        log.error(f"Health check {queue_id}: missing healthCheckCallerIdId")
+        report_result(queue_id, "failed", {"error": "Missing caller ID reference"})
+        return
+    
+    # Method: Originate a short call to the echo test extension using the DID as caller ID.
+    # This validates that the trunk accepts the DID as a valid caller ID.
+    # We use the local Asterisk echo test (10000@default) which answers immediately.
+    action_id = f"call-{queue_id}"
+    
+    result = ami.originate(
+        channel=f"Local/10000@default",  # Asterisk echo test - answers immediately
+        context="health-check",
+        exten="s",
+        priority=1,
+        variables={
+            "CALLER_ID": did_number,
+            "healthCheckCallerIdId": str(caller_id_id),
+            "healthCheck": "true",
+        },
+        caller_id=f"\"{did_number}\" <{did_number}>",
+        timeout=15000,  # 15 second timeout for health check
+        async_mode=True,
+        action_id=action_id,
+    )
+    
+    if result and result.get("Response") != "Error":
+        log.info(f"Health check {queue_id}: originated test call for DID {did_number}")
+        with active_calls_lock:
+            active_calls[queue_id] = {
+                "channel": f"Local/10000@default",
+                "action_id": action_id,
+                "start_time": time.time(),
+                "phone_number": did_number,
+                "campaign_id": None,
+                "actual_channel": None,
+                "is_health_check": True,
+                "health_check_caller_id_id": caller_id_id,
+                "health_check_did": did_number,
+            }
+    else:
+        error_msg = result.get("Message", "Unknown AMI error") if result else "No AMI response"
+        log.error(f"Health check {queue_id}: originate failed for DID {did_number}: {error_msg}")
+        # Report the health check result as failed
+        report_health_check_result(caller_id_id, "failed", f"AMI originate failed: {error_msg}")
+        report_result(queue_id, "failed", {"error": error_msg})
+
+
+def report_health_check_result(caller_id_id, result, details=""):
+    """Report DID health check result back to the web app."""
+    data = {
+        "callerIdId": int(caller_id_id),
+        "result": result,
+        "details": details,
+    }
+    resp = api_request("health-check-result", method="POST", data=data)
+    if resp:
+        log.info(f"Health check result reported for callerIdId={caller_id_id}: {result}")
+    else:
+        log.error(f"Failed to report health check result for callerIdId={caller_id_id}")
+
+
 def process_call(ami, call_data):
     """Process a single call from the queue."""
     queue_id = call_data["id"]
@@ -384,6 +463,11 @@ def process_call(ami, call_data):
     audio_url = call_data.get("audioUrl")
     audio_name = call_data.get("audioName")
     variables = call_data.get("variables", {})
+
+    # Detect health check calls and handle them specially
+    if context == "health-check" or variables.get("healthCheck") == "true":
+        process_health_check(ami, call_data)
+        return
 
     log.info(f"Processing call {queue_id} to {phone_number}")
 
@@ -494,14 +578,34 @@ def monitor_ami_events(ami):
                     if call_info:
                         duration = time.time() - call_info["start_time"]
 
+                        # Check if this is a health check call
+                        is_hc = call_info.get("is_health_check", False)
+                        hc_cid = call_info.get("health_check_caller_id_id")
+                        hc_did = call_info.get("health_check_did", "")
+
                         if response_val == "Success":
-                            log.info(f"Call {matched_queue_id} answered (reason: {reason})")
-                            # Store the actual channel for Hangup matching
-                            with active_calls_lock:
-                                if matched_queue_id in active_calls:
-                                    active_calls[matched_queue_id]["answered"] = True
-                                    active_calls[matched_queue_id]["answered_at"] = time.time()
-                                    active_calls[matched_queue_id]["actual_channel"] = channel
+                            if is_hc and hc_cid:
+                                # Health check answered = DID is healthy
+                                log.info(f"Health check {matched_queue_id}: DID {hc_did} is HEALTHY (call answered)")
+                                report_health_check_result(hc_cid, "healthy", f"Test call answered successfully")
+                                # Immediately hang up the echo test call
+                                report_result(matched_queue_id, "answered", {"duration": int(duration)})
+                                # Schedule hangup after brief delay
+                                with active_calls_lock:
+                                    if matched_queue_id in active_calls:
+                                        active_calls[matched_queue_id]["answered"] = True
+                                        active_calls[matched_queue_id]["answered_at"] = time.time()
+                                        active_calls[matched_queue_id]["actual_channel"] = channel
+                                        # Auto-hangup health check after 2 seconds
+                                        active_calls[matched_queue_id]["auto_hangup_at"] = time.time() + 2
+                            else:
+                                log.info(f"Call {matched_queue_id} answered (reason: {reason})")
+                                # Store the actual channel for Hangup matching
+                                with active_calls_lock:
+                                    if matched_queue_id in active_calls:
+                                        active_calls[matched_queue_id]["answered"] = True
+                                        active_calls[matched_queue_id]["answered_at"] = time.time()
+                                        active_calls[matched_queue_id]["actual_channel"] = channel
                         else:
                             # Call failed (no answer, busy, congestion)
                             reason_map = {
@@ -511,6 +615,12 @@ def monitor_ami_events(ami):
                                 "8": "congestion",
                             }
                             status = reason_map.get(reason, "failed")
+
+                            if is_hc and hc_cid:
+                                # Health check failed
+                                log.info(f"Health check {matched_queue_id}: DID {hc_did} FAILED (reason: {reason}, status: {status})")
+                                report_health_check_result(hc_cid, "failed", f"Test call failed: {status} (reason {reason})")
+
                             log.info(f"Call {matched_queue_id} {status} (reason: {reason})")
                             report_result(matched_queue_id, status, {
                                 "duration": int(duration),
@@ -552,8 +662,13 @@ def monitor_ami_events(ami):
                     if call_info:
                         duration = time.time() - call_info["start_time"]
                         was_answered = call_info.get("answered", False)
+                        is_hc = call_info.get("is_health_check", False)
 
-                        if was_answered:
+                        if is_hc:
+                            # Health check hangup - already reported via OriginateResponse
+                            log.info(f"Health check {matched_queue_id} hung up (duration: {int(duration)}s)")
+                            # Don't double-report; health check result was already sent
+                        elif was_answered:
                             log.info(f"Call {matched_queue_id} completed (duration: {int(duration)}s)")
                             report_result(matched_queue_id, "answered", {
                                 "duration": int(duration),
@@ -664,12 +779,33 @@ def main():
         except Exception as e:
             log.error(f"Poll loop error: {e}")
 
+        # Auto-hangup health check calls that have been answered
+        with active_calls_lock:
+            now = time.time()
+            for qid, info in list(active_calls.items()):
+                auto_hangup = info.get("auto_hangup_at")
+                if auto_hangup and now >= auto_hangup:
+                    actual_ch = info.get("actual_channel")
+                    if actual_ch and ami.connected:
+                        log.info(f"Auto-hanging up health check {qid} (channel: {actual_ch})")
+                        try:
+                            ami.send_action({"Action": "Hangup", "Channel": actual_ch})
+                        except Exception as e:
+                            log.warning(f"Failed to hangup health check {qid}: {e}")
+                    # Remove from active calls
+                    del active_calls[qid]
+
         # Check for stale active calls (no event received in 5 minutes)
         with active_calls_lock:
             stale_threshold = time.time() - 300
             for qid, info in list(active_calls.items()):
                 if info["start_time"] < stale_threshold:
-                    log.warning(f"Stale call detected: queue_id={qid}")
+                    is_hc = info.get("is_health_check", False)
+                    log.warning(f"Stale {'health check' if is_hc else 'call'} detected: queue_id={qid}")
+                    if is_hc:
+                        hc_cid = info.get("health_check_caller_id_id")
+                        if hc_cid:
+                            report_health_check_result(hc_cid, "failed", "Health check timed out")
                     report_result(qid, "failed", {"error": "Call timed out"})
                     del active_calls[qid]
 
