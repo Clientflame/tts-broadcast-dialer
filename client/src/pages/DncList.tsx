@@ -157,10 +157,10 @@ export default function DncList() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Do Not Call List</h1>
-            <p className="text-muted-foreground mt-1">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight">Do Not Call List</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
               Manage numbers that should never be dialed. DNC numbers are automatically filtered from all campaigns.
             </p>
           </div>
@@ -309,7 +309,7 @@ export default function DncList() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[600px]">
                   <thead>
                     <tr className="border-b text-left text-sm text-muted-foreground">
                       <th className="pb-3 pr-4 w-10">

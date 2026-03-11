@@ -85,15 +85,15 @@ export default function CallLogs() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Call Logs</h1>
-            <p className="text-muted-foreground mt-1">View detailed call results for each campaign</p>
+            <p className="text-muted-foreground mt-1 text-sm">View detailed call results for each campaign</p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="w-72">
+          <div className="w-full sm:w-72">
             <Select value={selectedCampaignId ? String(selectedCampaignId) : ""} onValueChange={v => setSelectedCampaignId(parseInt(v))}>
               <SelectTrigger><SelectValue placeholder="Select a campaign" /></SelectTrigger>
               <SelectContent>
@@ -166,8 +166,8 @@ export default function CallLogs() {
             </div>
 
             <Card>
-              <CardContent className="p-0">
-                <Table>
+              <CardContent className="p-0 overflow-x-auto">
+                <Table className="min-w-[700px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Phone Number</TableHead>

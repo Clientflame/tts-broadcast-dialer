@@ -177,10 +177,10 @@ export default function CallerIds() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Caller IDs (DIDs)</h1>
-            <p className="text-muted-foreground">Manage your outbound caller ID rotation pool</p>
+            <p className="text-muted-foreground text-sm">Manage your outbound caller ID rotation pool</p>
           </div>
           <div className="flex gap-2 flex-wrap justify-end">
             {selected.size > 0 && (
@@ -249,7 +249,7 @@ export default function CallerIds() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total DIDs</CardDescription>
@@ -359,7 +359,7 @@ export default function CallerIds() {
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[800px]">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="p-3 text-left w-10">

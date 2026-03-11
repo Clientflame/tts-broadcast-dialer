@@ -498,8 +498,8 @@ export default function Scripts() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <ScrollText className="h-6 w-6" /> Call Scripts
             </h1>
@@ -507,7 +507,7 @@ export default function Scripts() {
               Build multi-segment call scripts mixing TTS and recorded audio. Scripts are personalized per contact at dial time.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
           {selectedIds.length > 0 && (
             <Button variant="destructive" onClick={() => {
               if (confirm(`Delete ${selectedIds.length} script(s)?`)) bulkDeleteScripts.mutate({ ids: selectedIds });

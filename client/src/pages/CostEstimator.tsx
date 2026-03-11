@@ -59,10 +59,10 @@ export default function CostEstimator() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Cost Estimator</h1>
-            <p className="text-muted-foreground mt-1">Estimate campaign costs based on trunk rates and OpenAI TTS pricing</p>
+            <p className="text-muted-foreground mt-1 text-sm">Estimate campaign costs based on trunk rates and OpenAI TTS pricing</p>
           </div>
           <Button variant="outline" onClick={() => setSettingsOpen(!settingsOpen)}>
             <Settings2 className="h-4 w-4 mr-2" />Rate Settings

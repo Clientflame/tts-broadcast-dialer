@@ -810,13 +810,13 @@ export default function Campaigns() {
     return (
       <DashboardLayout>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="min-w-0">
               <Button variant="ghost" size="sm" onClick={() => setDetailId(null)} className="mb-2">&larr; Back to Campaigns</Button>
-              <h1 className="text-2xl font-bold tracking-tight">{c.name}</h1>
-              <p className="text-muted-foreground mt-1">{c.description || "No description"}</p>
+              <h1 className="text-2xl font-bold tracking-tight truncate">{c.name}</h1>
+              <p className="text-muted-foreground mt-1 line-clamp-2">{c.description || "No description"}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant={STATUS_COLORS[c.status] || "outline"} className="text-sm px-3 py-1">{c.status}</Badge>
               {/* Edit button */}
               {canEdit && (
@@ -894,7 +894,7 @@ export default function Campaigns() {
           )}
 
           {/* Campaign Settings */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader><CardTitle className="text-base">Configuration</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -985,10 +985,10 @@ export default function Campaigns() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Campaigns</h1>
-            <p className="text-muted-foreground mt-1">Create and manage broadcast calling campaigns</p>
+            <p className="text-muted-foreground mt-1 text-sm">Create and manage broadcast calling campaigns</p>
           </div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             {selectedCampaignIds.length > 0 && (
@@ -1032,7 +1032,7 @@ export default function Campaigns() {
             <p className="text-sm mt-1">Create your first broadcast campaign to get started.</p>
           </CardContent></Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.data.map(campaign => (
               <Card key={campaign.id} className="cursor-pointer hover:border-primary/50 transition-colors relative" onClick={() => setDetailId(campaign.id)}>
                 <div className="absolute top-3 left-3 z-10" onClick={e => e.stopPropagation()}>

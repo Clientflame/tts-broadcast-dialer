@@ -226,12 +226,12 @@ export default function Home() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground mt-1">AI TTS Broadcast Dialer Overview</p>
+            <p className="text-muted-foreground mt-1 text-sm">AI TTS Broadcast Dialer Overview</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isDialerActive && (
               <Badge variant="default" className="flex items-center gap-1.5 px-3 py-1 bg-green-600 animate-pulse">
                 <Radio className="h-3.5 w-3.5" />
@@ -268,7 +268,7 @@ export default function Home() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="rounded-lg border p-4 text-center space-y-1">
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
                   <PhoneCall className="h-4 w-4" />
@@ -351,7 +351,7 @@ export default function Home() {
         </Card>
 
         {/* Overview Stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Campaigns</CardTitle>

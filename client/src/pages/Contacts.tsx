@@ -225,10 +225,10 @@ export default function Contacts() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
-            <p className="text-muted-foreground mt-1">Manage contact lists and import contacts for campaigns</p>
+            <p className="text-muted-foreground mt-1 text-sm">Manage contact lists and import contacts for campaigns</p>
           </div>
           <Dialog open={newListOpen} onOpenChange={setNewListOpen}>
             <DialogTrigger asChild>
@@ -250,7 +250,7 @@ export default function Contacts() {
           </Dialog>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
           <div className="md:col-span-1 space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-muted-foreground">Contact Lists</h3>
@@ -309,9 +309,9 @@ export default function Contacts() {
             ) : (
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">{lists.data?.find(l => l.id === selectedListId)?.name}</CardTitle>
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <CardTitle className="text-base truncate">{lists.data?.find(l => l.id === selectedListId)?.name}</CardTitle>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button variant="outline" size="sm" onClick={() => setAddContactOpen(true)}><Plus className="h-3.5 w-3.5 mr-1" />Add</Button>
                       <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}><Upload className="h-3.5 w-3.5 mr-1" />Import CSV</Button>
                       <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVFile} />
@@ -331,8 +331,8 @@ export default function Contacts() {
                     <Input className="pl-9" placeholder="Search contacts..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                   </div>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <Table>
+                <CardContent className="p-0 overflow-x-auto">
+                  <Table className="min-w-[700px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-10"><Checkbox checked={selectedContacts.length === filteredContacts.length && filteredContacts.length > 0} onCheckedChange={toggleAll} /></TableHead>

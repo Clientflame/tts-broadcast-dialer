@@ -258,12 +258,12 @@ export default function Audio() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Audio / TTS</h1>
-            <p className="text-muted-foreground mt-1">Generate AI voice messages using OpenAI or Google Cloud TTS</p>
+            <p className="text-muted-foreground mt-1 text-sm">Generate AI voice messages using OpenAI or Google Cloud TTS</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={() => utils.audio.list.invalidate()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
             </Button>

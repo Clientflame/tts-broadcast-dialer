@@ -1,0 +1,30 @@
+{
+  "query": "\nSELECT c.id, c.name, c.status, c.cpsLimit, c.maxConcurrentCalls, c.createdAt,\n  (SELECT COUNT(*) FROM call_logs WHERE campaignId = c.id AND status = 'pending') as pending_calls,\n  (SELECT COUNT(*) FROM call_logs WHERE campaignId = c.id AND status != 'pending') as attempted_calls\nFROM campaigns c\nORDER BY c.createdAt DESC\nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute \nSELECT c.id, c.name, c.status, c.cpsLimit, c.maxConcurrentCalls, c.createdAt,\n  (SELECT COUNT(*) FROM call_logs WHERE campaignId = c.id AND status = 'pending') as pending_calls,\n  (SELECT COUNT(*) FROM call_logs WHERE campaignId = c.id AND status != 'pending') as attempted_calls\nFROM campaigns c\nORDER BY c.createdAt DESC\nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "30011",
+      "name": "3.11.26",
+      "status": "paused",
+      "cpsLimit": "3",
+      "maxConcurrentCalls": "10",
+      "createdAt": "2026-03-11 15:49:19",
+      "pending_calls": "12649",
+      "attempted_calls": "186"
+    },
+    {
+      "id": "30010",
+      "name": "First Real Test",
+      "status": "cancelled",
+      "cpsLimit": "3",
+      "maxConcurrentCalls": "40",
+      "createdAt": "2026-03-10 22:18:16",
+      "pending_calls": "12796",
+      "attempted_calls": "39"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tstatus\tcpsLimit\tmaxConcurrentCalls\tcreatedAt\tpending_calls\tattempted_calls\n30011\t3.11.26\tpaused\t3\t10\t2026-03-11 15:49:19\t12649\t186\n30010\tFirst Real Test\tcancelled\t3\t40\t2026-03-10 22:18:16\t12796\t39\n",
+  "stderr": "",
+  "execution_time_ms": 149
+}

@@ -307,7 +307,7 @@ export default function DidAnalytics() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[900px]">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="p-3 text-left">Health</th>
@@ -405,7 +405,7 @@ export default function DidAnalytics() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead>
                     <tr className="border-b bg-muted/50">
                       <th className="p-3 text-left">Campaign</th>

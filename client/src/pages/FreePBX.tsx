@@ -329,8 +329,8 @@ function ThrottleHistoryTable() {
   };
 
   return (
-    <div className="max-h-[300px] overflow-y-auto">
-      <table className="w-full text-sm">
+    <div className="max-h-[300px] overflow-y-auto overflow-x-auto">
+      <table className="w-full text-sm min-w-[500px]">
         <thead className="sticky top-0 bg-background">
           <tr className="border-b text-left">
             <th className="py-2 pr-3 text-xs font-medium text-muted-foreground">Time</th>

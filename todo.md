@@ -236,3 +236,7 @@
 - [x] Update PBX agent to detect health-check context and report results back via /health-check-result endpoint
 - [x] Update server-side health check enqueue to use test number as destination
 - [x] Generate call failure analysis report from today's call data
+- [x] Detailed call data analysis for today's 3.11.26 campaign (CPS timing, failure patterns, recommendations)
+- [x] Fix mobile responsiveness: Campaigns page not visible/usable on mobile devices
+- [x] Fix mobile responsiveness: Contact Lists page not visible/usable on mobile devices
+- [x] Review and fix mobile layout for DashboardLayout sidebar on small screens

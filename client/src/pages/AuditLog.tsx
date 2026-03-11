@@ -22,8 +22,8 @@ export default function AuditLog() {
               <Shield className="h-4 w-4" />Activity Log
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <Table>
+          <CardContent className="p-0 overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Timestamp</TableHead>

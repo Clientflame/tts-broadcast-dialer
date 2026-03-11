@@ -138,12 +138,12 @@ export default function UserManagement() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">User Management</h1>
-            <p className="text-muted-foreground">Manage users, groups, and permissions</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
+            <p className="text-muted-foreground text-sm">Manage users, groups, and permissions</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Dialog open={showCreateUser} onOpenChange={setShowCreateUser}>
               <DialogTrigger asChild>
                 <Button><UserPlus className="h-4 w-4 mr-2" />Create User</Button>
@@ -233,8 +233,8 @@ export default function UserManagement() {
               <Input className="pl-9" placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
-            <div className="rounded-lg border overflow-hidden">
-              <table className="w-full">
+            <div className="rounded-lg border overflow-hidden overflow-x-auto">
+              <table className="w-full min-w-[700px]">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="text-left p-3 text-sm font-medium">User</th>
