@@ -331,3 +331,4 @@
 - [x] Add Caddyfile template with security headers
 - [x] Add SSL troubleshooting rows and DOMAIN env var to docs
 - [x] Firewall auto-opens ports 80/443 when SSL is enabled
+- [x] Fix Docker production crash: 'vite' and 'drizzle-kit' not found in container (dynamic import for vite, add drizzle-kit to Dockerfile)

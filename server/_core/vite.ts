@@ -1,22 +1,32 @@
 import express, { type Express } from "express";
 import fs from "fs";
 import { type Server } from "http";
-import { nanoid } from "nanoid";
 import path from "path";
-import { createServer as createViteServer } from "vite";
-import viteConfig from "../../vite.config";
 
 export async function setupVite(app: Express, server: Server) {
-  const serverOptions = {
-    middlewareMode: true,
-    hmr: { server },
-    allowedHosts: true as const,
-  };
+  // All vite-related imports are done dynamically so they are NOT bundled
+  // into the production build by esbuild. This function is only called
+  // when NODE_ENV === "development".
+  const { createServer: createViteServer } = await import(
+    /* @vite-ignore */ "vite"
+  );
+  const { nanoid } = await import("nanoid");
+
+  // Load vite config dynamically — this prevents esbuild from bundling
+  // vite.config.ts and all its plugin imports into dist/index.js
+  const viteConfigPath = path.resolve(
+    import.meta.dirname,
+    "../..",
+    "vite.config.ts"
+  );
 
   const vite = await createViteServer({
-    ...viteConfig,
-    configFile: false,
-    server: serverOptions,
+    configFile: viteConfigPath,
+    server: {
+      middlewareMode: true,
+      hmr: { server },
+      allowedHosts: true as const,
+    },
     appType: "custom",
   });
 

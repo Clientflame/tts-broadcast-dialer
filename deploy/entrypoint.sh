@@ -32,7 +32,7 @@ if [ -n "$DATABASE_URL" ]; then
     echo "[startup] Proceeding anyway — the app will retry on its own."
   fi
 
-  # Run database migrations
+  # Run database migrations using the bundled drizzle-kit
   if [ "${SKIP_MIGRATIONS:-false}" != "true" ]; then
     echo "[startup] Running database migrations..."
     npx drizzle-kit migrate 2>&1 || echo "[startup] WARNING: Migration failed — check DATABASE_URL"

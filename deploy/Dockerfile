@@ -42,6 +42,9 @@ COPY patches/ ./patches/
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
+# Install drizzle-kit separately for database migrations on startup
+RUN pnpm add drizzle-kit
+
 # Copy built artifacts from builder
 # - dist/index.js = compiled server (esbuild)
 # - dist/public/  = compiled frontend (Vite)
