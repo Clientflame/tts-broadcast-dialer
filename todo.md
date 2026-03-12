@@ -339,3 +339,7 @@
 - [x] Fix setup-client.sh: comprehensive clean install on FreePBX server
 - [x] Add health check step after docker compose up
 - [x] Add MYSQL_HOST_PORT variable to standalone docker-compose.yml
+- [x] Fix setup-client.sh: port 3306 detection regex fixed ([[:space:]] instead of literal space)
+- [x] Fix setup-client.sh: port 80/443 Apache conflict detection regex fixed
+- [x] Fix setup-client.sh: added python3 fallback for port detection
+- [x] Fix setup-client.sh: get_port_process returns 'unknown process' instead of empty string

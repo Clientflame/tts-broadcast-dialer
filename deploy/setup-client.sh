@@ -60,21 +60,36 @@ prompt() {
 
 check_port() {
   local port=$1
+  # Match :PORT at end of address field (handles 0.0.0.0:3306, :::80, 127.0.0.1:3306, *:80)
   if command -v ss &> /dev/null; then
-    ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
-  elif command -v netstat &> /dev/null; then
-    netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+    ss -tlnp 2>/dev/null | grep -qE ":${port}[[:space:]]" && return 0
+  fi
+  if command -v netstat &> /dev/null; then
+    netstat -tlnp 2>/dev/null | grep -qE ":${port}[[:space:]]" && return 0
+  fi
+  # Fallback: try to bind the port
+  if command -v python3 &> /dev/null; then
+    python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.bind(('0.0.0.0',${port})); s.close()" 2>/dev/null
+    if [ $? -ne 0 ]; then
+      return 0  # port in use
+    fi
   fi
   return 1
 }
 
 get_port_process() {
   local port=$1
+  local result=""
   if command -v ss &> /dev/null; then
-    ss -tlnp 2>/dev/null | grep ":${port} " | head -1 | sed 's/.*users:(("//' | sed 's/".*//'
-  elif command -v netstat &> /dev/null; then
-    netstat -tlnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1
+    result=$(ss -tlnp 2>/dev/null | grep -E ":${port}[[:space:]]" | head -1 | grep -oP 'users:\(\("\K[^"]+' 2>/dev/null)
   fi
+  if [ -z "$result" ] && command -v netstat &> /dev/null; then
+    result=$(netstat -tlnp 2>/dev/null | grep -E ":${port}[[:space:]]" | awk '{print $NF}' | sed 's|.*/||' | head -1)
+  fi
+  if [ -z "$result" ]; then
+    result="unknown process"
+  fi
+  echo "$result"
 }
 
 # ============================================================
