@@ -313,3 +313,6 @@
 - [x] Skip button to dismiss wizard and go to dashboard (localStorage persistence)
 - [x] Getting Started link in sidebar navigation
 - [x] Vitest tests for onboarding endpoint (10 tests, 142 total passing)
+- [x] Create first release tag v1.0.0 on GitHub
+- [x] Create GitHub release with full changelog and Docker pull command
+- [ ] Verify Docker image builds successfully on GitHub Actions (requires Actions permissions enabled on repo)
