@@ -293,3 +293,7 @@
 - [x] DashboardLayout redirects to /login instead of Manus OAuth when unauthenticated
 - [x] Dual-mode auth: detect Manus OAuth vs standalone mode based on env vars
 - [x] Write vitest tests for standalone auth endpoints (11 tests, 132 total passing)
+- [x] Add white-label branding support via env vars (VITE_PRIMARY_COLOR, VITE_ACCENT_COLOR)
+- [x] Dynamic CSS variable injection from VITE_ env vars at runtime (ThemeBranding component)
+- [x] Update deploy env-template with branding color vars + preset examples
+- [x] Make all hardcoded app name references dynamic from VITE_APP_TITLE (sidebar, login, setup, dashboard)

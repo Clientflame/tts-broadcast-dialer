@@ -320,7 +320,7 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-            <p className="text-muted-foreground mt-1 text-sm">AI TTS Broadcast Dialer Overview</p>
+            <p className="text-muted-foreground mt-1 text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isDialerActive && (

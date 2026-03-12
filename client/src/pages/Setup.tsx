@@ -52,7 +52,7 @@ export default function Setup() {
               <Radio className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">TTS Broadcast Dialer</h1>
+          <h1 className="text-2xl font-bold">{import.meta.env.VITE_APP_TITLE || "TTS Broadcast Dialer"}</h1>
           <p className="text-muted-foreground">Initial Setup</p>
         </div>
 

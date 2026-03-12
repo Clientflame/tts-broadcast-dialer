@@ -10,6 +10,19 @@ VITE_APP_TITLE="AI TTS Broadcast Dialer"
 VITE_APP_LOGO=""
 # APP_PORT=3000
 
+# --- White-Label Colors (OKLCH or hex format) ---
+# Customize the color theme per client. Leave empty for default blue.
+# OKLCH examples:
+#   Blue (default):  oklch(0.55 0.15 240)
+#   Green:           oklch(0.55 0.20 145)
+#   Red/Orange:      oklch(0.55 0.22 30)
+#   Purple:          oklch(0.50 0.20 280)
+#   Teal:            oklch(0.55 0.15 195)
+#   Gold:            oklch(0.60 0.18 85)
+# Hex examples: #2563eb (blue), #16a34a (green), #dc2626 (red), #7c3aed (purple)
+VITE_PRIMARY_COLOR=
+VITE_ACCENT_COLOR=
+
 # --- Database (auto-configured by docker-compose) ---
 MYSQL_ROOT_PASSWORD=CHANGE_ME_root_password_here
 MYSQL_DATABASE=tts_dialer

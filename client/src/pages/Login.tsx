@@ -78,7 +78,7 @@ export default function Login() {
               <Radio className="h-6 w-6 text-primary" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">TTS Broadcast Dialer</h1>
+          <h1 className="text-2xl font-bold">{import.meta.env.VITE_APP_TITLE || "TTS Broadcast Dialer"}</h1>
           <p className="text-muted-foreground">AI-powered voice broadcast platform</p>
         </div>
 
