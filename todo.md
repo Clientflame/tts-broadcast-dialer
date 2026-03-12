@@ -317,3 +317,4 @@
 - [x] Create GitHub release with full changelog and Docker pull command
 - [ ] Verify Docker image builds successfully on GitHub Actions (requires Actions permissions enabled on repo)
 - [x] Fix Docker build failure: /app/dist/client not found (Dockerfile referenced dist/client but Vite outputs to dist/public)
+- [x] Make setup-client.sh interactive: prompt for FreePBX, branding, and TTS API keys instead of manual .env editing
