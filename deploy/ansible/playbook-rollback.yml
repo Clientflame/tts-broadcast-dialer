@@ -1,0 +1,57 @@
+# ============================================================
+# Ansible Playbook — Rollback TTS Dialer to Previous Version
+# ============================================================
+# Usage:
+#   ansible-playbook -i inventory.yml playbook-rollback.yml --limit abc_marketing -e "version=v1.2.0"
+# ============================================================
+
+- name: Rollback TTS Dialer to a specific version
+  hosts: dialer_clients
+  gather_facts: false
+
+  vars:
+    version: ""
+
+  tasks:
+    - name: Validate version is provided
+      fail:
+        msg: "You must specify a version to rollback to: -e 'version=v1.2.0'"
+      when: version == ""
+
+    - name: Display rollback target
+      debug:
+        msg: "Rolling back {{ client_name }} ({{ ansible_host }}) to {{ version }}"
+
+    - name: Backup database before rollback
+      command: ./backup.sh
+      args:
+        chdir: "{{ deploy_dir }}"
+
+    - name: Update image tag in docker-compose override
+      lineinfile:
+        path: "{{ deploy_dir }}/.env"
+        regexp: '^DOCKER_IMAGE='
+        line: "DOCKER_IMAGE={{ docker_image | replace(':latest', ':' + version) }}"
+
+    - name: Pull the target version
+      command: docker compose pull dialer
+      args:
+        chdir: "{{ deploy_dir }}"
+
+    - name: Restart with target version
+      command: docker compose up -d dialer
+      args:
+        chdir: "{{ deploy_dir }}"
+
+    - name: Wait for container to be healthy
+      command: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' tts-dialer
+      register: health
+      until: health.stdout == 'healthy'
+      retries: 12
+      delay: 10
+      ignore_errors: true
+
+    - name: Report rollback result
+      debug:
+        msg: >
+          {{ client_name }} rolled back to {{ version }}: {{ 'SUCCESS ✅' if health.stdout == 'healthy' else 'FAILED ❌' }}

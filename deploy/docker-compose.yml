@@ -1,0 +1,90 @@
+# ============================================================
+# TTS Broadcast Dialer — Docker Compose
+# ============================================================
+# Usage:
+#   1. Copy .env.example to .env and fill in your values
+#   2. docker compose up -d
+#   3. Access the dialer at http://your-server-ip:3000
+# ============================================================
+
+services:
+  # --- TTS Dialer Web App ---
+  dialer:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: tts-dialer
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=mysql://${MYSQL_USER:-dialer}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-tts_dialer}
+      - TZ=${TZ:-America/New_York}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dialer-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- MySQL Database ---
+  db:
+    image: mysql:8.0
+    container_name: tts-dialer-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tts_dialer}
+      MYSQL_USER: ${MYSQL_USER:-dialer}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - dialer-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- Watchtower (Auto-Update) ---
+  # Automatically pulls new Docker images and restarts containers
+  # Remove this service if you prefer manual updates via Ansible
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_LABEL_ENABLE=false
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dialer-net
+
+volumes:
+  mysql-data:
+    driver: local
+
+networks:
+  dialer-net:
+    driver: bridge

@@ -1,0 +1,52 @@
+# ============================================================
+# Ansible Playbook — Update TTS Dialer on Client Servers
+# ============================================================
+# Updates all client servers to the latest Docker image.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml playbook-update.yml
+#   ansible-playbook -i inventory.yml playbook-update.yml --limit abc_marketing
+#   ansible-playbook -i inventory.yml playbook-update.yml -e "target_version=v1.3.0"
+# ============================================================
+
+- name: Update TTS Dialer on client servers
+  hosts: dialer_clients
+  gather_facts: false
+  serial: 3  # Update 3 servers at a time (staged rollout)
+
+  vars:
+    target_version: "{{ version_pin | default('latest') }}"
+
+  tasks:
+    - name: Display update target
+      debug:
+        msg: "Updating {{ client_name }} ({{ ansible_host }}) to {{ target_version }}"
+
+    - name: Pull latest Docker image
+      command: docker compose pull dialer
+      args:
+        chdir: "{{ deploy_dir }}"
+      register: pull_result
+
+    - name: Restart dialer with new image
+      command: docker compose up -d dialer
+      args:
+        chdir: "{{ deploy_dir }}"
+
+    - name: Wait for container to be healthy
+      command: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' tts-dialer
+      register: health
+      until: health.stdout == 'healthy'
+      retries: 12
+      delay: 10
+      ignore_errors: true
+
+    - name: Report health status
+      debug:
+        msg: >
+          {{ client_name }}: {{ 'HEALTHY ✅' if health.stdout == 'healthy' else 'UNHEALTHY ❌ — check logs with: ssh {{ ansible_host }} "cd {{ deploy_dir }} && ./logs.sh"' }}
+
+    - name: Clean up old Docker images
+      command: docker image prune -f
+      args:
+        chdir: "{{ deploy_dir }}"

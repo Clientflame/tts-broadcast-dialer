@@ -279,3 +279,10 @@
 - [x] UI: callback number input field in Personalized TTS section (static number or DID rotation)
 - [x] Backend: resolve callback_number merge field in personalized TTS generation
 - [x] Add {{callback_number}} to MERGE_FIELDS list in campaign form UI
+- [x] Create Dockerfile for the TTS Dialer app
+- [x] Create docker-compose.yml with app + MySQL + optional FreePBX
+- [x] Create client setup script (works on Hostinger VPS and Vultr)
+- [x] Create GitHub Actions workflow for auto-building Docker images on release tags
+- [x] Create Ansible playbook for multi-client deploy/update/rollback
+- [x] Create Ansible inventory template for managing client servers
+- [x] Write deployment documentation (README) for the deployment package

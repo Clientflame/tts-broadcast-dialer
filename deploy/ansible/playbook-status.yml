@@ -1,0 +1,53 @@
+# ============================================================
+# Ansible Playbook — Check Status of All Client Servers
+# ============================================================
+# Usage:
+#   ansible-playbook -i inventory.yml playbook-status.yml
+# ============================================================
+
+- name: Check TTS Dialer status on all client servers
+  hosts: dialer_clients
+  gather_facts: true
+
+  tasks:
+    - name: Get container status
+      command: docker compose ps --format json
+      args:
+        chdir: "{{ deploy_dir }}"
+      register: containers
+      ignore_errors: true
+
+    - name: Get dialer health
+      command: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' tts-dialer
+      register: health
+      ignore_errors: true
+
+    - name: Get current image version
+      command: docker inspect --format='{{ '{{' }}.Config.Image{{ '}}' }}' tts-dialer
+      register: image_version
+      ignore_errors: true
+
+    - name: Get disk usage
+      command: df -h / --output=pcent
+      register: disk
+
+    - name: Get memory usage
+      command: free -m
+      register: memory
+
+    - name: Get container resource usage
+      command: docker stats --no-stream --format "table {{ '{{' }}.Name{{ '}}' }}\t{{ '{{' }}.CPUPerc{{ '}}' }}\t{{ '{{' }}.MemUsage{{ '}}' }}"
+      register: stats
+      ignore_errors: true
+
+    - name: Display status summary
+      debug:
+        msg: |
+          ============================================
+          Client:    {{ client_name }}
+          Server:    {{ ansible_host }}
+          Health:    {{ health.stdout | default('unknown') }}
+          Image:     {{ image_version.stdout | default('unknown') }}
+          Disk:      {{ disk.stdout_lines[-1] | trim }}
+          ============================================
+          {{ stats.stdout | default('No stats available') }}
