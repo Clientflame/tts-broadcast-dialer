@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Build frontend (Vite) + backend (esbuild)
+# Build frontend (Vite → dist/public) + backend (esbuild → dist/index.js)
 RUN pnpm build
 
 # --- Stage 2: Production Runtime ---
@@ -43,8 +43,9 @@ COPY patches/ ./patches/
 RUN pnpm install --frozen-lockfile --prod
 
 # Copy built artifacts from builder
+# - dist/index.js = compiled server (esbuild)
+# - dist/public/  = compiled frontend (Vite)
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/dist/client ./dist/client
 
 # Copy drizzle migrations (needed for db:push on startup)
 COPY drizzle/ ./drizzle/

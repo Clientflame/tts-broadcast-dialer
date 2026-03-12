@@ -316,3 +316,4 @@
 - [x] Create first release tag v1.0.0 on GitHub
 - [x] Create GitHub release with full changelog and Docker pull command
 - [ ] Verify Docker image builds successfully on GitHub Actions (requires Actions permissions enabled on repo)
+- [x] Fix Docker build failure: /app/dist/client not found (Dockerfile referenced dist/client but Vite outputs to dist/public)
