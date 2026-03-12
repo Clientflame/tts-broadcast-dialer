@@ -318,3 +318,9 @@
 - [ ] Verify Docker image builds successfully on GitHub Actions (requires Actions permissions enabled on repo)
 - [x] Fix Docker build failure: /app/dist/client not found (Dockerfile referenced dist/client but Vite outputs to dist/public)
 - [x] Make setup-client.sh interactive: prompt for FreePBX, branding, and TTS API keys instead of manual .env editing
+- [x] Add FreePBX quick-setup guide to deployment docs (install, AMI user, SIP trunk, firewall)
+- [x] Add note in setup wizard for clients who don't have FreePBX yet
+- [x] Add server spec recommendations (all-in-one vs separate) to deployment guide
+- [x] Add SIP trunk and outbound route setup instructions
+- [x] Add reverse proxy (Caddy) instructions for SSL on all-in-one setups
+- [x] Add AMI connection testing instructions (telnet)
