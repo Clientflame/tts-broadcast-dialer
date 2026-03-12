@@ -343,3 +343,4 @@
 - [x] Fix setup-client.sh: port 80/443 Apache conflict detection regex fixed
 - [x] Fix setup-client.sh: added python3 fallback for port detection
 - [x] Fix setup-client.sh: get_port_process returns 'unknown process' instead of empty string
+- [x] Fix standalone Docker deployment: Invalid URL crash when VITE_OAUTH_PORTAL_URL is empty (getLoginUrl returns /login when OAuth not configured)
