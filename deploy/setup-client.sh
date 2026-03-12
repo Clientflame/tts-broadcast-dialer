@@ -58,22 +58,22 @@ prompt() {
   eval "$var_name='$value'"
 }
 
-prompt_choice() {
-  local var_name=$1
-  local prompt_text=$2
-  shift 2
-  local options=("$@")
+check_port() {
+  local port=$1
+  if command -v ss &> /dev/null; then
+    ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+  elif command -v netstat &> /dev/null; then
+    netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+  fi
+  return 1
+}
 
-  echo -e "  ${prompt_text}"
-  for i in "${!options[@]}"; do
-    echo -e "    ${BOLD}$((i+1))${NC}) ${options[$i]}"
-  done
-  read -p "  Choose (1-${#options[@]}): " choice
-
-  if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#options[@]}" ]; then
-    eval "$var_name='$((choice-1))'"
-  else
-    eval "$var_name='0'"
+get_port_process() {
+  local port=$1
+  if command -v ss &> /dev/null; then
+    ss -tlnp 2>/dev/null | grep ":${port} " | head -1 | sed 's/.*users:(("//' | sed 's/".*//'
+  elif command -v netstat &> /dev/null; then
+    netstat -tlnp 2>/dev/null | grep ":${port} " | awk '{print $NF}' | head -1
   fi
 }
 
@@ -111,6 +111,27 @@ else
   exit 1
 fi
 echo -e "  ${GREEN}✓${NC} Detected: ${BOLD}$PRETTY_NAME${NC}"
+
+# --- Pre-flight: detect port conflicts ---
+MYSQL_HOST_PORT="3306"
+PORT_80_CONFLICT=""
+PORT_443_CONFLICT=""
+
+if check_port 3306; then
+  PORT_3306_PROC=$(get_port_process 3306)
+  echo -e "  ${YELLOW}⚠${NC} Port 3306 in use by ${BOLD}${PORT_3306_PROC:-unknown}${NC} — Docker MySQL will use ${BOLD}3307${NC} instead"
+  MYSQL_HOST_PORT="3307"
+fi
+
+if check_port 80; then
+  PORT_80_CONFLICT=$(get_port_process 80)
+  echo -e "  ${YELLOW}⚠${NC} Port 80 in use by ${BOLD}${PORT_80_CONFLICT:-unknown}${NC}"
+fi
+
+if check_port 443; then
+  PORT_443_CONFLICT=$(get_port_process 443)
+  echo -e "  ${YELLOW}⚠${NC} Port 443 in use by ${BOLD}${PORT_443_CONFLICT:-unknown}${NC}"
+fi
 
 # ============================================================
 # Step 1: Branding
@@ -186,10 +207,10 @@ print_header "3/6  TTS Voice Provider"
 echo -e "  ${DIM}You need at least one API key for text-to-speech.${NC}"
 echo -e "  ${DIM}You can add both — the app lets you choose per campaign.${NC}"
 echo ""
-echo -e "  ${BOLD}OpenAI${NC} — Higher quality voices, ~$15/1M characters"
+echo -e "  ${BOLD}OpenAI${NC} — Higher quality voices, ~\$15/1M characters"
 echo -e "    Get a key: ${CYAN}https://platform.openai.com/api-keys${NC}"
 echo ""
-echo -e "  ${BOLD}Google TTS${NC} — More voice options, ~$4/1M characters"
+echo -e "  ${BOLD}Google TTS${NC} — More voice options, ~\$4/1M characters"
 echo -e "    Get a key: ${CYAN}https://console.cloud.google.com/apis/credentials${NC}"
 echo ""
 
@@ -204,7 +225,7 @@ else
 fi
 
 # ============================================================
-# Step 4: Advanced Settings (with sensible defaults)
+# Step 4: Server Settings
 # ============================================================
 print_header "4/6  Server Settings"
 
@@ -242,41 +263,102 @@ JWT_SECRET=$(openssl rand -hex 32)
 # ============================================================
 print_header "5/6  Domain & SSL (Optional)"
 
-echo -e "  ${DIM}If you have a domain name pointed at this server, enter it below${NC}"
-echo -e "  ${DIM}to enable automatic HTTPS with Let's Encrypt (free SSL).${NC}"
-echo ""
-echo -e "  ${DIM}Before entering a domain, make sure:${NC}"
-echo -e "    ${DIM}1. You own the domain (e.g., dialer.yourcompany.com)${NC}"
-echo -e "    ${DIM}2. The DNS A record points to this server's IP: ${BOLD}$(hostname -I | awk '{print $1}')${NC}"
-echo -e "    ${DIM}3. Ports 80 and 443 are open on this server${NC}"
-echo ""
-echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP:${APP_PORT} instead.${NC}"
-echo ""
-
-prompt APP_DOMAIN "Domain name (e.g., dialer.yourcompany.com)" "" ""
-
 ENABLE_SSL="false"
-if [ -n "$APP_DOMAIN" ]; then
-  ENABLE_SSL="true"
-  echo -e "  ${GREEN}✓${NC} SSL enabled for ${BOLD}${APP_DOMAIN}${NC} (auto Let's Encrypt)"
+
+# Check for port conflicts before offering SSL
+if [ -n "$PORT_80_CONFLICT" ] || [ -n "$PORT_443_CONFLICT" ]; then
+  echo -e "  ${YELLOW}⚠ Port conflict detected:${NC}"
+  [ -n "$PORT_80_CONFLICT" ] && echo -e "    Port 80 is used by ${BOLD}${PORT_80_CONFLICT}${NC}"
+  [ -n "$PORT_443_CONFLICT" ] && echo -e "    Port 443 is used by ${BOLD}${PORT_443_CONFLICT}${NC}"
+  echo ""
+  echo -e "  ${DIM}This is common on FreePBX servers (Apache uses ports 80/443).${NC}"
+  echo -e "  ${DIM}SSL via Caddy requires ports 80 and 443 to be free.${NC}"
+  echo ""
+  echo -e "  Options:"
+  echo -e "    ${BOLD}1${NC}) Skip SSL — access via http://IP:${APP_PORT} (recommended for now)"
+  echo -e "    ${BOLD}2${NC}) Free ports 80/443 — move Apache to port 8080, then enable SSL"
+  echo ""
+  read -p "  Choose (1-2, default: 1): " SSL_CONFLICT_CHOICE
+  SSL_CONFLICT_CHOICE=${SSL_CONFLICT_CHOICE:-1}
+
+  if [ "$SSL_CONFLICT_CHOICE" = "2" ]; then
+    echo ""
+    echo -e "  ${CYAN}▸ Reconfiguring Apache to port 8080...${NC}"
+    if [ -f /etc/apache2/ports.conf ]; then
+      sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf
+      sed -i 's/Listen 443/Listen 8443/' /etc/apache2/ports.conf 2>/dev/null
+      find /etc/apache2/sites-enabled/ -name "*.conf" -exec sed -i 's/:80/:8080/g' {} \; 2>/dev/null
+      find /etc/apache2/sites-enabled/ -name "*.conf" -exec sed -i 's/:443/:8443/g' {} \; 2>/dev/null
+      systemctl restart apache2 2>/dev/null
+      echo -e "  ${GREEN}✓${NC} Apache moved to port 8080 (FreePBX admin: http://IP:8080)"
+      PORT_80_CONFLICT=""
+      PORT_443_CONFLICT=""
+    elif [ -f /etc/httpd/conf/httpd.conf ]; then
+      sed -i 's/Listen 80/Listen 8080/' /etc/httpd/conf/httpd.conf
+      systemctl restart httpd 2>/dev/null
+      echo -e "  ${GREEN}✓${NC} Apache moved to port 8080"
+      PORT_80_CONFLICT=""
+      PORT_443_CONFLICT=""
+    else
+      echo -e "  ${RED}✗ Could not find Apache config. Please move it manually.${NC}"
+    fi
+  fi
+fi
+
+# Only offer domain setup if ports are free
+if [ -z "$PORT_80_CONFLICT" ] && [ -z "$PORT_443_CONFLICT" ]; then
+  echo -e "  ${DIM}If you have a domain name pointed at this server, enter it below${NC}"
+  echo -e "  ${DIM}to enable automatic HTTPS with Let's Encrypt (free SSL).${NC}"
+  echo ""
+  echo -e "  ${DIM}Before entering a domain, make sure:${NC}"
+  echo -e "    ${DIM}1. You own the domain (e.g., dialer.yourcompany.com)${NC}"
+  echo -e "    ${DIM}2. The DNS A record points to this server's IP: ${BOLD}$(hostname -I | awk '{print $1}')${NC}"
+  echo -e "    ${DIM}3. Ports 80 and 443 are available (they are!)${NC}"
+  echo ""
+  echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP:${APP_PORT} instead.${NC}"
+  echo ""
+
+  prompt APP_DOMAIN "Domain name (e.g., dialer.yourcompany.com)" "" ""
+
+  if [ -n "$APP_DOMAIN" ]; then
+    ENABLE_SSL="true"
+    echo -e "  ${GREEN}✓${NC} SSL enabled for ${BOLD}${APP_DOMAIN}${NC} (auto Let's Encrypt)"
+  else
+    echo -e "  ${DIM}No domain — SSL skipped. You can add one later.${NC}"
+  fi
 else
-  echo -e "  ${DIM}No domain — SSL skipped. You can add one later in .env${NC}"
+  APP_DOMAIN=""
+  echo -e "  ${DIM}SSL skipped due to port conflict. You can set it up later.${NC}"
+  echo -e "  ${DIM}See: https://github.com/Clientflame/tts-broadcast-dialer/blob/main/deploy/DEPLOYMENT-GUIDE.md#ssl${NC}"
 fi
 
 # ============================================================
-# Step 6: Docker Image (GHCR login)
+# Step 6: Docker Image
 # ============================================================
 print_header "6/6  Docker Image"
 
 prompt DOCKER_IMAGE "Docker image" "$DEFAULT_IMAGE" ""
 
 echo ""
-if ! docker info &> /dev/null 2>&1; then
+echo -e "  ${DIM}Checking image accessibility...${NC}"
+
+# Install Docker first if needed (we need it to test pull)
+DOCKER_JUST_INSTALLED="false"
+if ! command -v docker &> /dev/null; then
   echo -e "  ${DIM}Docker not found — will install it next.${NC}"
-elif docker pull "$DOCKER_IMAGE" &> /dev/null 2>&1; then
-  echo -e "  ${GREEN}✓${NC} Image accessible (already logged in to GHCR)"
+  NEED_GHCR_LOGIN="unknown"
 else
-  echo -e "  ${YELLOW}The image is in a private registry. You need to log in to GHCR.${NC}"
+  # Try pulling without auth first
+  if docker pull "$DOCKER_IMAGE" > /dev/null 2>&1; then
+    echo -e "  ${GREEN}✓${NC} Image accessible (public or already authenticated)"
+    NEED_GHCR_LOGIN="no"
+  else
+    NEED_GHCR_LOGIN="yes"
+  fi
+fi
+
+if [ "$NEED_GHCR_LOGIN" = "yes" ]; then
+  echo -e "  ${YELLOW}The image requires authentication. Log in to GHCR:${NC}"
   echo ""
   echo -e "  ${DIM}To create a token: GitHub → Settings → Developer settings → Personal access tokens${NC}"
   echo -e "  ${DIM}Required scope: ${BOLD}read:packages${NC}"
@@ -294,6 +376,8 @@ else
   else
     echo -e "  ${YELLOW}⚠ Skipped GHCR login. Run 'docker login ghcr.io' before starting.${NC}"
   fi
+elif [ "$NEED_GHCR_LOGIN" = "unknown" ]; then
+  echo -e "  ${DIM}Will attempt to pull after Docker is installed.${NC}"
 fi
 
 # ============================================================
@@ -325,6 +409,7 @@ echo -e "  ${BOLD}Server${NC}"
 echo -e "    Port:       ${APP_PORT}"
 echo -e "    Timezone:   ${APP_TZ}"
 echo -e "    Image:      ${DOCKER_IMAGE}"
+echo -e "    MySQL Port: ${MYSQL_HOST_PORT} (host-side)"
 if [ -n "$APP_DOMAIN" ]; then
   echo -e "    Domain:     ${APP_DOMAIN}"
   echo -e "    SSL:        ${GREEN}✓ Let's Encrypt (automatic)${NC}"
@@ -371,7 +456,31 @@ else
       exit 1
       ;;
   esac
+  DOCKER_JUST_INSTALLED="true"
   echo -e "  ${GREEN}✓${NC} Docker installed"
+fi
+
+# Ensure Docker config directory exists properly
+mkdir -p /root/.docker
+if [ -d "/root/.docker/config.json" ]; then
+  rm -rf /root/.docker/config.json
+fi
+if [ ! -f "/root/.docker/config.json" ]; then
+  echo '{}' > /root/.docker/config.json
+fi
+
+# If Docker was just installed and we need GHCR login, try pulling now
+if [ "$DOCKER_JUST_INSTALLED" = "true" ] && [ "$NEED_GHCR_LOGIN" = "unknown" ]; then
+  if ! docker pull "$DOCKER_IMAGE" > /dev/null 2>&1; then
+    echo -e "  ${YELLOW}Image requires authentication. Log in to GHCR:${NC}"
+    prompt GHCR_USER "GitHub username" "" ""
+    prompt GHCR_TOKEN "GitHub Personal Access Token (with read:packages)" "" "secret"
+    if [ -n "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; then
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>/dev/null
+    fi
+  else
+    echo -e "  ${GREEN}✓${NC} Image accessible"
+  fi
 fi
 
 # ============================================================
@@ -414,25 +523,23 @@ print_step "Creating deployment files..."
 mkdir -p $DEPLOY_DIR
 cd $DEPLOY_DIR
 
-# Write docker-compose.yml
-if [ "$ENABLE_SSL" = "true" ]; then
-  cat > docker-compose.yml << 'COMPOSE_EOF'
+# --- Write docker-compose.yml ---
+# Build it dynamically based on options
+cat > docker-compose.yml << COMPOSE_EOF
 services:
   dialer:
-    image: ${DOCKER_IMAGE:-ghcr.io/clientflame/tts-broadcast-dialer:latest}
+    image: \${DOCKER_IMAGE:-ghcr.io/clientflame/tts-broadcast-dialer:latest}
     container_name: tts-dialer
     restart: unless-stopped
-    expose:
-      - "3000"
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "\${APP_PORT:-3000}:3000"
     env_file:
       - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=mysql://${MYSQL_USER:-dialer}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-tts_dialer}
-      - TZ=${TZ:-America/New_York}
+      - DATABASE_URL=mysql://\${MYSQL_USER:-dialer}:\${MYSQL_PASSWORD}@db:3306/\${MYSQL_DATABASE:-tts_dialer}
+      - TZ=\${TZ:-America/New_York}
     depends_on:
       db:
         condition: service_healthy
@@ -449,16 +556,16 @@ services:
     container_name: tts-dialer-db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-tts_dialer}
-      MYSQL_USER: ${MYSQL_USER:-dialer}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: \${MYSQL_DATABASE:-tts_dialer}
+      MYSQL_USER: \${MYSQL_USER:-dialer}
+      MYSQL_PASSWORD: \${MYSQL_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:${MYSQL_HOST_PORT}:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p\${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -470,6 +577,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+COMPOSE_EOF
+
+# Add Caddy if SSL enabled
+if [ "$ENABLE_SSL" = "true" ]; then
+  cat >> docker-compose.yml << 'COMPOSE_CADDY'
 
   caddy:
     image: caddy:2-alpine
@@ -492,9 +604,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+COMPOSE_CADDY
+fi
+
+# Add Watchtower (pinned version, no config.json mount)
+cat >> docker-compose.yml << 'COMPOSE_WT'
 
   watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
     environment:
@@ -503,7 +620,11 @@ services:
       - TZ=${TZ:-America/New_York}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /root/.docker/config.json:/config.json:ro
+COMPOSE_WT
+
+# Add volumes section
+if [ "$ENABLE_SSL" = "true" ]; then
+  cat >> docker-compose.yml << 'COMPOSE_VOLS'
 
 volumes:
   mysql-data:
@@ -512,79 +633,16 @@ volumes:
 
 networks:
   dialer-net:
-COMPOSE_EOF
+COMPOSE_VOLS
 else
-  cat > docker-compose.yml << 'COMPOSE_EOF'
-services:
-  dialer:
-    image: ${DOCKER_IMAGE:-ghcr.io/clientflame/tts-broadcast-dialer:latest}
-    container_name: tts-dialer
-    restart: unless-stopped
-    ports:
-      - "${APP_PORT:-3000}:3000"
-    env_file:
-      - .env
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - DATABASE_URL=mysql://${MYSQL_USER:-dialer}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-tts_dialer}
-      - TZ=${TZ:-America/New_York}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - dialer-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  db:
-    image: mysql:8.0
-    container_name: tts-dialer-db
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-tts_dialer}
-      MYSQL_USER: ${MYSQL_USER:-dialer}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - mysql-data:/var/lib/mysql
-    ports:
-      - "127.0.0.1:3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - dialer-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
-    restart: unless-stopped
-    environment:
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_POLL_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
-      - TZ=${TZ:-America/New_York}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /root/.docker/config.json:/config.json:ro
+  cat >> docker-compose.yml << 'COMPOSE_VOLS_NOSSL'
 
 volumes:
   mysql-data:
 
 networks:
   dialer-net:
-COMPOSE_EOF
+COMPOSE_VOLS_NOSSL
 fi
 
 # Write Caddyfile if SSL is enabled
@@ -609,10 +667,10 @@ ${APP_DOMAIN} {
 	}
 }
 CADDY_EOF
-  echo -e "  ${GREEN}\u2713${NC} Caddyfile created for ${APP_DOMAIN}"
+  echo -e "  ${GREEN}✓${NC} Caddyfile created for ${APP_DOMAIN}"
 fi
 
-# Write .env file with all collected values
+# Write .env file
 cat > .env << ENV_EOF
 # ============================================================
 # ${CLIENT_NAME} — TTS Broadcast Dialer
@@ -634,8 +692,6 @@ DOCKER_IMAGE=${DOCKER_IMAGE}
 TZ=${APP_TZ}
 
 # --- Domain & SSL ---
-# Set a domain to enable HTTPS via Caddy + Let's Encrypt
-# Leave empty to use http://IP:PORT access
 DOMAIN=${APP_DOMAIN}
 
 # --- Database (auto-generated, do not change) ---
@@ -763,14 +819,58 @@ echo -e "  ${GREEN}✓${NC} Management scripts created"
 print_step "Pulling Docker images and starting services..."
 
 docker compose pull 2>&1 | tail -5
-docker compose up -d
+docker compose up -d 2>&1
 
 echo ""
 echo -e "  ${GREEN}✓${NC} Services starting..."
 echo ""
 
-# Wait for containers
-sleep 10
+# Wait for containers to stabilize
+echo -e "  ${DIM}Waiting for services to start...${NC}"
+sleep 15
+
+# ============================================================
+# Health Check
+# ============================================================
+print_step "Checking service health..."
+
+ALL_HEALTHY=true
+
+# Check DB
+if docker compose ps db 2>/dev/null | grep -q "healthy"; then
+  echo -e "  ${GREEN}✓${NC} Database: healthy"
+else
+  echo -e "  ${YELLOW}⚠${NC} Database: starting (may take up to 30s)"
+  ALL_HEALTHY=false
+fi
+
+# Check Dialer
+if docker compose ps dialer 2>/dev/null | grep -q "Up"; then
+  echo -e "  ${GREEN}✓${NC} Dialer: running"
+else
+  echo -e "  ${RED}✗${NC} Dialer: not running"
+  echo -e "    ${DIM}Check logs: docker compose logs dialer${NC}"
+  ALL_HEALTHY=false
+fi
+
+# Check Caddy
+if [ "$ENABLE_SSL" = "true" ]; then
+  if docker compose ps caddy 2>/dev/null | grep -q "Up"; then
+    echo -e "  ${GREEN}✓${NC} Caddy (SSL): running"
+  else
+    echo -e "  ${RED}✗${NC} Caddy (SSL): not running"
+    echo -e "    ${DIM}Check logs: docker compose logs caddy${NC}"
+    ALL_HEALTHY=false
+  fi
+fi
+
+# Check Watchtower
+if docker compose ps watchtower 2>/dev/null | grep -q "Up"; then
+  echo -e "  ${GREEN}✓${NC} Watchtower: running"
+else
+  echo -e "  ${YELLOW}⚠${NC} Watchtower: not running (auto-updates disabled)"
+  echo -e "    ${DIM}Not critical — you can update manually with ./update.sh${NC}"
+fi
 
 # ============================================================
 # Final Summary
@@ -782,10 +882,10 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo -e "  ${BOLD}Open your dialer:${NC}"
 if [ -n "$APP_DOMAIN" ]; then
-  echo -e "  ${CYAN}\u279c  https://${APP_DOMAIN}${NC}"
+  echo -e "  ${CYAN}➜  https://${APP_DOMAIN}${NC}"
   echo -e "  ${DIM}Also available at: http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
 else
-  echo -e "  ${CYAN}\u279c  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
+  echo -e "  ${CYAN}➜  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
 fi
 echo ""
 echo -e "  ${BOLD}First time?${NC} Create your admin account on the setup page,"
@@ -803,6 +903,7 @@ echo ""
 echo -e "  ${BOLD}Database credentials${NC} ${DIM}(save these!)${NC}:"
 echo -e "    Root Password:   ${DB_ROOT_PASSWORD}"
 echo -e "    App Password:    ${DB_PASSWORD}"
+echo -e "    MySQL Host Port: ${MYSQL_HOST_PORT}"
 echo ""
 
 # Set up daily backup cron

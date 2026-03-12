@@ -332,3 +332,10 @@
 - [x] Add SSL troubleshooting rows and DOMAIN env var to docs
 - [x] Firewall auto-opens ports 80/443 when SSL is enabled
 - [x] Fix Docker production crash: 'vite' and 'drizzle-kit' not found in container (dynamic import for vite, add drizzle-kit to Dockerfile)
+- [x] Fix setup-client.sh: auto-detect MySQL port 3306 conflict and use 3307
+- [x] Fix setup-client.sh: auto-detect Apache on port 80 and handle Caddy conflict (offer to move Apache to 8080)
+- [x] Fix setup-client.sh: pin Watchtower to v1.7.1 and remove config.json mount
+- [x] Fix setup-client.sh: skip GHCR login for public repos (auto-detect)
+- [x] Fix setup-client.sh: comprehensive clean install on FreePBX server
+- [x] Add health check step after docker compose up
+- [x] Add MYSQL_HOST_PORT variable to standalone docker-compose.yml

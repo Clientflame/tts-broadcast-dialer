@@ -11,6 +11,10 @@
 #   Set DOMAIN=your-domain.com in .env to enable automatic
 #   Let's Encrypt SSL via Caddy reverse proxy.
 #   Leave DOMAIN empty to skip SSL and use direct port access.
+#
+# Port Conflicts:
+#   If port 3306 is already in use (e.g., FreePBX MySQL),
+#   change the host port below: "127.0.0.1:3307:3306"
 # ============================================================
 
 services:
@@ -54,7 +58,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:${MYSQL_HOST_PORT:-3306}:3306"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
@@ -95,9 +99,10 @@ services:
 
   # --- Watchtower (Auto-Update) ---
   # Automatically pulls new Docker images and restarts containers
-  # Remove this service if you prefer manual updates via Ansible
+  # Pinned to v1.7.1 for Docker API compatibility
+  # Remove this service if you prefer manual updates via ./update.sh
   watchtower:
-    image: containrrr/watchtower
+    image: containrrr/watchtower:1.7.1
     container_name: watchtower
     restart: unless-stopped
     environment:
