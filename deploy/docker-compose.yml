@@ -4,7 +4,13 @@
 # Usage:
 #   1. Copy .env.example to .env and fill in your values
 #   2. docker compose up -d
-#   3. Access the dialer at http://your-server-ip:3000
+#   3. Access the dialer at https://your-domain.com (with SSL)
+#      or http://your-server-ip:3000 (without SSL)
+#
+# SSL/HTTPS:
+#   Set DOMAIN=your-domain.com in .env to enable automatic
+#   Let's Encrypt SSL via Caddy reverse proxy.
+#   Leave DOMAIN empty to skip SSL and use direct port access.
 # ============================================================
 
 services:
@@ -63,6 +69,30 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # --- Caddy Reverse Proxy (SSL) ---
+  # Only active when DOMAIN is set in .env
+  # Automatically provisions Let's Encrypt certificates
+  caddy:
+    image: caddy:2-alpine
+    container_name: tts-dialer-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      - DOMAIN=${DOMAIN:-}
+    depends_on:
+      - dialer
+    networks:
+      - dialer-net
+    profiles:
+      - ssl
+
   # --- Watchtower (Auto-Update) ---
   # Automatically pulls new Docker images and restarts containers
   # Remove this service if you prefer manual updates via Ansible
@@ -78,11 +108,13 @@ services:
       - TZ=${TZ:-America/New_York}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - dialer-net
 
 volumes:
   mysql-data:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
     driver: local
 
 networks:

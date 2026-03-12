@@ -324,3 +324,10 @@
 - [x] Add SIP trunk and outbound route setup instructions
 - [x] Add reverse proxy (Caddy) instructions for SSL on all-in-one setups
 - [x] Add AMI connection testing instructions (telnet)
+- [x] Add SSL/HTTPS support via Caddy reverse proxy in Docker deployment
+- [x] Add domain name prompt to setup-client.sh (Step 5/6)
+- [x] Add Caddy service to docker-compose.yml with auto Let's Encrypt
+- [x] Update DEPLOYMENT-GUIDE.md with SSL/domain setup instructions
+- [x] Add Caddyfile template with security headers
+- [x] Add SSL troubleshooting rows and DOMAIN env var to docs
+- [x] Firewall auto-opens ports 80/443 when SSL is enabled

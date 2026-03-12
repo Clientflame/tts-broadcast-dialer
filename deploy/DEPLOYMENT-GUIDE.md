@@ -12,15 +12,16 @@ This guide covers everything you need to go from a blank server to a fully worki
 4. [Option B: Separate Servers](#option-b-separate-servers)
 5. [FreePBX Setup for the Dialer](#freepbx-setup-for-the-dialer)
 6. [Deploy the TTS Dialer](#deploy-the-tts-dialer)
-7. [SIP Trunk and Outbound Routes](#sip-trunk-and-outbound-routes)
-8. [Managing Client Servers](#managing-client-servers)
-9. [Release Workflow](#release-workflow)
-10. [Staged Rollout Strategy](#staged-rollout-strategy)
-11. [Database Migrations](#database-migrations)
-12. [Backups](#backups)
-13. [Monitoring](#monitoring)
-14. [Troubleshooting](#troubleshooting)
-15. [Environment Variables Reference](#environment-variables-reference)
+7. [SSL/HTTPS with Custom Domain](#sslhttps-with-custom-domain)
+8. [SIP Trunk and Outbound Routes](#sip-trunk-and-outbound-routes)
+9. [Managing Client Servers](#managing-client-servers)
+10. [Release Workflow](#release-workflow)
+11. [Staged Rollout Strategy](#staged-rollout-strategy)
+12. [Database Migrations](#database-migrations)
+13. [Backups](#backups)
+14. [Monitoring](#monitoring)
+15. [Troubleshooting](#troubleshooting)
+16. [Environment Variables Reference](#environment-variables-reference)
 
 ---
 
@@ -354,6 +355,157 @@ Open `http://YOUR_SERVER_IP:3000` in a browser. Create your admin account on the
 
 ---
 
+## SSL/HTTPS with Custom Domain
+
+The setup wizard includes a built-in option to enable HTTPS using Caddy as a reverse proxy with automatic Let's Encrypt certificate provisioning. This section covers how it works and how to set it up manually if needed.
+
+### How It Works
+
+When you enter a domain name during the setup wizard (Step 5), the script automatically:
+
+1. Adds a **Caddy** container to the Docker Compose stack
+2. Generates a **Caddyfile** configured for your domain
+3. Opens ports **80** and **443** in the firewall
+4. Caddy automatically obtains and renews Let's Encrypt SSL certificates
+
+The result is that your dialer is accessible at `https://your-domain.com` with a valid SSL certificate, while also remaining accessible at `http://IP:3000` for direct access.
+
+### Prerequisites
+
+Before enabling SSL, make sure:
+
+| Requirement | Details |
+|---|---|
+| Domain name | You own a domain or subdomain (e.g., `dialer.yourcompany.com`) |
+| DNS A record | The domain's A record points to your server's public IP |
+| Ports 80 and 443 | Both ports are open and not in use by another service |
+| No other web server | Apache/Nginx must not be bound to ports 80/443 (or be reconfigured) |
+
+### Option 1: During Setup (Recommended)
+
+When running `setup-client.sh`, Step 5 prompts for a domain:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  5/6  Domain & SSL (Optional)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  If you have a domain name pointed at this server, enter it below
+  to enable automatic HTTPS with Let's Encrypt (free SSL).
+
+  Domain name (e.g., dialer.yourcompany.com): dialer.acme.com
+
+  ✓ SSL enabled for dialer.acme.com (auto Let's Encrypt)
+```
+
+That's it. The script handles everything else. After setup completes, your dialer is live at `https://dialer.acme.com`.
+
+### Option 2: Add SSL After Initial Setup
+
+If you skipped the domain during setup and want to add SSL later:
+
+```bash
+cd /opt/tts-dialer
+
+# 1. Add the domain to .env
+echo 'DOMAIN=dialer.yourcompany.com' >> .env
+
+# 2. Create the Caddyfile
+cat > Caddyfile << 'EOF'
+dialer.yourcompany.com {
+    reverse_proxy dialer:3000
+
+    encode gzip zstd
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+
+    log {
+        output stdout
+        format console
+    }
+}
+EOF
+
+# 3. Add the Caddy service to docker-compose.yml
+# Add this under the 'services:' section:
+#
+#   caddy:
+#     image: caddy:2-alpine
+#     container_name: tts-dialer-caddy
+#     restart: unless-stopped
+#     ports:
+#       - "80:80"
+#       - "443:443"
+#       - "443:443/udp"
+#     volumes:
+#       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+#       - caddy-data:/data
+#       - caddy-config:/config
+#     depends_on:
+#       - dialer
+#     networks:
+#       - dialer-net
+#
+# And add to 'volumes:':
+#   caddy-data:
+#   caddy-config:
+
+# 4. Open firewall ports
+ufw allow 80/tcp
+ufw allow 443/tcp
+
+# 5. Restart the stack
+docker compose up -d
+```
+
+Caddy will automatically obtain the SSL certificate on first startup (takes about 10-30 seconds).
+
+### Verifying SSL
+
+After starting the stack with SSL enabled:
+
+```bash
+# Check Caddy is running
+docker compose ps caddy
+
+# Check Caddy logs for certificate provisioning
+docker compose logs caddy
+
+# Test HTTPS
+curl -I https://dialer.yourcompany.com
+```
+
+You should see `HTTP/2 200` with `Strict-Transport-Security` in the response headers.
+
+### Certificate Renewal
+
+Caddy automatically renews certificates before they expire (Let's Encrypt certificates are valid for 90 days, and Caddy renews them at 30 days remaining). No cron jobs or manual intervention needed.
+
+### Removing SSL
+
+To disable SSL and go back to direct port access:
+
+```bash
+cd /opt/tts-dialer
+
+# Remove the domain from .env
+sed -i '/^DOMAIN=/d' .env
+
+# Stop and remove the Caddy container
+docker compose stop caddy
+docker compose rm -f caddy
+
+# Access via http://IP:3000 again
+```
+
+---
+
 ## SIP Trunk and Outbound Routes
 
 The dialer originates calls through FreePBX, which means FreePBX needs a SIP trunk connected to a VoIP provider (like Telnyx, Twilio, Bandwidth, VoIP.ms, or Flowroute) to make outbound calls.
@@ -594,27 +746,45 @@ Uptime Kuma will alert you via email, Slack, or Discord when a client server goe
 | Disk full | `docker system prune -a` | Remove old images and volumes |
 | Port 3000 conflict (all-in-one) | `netstat -tlnp \| grep 3000` | Change APP_PORT in .env to another port |
 | FreePBX web panel not loading | `fwconsole restart` | Restart FreePBX services |
+| SSL certificate not provisioning | `docker compose logs caddy` | Ensure DNS A record points to server IP, ports 80/443 open |
+| Caddy port 80 conflict (all-in-one) | `netstat -tlnp \| grep :80` | Stop Apache (`systemctl stop apache2`) or change its port |
 
-### Setting Up a Reverse Proxy (Optional)
+### Setting Up a Reverse Proxy (All-in-One with FreePBX on Port 80)
 
-If you want to access the dialer on port 80/443 with SSL on an all-in-one server (where FreePBX already uses port 80), you can install Caddy as a reverse proxy:
+On an all-in-one server where FreePBX already uses port 80 (Apache), you have two options for adding HTTPS to the dialer:
+
+**Option 1: Use the built-in Caddy container (recommended).** If you entered a domain during `setup-client.sh`, Caddy is already running in Docker on ports 80/443. You may need to stop FreePBX's Apache first or change its port:
 
 ```bash
-# Install Caddy
-apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update && apt install caddy
+# Option: Change FreePBX Apache to port 8080
+sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf
+systemctl restart apache2
 
-# Configure Caddy (replace dialer.example.com with your domain)
-cat > /etc/caddy/Caddyfile << EOF
-dialer.example.com {
-    reverse_proxy localhost:3000
-}
+# Then restart the dialer stack so Caddy can claim port 80
+cd /opt/tts-dialer && docker compose restart caddy
+```
+
+**Option 2: Use FreePBX's Apache as the reverse proxy.** Keep Apache on port 80 and proxy the dialer subdomain through it:
+
+```bash
+# Enable required Apache modules
+a2enmod proxy proxy_http ssl
+
+# Create a virtual host for the dialer
+cat > /etc/apache2/sites-available/dialer.conf << EOF
+<VirtualHost *:80>
+    ServerName dialer.example.com
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
+</VirtualHost>
 EOF
 
-# Restart Caddy (auto-provisions SSL via Let's Encrypt)
-systemctl restart caddy
+a2ensite dialer.conf
+systemctl reload apache2
+
+# Then use Certbot for SSL
+apt install certbot python3-certbot-apache
+certbot --apache -d dialer.example.com
 ```
 
 ---
@@ -640,6 +810,7 @@ systemctl restart caddy
 | `JWT_SECRET` | Yes | Session signing secret (auto-generated) |
 | `TZ` | No | Timezone (default: America/New_York) |
 | `APP_PORT` | No | App port (default: 3000) |
+| `DOMAIN` | No | Domain name for HTTPS via Caddy (e.g., dialer.yourcompany.com). Leave empty to skip SSL |
 | `UPDATE_CHECK_INTERVAL` | No | Watchtower check interval in seconds (default: 86400) |
 | `SKIP_MIGRATIONS` | No | Set to "true" to skip auto-migrations on startup |
 | `DOCKER_IMAGE` | No | Docker image to use (default: ghcr.io/clientflame/tts-broadcast-dialer:latest) |

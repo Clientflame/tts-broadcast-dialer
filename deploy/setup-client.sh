@@ -115,7 +115,7 @@ echo -e "  ${GREEN}✓${NC} Detected: ${BOLD}$PRETTY_NAME${NC}"
 # ============================================================
 # Step 1: Branding
 # ============================================================
-print_header "1/5  Your Brand"
+print_header "1/6  Your Brand"
 
 prompt CLIENT_NAME "Company name" "" ""
 prompt APP_TITLE "App title (shown in browser tab & sidebar)" "AI TTS Broadcast Dialer" ""
@@ -154,7 +154,7 @@ echo -e "  ${GREEN}✓${NC} Brand: ${BOLD}${APP_TITLE}${NC} — ${PRIMARY_COLOR}
 # ============================================================
 # Step 2: FreePBX Connection
 # ============================================================
-print_header "2/5  FreePBX Connection"
+print_header "2/6  FreePBX Connection"
 
 echo -e "  ${DIM}Enter the connection details for your FreePBX/Asterisk server.${NC}"
 echo -e "  ${DIM}You can change these later by editing ${DEPLOY_DIR}/.env${NC}"
@@ -181,7 +181,7 @@ fi
 # ============================================================
 # Step 3: TTS API Keys
 # ============================================================
-print_header "3/5  TTS Voice Provider"
+print_header "3/6  TTS Voice Provider"
 
 echo -e "  ${DIM}You need at least one API key for text-to-speech.${NC}"
 echo -e "  ${DIM}You can add both — the app lets you choose per campaign.${NC}"
@@ -206,7 +206,7 @@ fi
 # ============================================================
 # Step 4: Advanced Settings (with sensible defaults)
 # ============================================================
-print_header "4/5  Server Settings"
+print_header "4/6  Server Settings"
 
 prompt APP_PORT "Web app port" "3000" ""
 
@@ -238,9 +238,35 @@ DB_ROOT_PASSWORD=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 32)
 
 # ============================================================
-# Step 5: Docker Image (GHCR login)
+# Step 5: Domain & SSL
 # ============================================================
-print_header "5/5  Docker Image"
+print_header "5/6  Domain & SSL (Optional)"
+
+echo -e "  ${DIM}If you have a domain name pointed at this server, enter it below${NC}"
+echo -e "  ${DIM}to enable automatic HTTPS with Let's Encrypt (free SSL).${NC}"
+echo ""
+echo -e "  ${DIM}Before entering a domain, make sure:${NC}"
+echo -e "    ${DIM}1. You own the domain (e.g., dialer.yourcompany.com)${NC}"
+echo -e "    ${DIM}2. The DNS A record points to this server's IP: ${BOLD}$(hostname -I | awk '{print $1}')${NC}"
+echo -e "    ${DIM}3. Ports 80 and 443 are open on this server${NC}"
+echo ""
+echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP:${APP_PORT} instead.${NC}"
+echo ""
+
+prompt APP_DOMAIN "Domain name (e.g., dialer.yourcompany.com)" "" ""
+
+ENABLE_SSL="false"
+if [ -n "$APP_DOMAIN" ]; then
+  ENABLE_SSL="true"
+  echo -e "  ${GREEN}✓${NC} SSL enabled for ${BOLD}${APP_DOMAIN}${NC} (auto Let's Encrypt)"
+else
+  echo -e "  ${DIM}No domain — SSL skipped. You can add one later in .env${NC}"
+fi
+
+# ============================================================
+# Step 6: Docker Image (GHCR login)
+# ============================================================
+print_header "6/6  Docker Image"
 
 prompt DOCKER_IMAGE "Docker image" "$DEFAULT_IMAGE" ""
 
@@ -299,6 +325,12 @@ echo -e "  ${BOLD}Server${NC}"
 echo -e "    Port:       ${APP_PORT}"
 echo -e "    Timezone:   ${APP_TZ}"
 echo -e "    Image:      ${DOCKER_IMAGE}"
+if [ -n "$APP_DOMAIN" ]; then
+  echo -e "    Domain:     ${APP_DOMAIN}"
+  echo -e "    SSL:        ${GREEN}✓ Let's Encrypt (automatic)${NC}"
+else
+  echo -e "    SSL:        ${DIM}disabled (no domain)${NC}"
+fi
 echo ""
 
 read -p "  Proceed with installation? (Y/n): " CONFIRM
@@ -350,12 +382,26 @@ print_step "Configuring firewall..."
 if command -v ufw &> /dev/null; then
   ufw allow 22/tcp > /dev/null 2>&1
   ufw allow $APP_PORT/tcp > /dev/null 2>&1
-  echo -e "  ${GREEN}✓${NC} UFW: ports 22, ${APP_PORT} opened"
+  if [ "$ENABLE_SSL" = "true" ]; then
+    ufw allow 80/tcp > /dev/null 2>&1
+    ufw allow 443/tcp > /dev/null 2>&1
+    echo -e "  ${GREEN}✓${NC} UFW: ports 22, 80, 443, ${APP_PORT} opened"
+  else
+    echo -e "  ${GREEN}✓${NC} UFW: ports 22, ${APP_PORT} opened"
+  fi
 elif command -v firewall-cmd &> /dev/null; then
   firewall-cmd --permanent --add-port=22/tcp > /dev/null 2>&1
   firewall-cmd --permanent --add-port=$APP_PORT/tcp > /dev/null 2>&1
+  if [ "$ENABLE_SSL" = "true" ]; then
+    firewall-cmd --permanent --add-port=80/tcp > /dev/null 2>&1
+    firewall-cmd --permanent --add-port=443/tcp > /dev/null 2>&1
+  fi
   firewall-cmd --reload > /dev/null 2>&1
-  echo -e "  ${GREEN}✓${NC} Firewalld: ports 22, ${APP_PORT} opened"
+  if [ "$ENABLE_SSL" = "true" ]; then
+    echo -e "  ${GREEN}✓${NC} Firewalld: ports 22, 80, 443, ${APP_PORT} opened"
+  else
+    echo -e "  ${GREEN}✓${NC} Firewalld: ports 22, ${APP_PORT} opened"
+  fi
 else
   echo -e "  ${DIM}No firewall manager detected. Ensure port ${APP_PORT} is open.${NC}"
 fi
@@ -369,7 +415,106 @@ mkdir -p $DEPLOY_DIR
 cd $DEPLOY_DIR
 
 # Write docker-compose.yml
-cat > docker-compose.yml << 'COMPOSE_EOF'
+if [ "$ENABLE_SSL" = "true" ]; then
+  cat > docker-compose.yml << 'COMPOSE_EOF'
+services:
+  dialer:
+    image: ${DOCKER_IMAGE:-ghcr.io/clientflame/tts-broadcast-dialer:latest}
+    container_name: tts-dialer
+    restart: unless-stopped
+    expose:
+      - "3000"
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=mysql://${MYSQL_USER:-dialer}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE:-tts_dialer}
+      - TZ=${TZ:-America/New_York}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - dialer-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: mysql:8.0
+    container_name: tts-dialer-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-tts_dialer}
+      MYSQL_USER: ${MYSQL_USER:-dialer}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - dialer-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: tts-dialer-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - dialer
+    networks:
+      - dialer-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /root/.docker/config.json:/config.json:ro
+
+volumes:
+  mysql-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  dialer-net:
+COMPOSE_EOF
+else
+  cat > docker-compose.yml << 'COMPOSE_EOF'
 services:
   dialer:
     image: ${DOCKER_IMAGE:-ghcr.io/clientflame/tts-broadcast-dialer:latest}
@@ -440,6 +585,32 @@ volumes:
 networks:
   dialer-net:
 COMPOSE_EOF
+fi
+
+# Write Caddyfile if SSL is enabled
+if [ "$ENABLE_SSL" = "true" ]; then
+  cat > Caddyfile << CADDY_EOF
+${APP_DOMAIN} {
+	reverse_proxy dialer:3000
+
+	encode gzip zstd
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+CADDY_EOF
+  echo -e "  ${GREEN}\u2713${NC} Caddyfile created for ${APP_DOMAIN}"
+fi
 
 # Write .env file with all collected values
 cat > .env << ENV_EOF
@@ -461,6 +632,11 @@ VITE_ACCENT_COLOR=${ACCENT_COLOR}
 APP_PORT=${APP_PORT}
 DOCKER_IMAGE=${DOCKER_IMAGE}
 TZ=${APP_TZ}
+
+# --- Domain & SSL ---
+# Set a domain to enable HTTPS via Caddy + Let's Encrypt
+# Leave empty to use http://IP:PORT access
+DOMAIN=${APP_DOMAIN}
 
 # --- Database (auto-generated, do not change) ---
 MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
@@ -605,7 +781,12 @@ echo -e "${GREEN}${BOLD}  ✓ Setup Complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  ${BOLD}Open your dialer:${NC}"
-echo -e "  ${CYAN}➜  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
+if [ -n "$APP_DOMAIN" ]; then
+  echo -e "  ${CYAN}\u279c  https://${APP_DOMAIN}${NC}"
+  echo -e "  ${DIM}Also available at: http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
+else
+  echo -e "  ${CYAN}\u279c  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
+fi
 echo ""
 echo -e "  ${BOLD}First time?${NC} Create your admin account on the setup page,"
 echo -e "  then the onboarding wizard will guide you through the rest."
