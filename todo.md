@@ -286,3 +286,10 @@
 - [x] Create Ansible playbook for multi-client deploy/update/rollback
 - [x] Create Ansible inventory template for managing client servers
 - [x] Write deployment documentation (README) for the deployment package
+- [x] Build standalone email/password authentication system for self-hosted deployments
+- [x] Backend: auth.config endpoint (detects OAuth vs standalone mode), auth.setup endpoint (first-time admin creation)
+- [x] Frontend: standalone login page with email/password form (auto-detects mode, hides OAuth when not configured)
+- [x] Frontend: setup page for initial admin account creation (shown when no users exist)
+- [x] DashboardLayout redirects to /login instead of Manus OAuth when unauthenticated
+- [x] Dual-mode auth: detect Manus OAuth vs standalone mode based on env vars
+- [x] Write vitest tests for standalone auth endpoints (11 tests, 132 total passing)

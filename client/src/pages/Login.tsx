@@ -5,10 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { getLoginUrl } from "@/const";
-import { Phone, Mail, Lock, ArrowRight, Radio } from "lucide-react";
+import { Phone, Mail, Lock, ArrowRight, Radio, Loader2 } from "lucide-react";
 
 export default function Login() {
   const [, navigate] = useLocation();
@@ -17,10 +17,23 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [resetEmail, setResetEmail] = useState("");
 
+  // Fetch auth config to determine available login modes
+  const authConfig = trpc.auth.config.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  // Redirect to setup if no users exist
+  useEffect(() => {
+    if (authConfig.data && !authConfig.data.hasUsers) {
+      navigate("/setup");
+    }
+  }, [authConfig.data, navigate]);
+
   const loginMutation = trpc.localAuth.login.useMutation({
     onSuccess: () => {
       toast.success("Login successful");
-      navigate("/");
+      window.location.href = "/";
     },
     onError: (e) => toast.error(e.message),
   });
@@ -44,6 +57,16 @@ export default function Login() {
     if (!resetEmail) return;
     resetMutation.mutate({ email: resetEmail });
   };
+
+  const showOAuth = authConfig.data?.oauthConfigured !== false;
+
+  if (authConfig.isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -139,7 +162,8 @@ export default function Login() {
               </form>
             )}
 
-            {mode === "login" && (
+            {/* Only show Manus OAuth when it's configured */}
+            {mode === "login" && showOAuth && (
               <>
                 <div className="relative">
                   <Separator />

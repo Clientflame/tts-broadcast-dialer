@@ -20,6 +20,7 @@ import AiGenerator from "./pages/AiGenerator";
 import Reports from "./pages/Reports";
 import UserManagement from "./pages/UserManagement";
 import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import Scripts from "./pages/Scripts";
 import DidAnalytics from "./pages/DidAnalytics";
 
@@ -44,6 +45,7 @@ function Router() {
       <Route path={"/freepbx"} component={FreePBX} />
       <Route path={"/users"} component={UserManagement} />
       <Route path={"/login"} component={Login} />
+      <Route path={"/setup"} component={Setup} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

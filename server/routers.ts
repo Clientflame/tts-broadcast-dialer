@@ -143,6 +143,36 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    /** Returns auth configuration so the frontend knows which login modes are available */
+    config: publicProcedure.query(async () => {
+      const oauthConfigured = Boolean(process.env.OAUTH_SERVER_URL && process.env.VITE_APP_ID && process.env.VITE_OAUTH_PORTAL_URL);
+      const allUsers = await db.getAllUsers();
+      const hasUsers = allUsers.length > 0;
+      return { oauthConfigured, hasUsers, standaloneMode: !oauthConfigured };
+    }),
+    /** First-time setup: create the initial admin account (only works when no users exist) */
+    setup: publicProcedure.input(z.object({
+      name: z.string().min(1).max(100),
+      email: z.string().email(),
+      password: z.string().min(8).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      const allUsers = await db.getAllUsers();
+      if (allUsers.length > 0) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Setup already completed. Users already exist." });
+      }
+      // Create the first user as admin
+      const openId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      await db.upsertUser({ openId, name: input.name, email: input.email, loginMethod: "email", role: "admin" });
+      const user = await db.getUserByOpenId(openId);
+      if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create admin user" });
+      const passwordHash = await bcrypt.hash(input.password, 12);
+      await db.createLocalAuth({ userId: user.id, email: input.email, passwordHash, isVerified: 1 });
+      // Auto-login the new admin
+      const token = await sdk.createSessionToken(user.openId, { name: user.name || "" });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
+      return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+    }),
   }),
 
   dashboard: router({
