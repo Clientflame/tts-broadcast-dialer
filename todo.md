@@ -297,3 +297,7 @@
 - [x] Dynamic CSS variable injection from VITE_ env vars at runtime (ThemeBranding component)
 - [x] Update deploy env-template with branding color vars + preset examples
 - [x] Make all hardcoded app name references dynamic from VITE_APP_TITLE (sidebar, login, setup, dashboard)
+- [x] Render custom logo from VITE_APP_LOGO in sidebar header next to app title
+- [x] Add "Retry Failed Only" button on campaign detail to re-queue failed/no-answer contacts
+- [x] Backend: getRetriableCount query + retryFailed mutation (clears failed logs, re-queues contacts, preserves answered)
+- [x] Frontend: RetryFailedButton component with dynamic count (16), confirmation dialog, and toast feedback

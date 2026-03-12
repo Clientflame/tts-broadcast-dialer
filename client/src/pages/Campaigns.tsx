@@ -663,6 +663,21 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
   );
 }
 
+function RetryFailedButton({ campaignId, isPending, onRetry }: { campaignId: number; isPending: boolean; onRetry: () => void }) {
+  const { data: retriable } = trpc.campaigns.getRetriableCount.useQuery({ id: campaignId });
+  const count = retriable?.count ?? 0;
+  if (count === 0) return null;
+  return (
+    <Button variant="outline" size="sm" className="text-blue-600 border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30" onClick={() => {
+      if (confirm(`Retry ${count} failed/no-answer contact(s)?\n\nThis will:\n\u2022 Clear call logs for failed, no-answer, and busy contacts\n\u2022 Re-queue them for dialing\n\u2022 Keep answered contacts untouched\n\u2022 Set campaign to Paused (click Resume to start)\n\nPreviously answered contacts will NOT be re-dialed.`)) {
+        onRetry();
+      }
+    }} disabled={isPending}>
+      <RotateCcw className="h-4 w-4 mr-1" />{isPending ? "Retrying..." : `Retry Failed (${count})`}
+    </Button>
+  );
+}
+
 export default function Campaigns() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -728,6 +743,11 @@ export default function Campaigns() {
 
   const resetCallHistory = trpc.campaigns.resetCallHistory.useMutation({
     onSuccess: (data) => { utils.campaigns.list.invalidate(); utils.campaigns.stats.invalidate(); utils.dashboard.stats.invalidate(); toast.success(`Call history reset — ${data.deletedLogs} call logs cleared. Campaign set back to draft.`); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const retryFailed = trpc.campaigns.retryFailed.useMutation({
+    onSuccess: (data) => { utils.campaigns.list.invalidate(); utils.campaigns.stats.invalidate(); utils.campaigns.getRetriableCount.invalidate(); utils.dashboard.stats.invalidate(); toast.success(`${data.retriedCount} failed contact(s) queued for retry — campaign set to paused. Click Resume to start dialing.`); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -897,6 +917,12 @@ export default function Campaigns() {
                 }} disabled={resetCallHistory.isPending}>
                   <RotateCcw className="h-4 w-4 mr-1" />{resetCallHistory.isPending ? "Resetting..." : "Reset History"}
                 </Button>
+              )}
+              {/* Retry Failed Only button */}
+              {c.status !== "running" && c.status !== "draft" && (
+                <RetryFailedButton campaignId={c.id} isPending={retryFailed.isPending} onRetry={() => {
+                  retryFailed.mutate({ id: c.id });
+                }} />
               )}
               {c.status === "draft" && (
                 <Button onClick={() => startCampaign.mutate({ id: c.id })} disabled={startCampaign.isPending}>

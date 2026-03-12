@@ -168,15 +168,28 @@ function DashboardLayoutContent({
         >
           <SidebarHeader className="h-16 justify-center">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="Toggle navigation"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
+              {import.meta.env.VITE_APP_LOGO ? (
+                <button
+                  onClick={toggleSidebar}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                  aria-label="Toggle navigation"
+                >
+                  <img src={import.meta.env.VITE_APP_LOGO} alt="Logo" className="h-7 w-7 rounded object-contain" />
+                </button>
+              ) : (
+                <button
+                  onClick={toggleSidebar}
+                  className="h-8 w-8 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
+                  aria-label="Toggle navigation"
+                >
+                  <PanelLeft className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
+                  {import.meta.env.VITE_APP_LOGO && (
+                    <img src={import.meta.env.VITE_APP_LOGO} alt="Logo" className="h-6 w-6 rounded object-contain hidden" />
+                  )}
                   <span className="font-semibold tracking-tight truncate">
                     {import.meta.env.VITE_APP_TITLE || "TTS Dialer"}
                   </span>

@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray, count, gte } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, notInArray, count, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -2170,4 +2170,81 @@ export async function getAreaCodeDistribution(userId: number, campaignId?: numbe
     })),
     total,
   };
+}
+
+
+// ─── Retry Failed Contacts ──────────────────────────────────────────────────
+export async function getRetriableContactCount(campaignId: number, userId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  // Find contacts that have only failed/no-answer/busy outcomes (no answered calls)
+  const [result] = await db.select({ cnt: count() }).from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      eq(callLogs.userId, userId),
+      inArray(callLogs.status, ["failed", "no-answer", "busy"]),
+    ));
+  // Exclude contacts that also have an answered call
+  const answeredPhones = db.select({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      eq(callLogs.userId, userId),
+      eq(callLogs.status, "answered"),
+    ));
+  const [retriable] = await db.selectDistinct({ cnt: sql<number>`COUNT(DISTINCT ${callLogs.phoneNumber})` }).from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      eq(callLogs.userId, userId),
+      inArray(callLogs.status, ["failed", "no-answer", "busy"]),
+      notInArray(callLogs.phoneNumber, answeredPhones),
+    ));
+  return Number(retriable?.cnt ?? 0);
+}
+
+export async function retryFailedContacts(campaignId: number, userId: number): Promise<{ retriedCount: number; deletedLogs: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  // Get phone numbers that were answered — we don't retry those
+  const answeredRows = await db.selectDistinct({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      eq(callLogs.userId, userId),
+      eq(callLogs.status, "answered"),
+    ));
+  const answeredPhones = new Set(answeredRows.map(r => r.phoneNumber));
+
+  // Get distinct phone numbers with failed/no-answer/busy that were NOT answered
+  const failedRows = await db.selectDistinct({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      eq(callLogs.userId, userId),
+      inArray(callLogs.status, ["failed", "no-answer", "busy"]),
+    ));
+  const retriablePhones = failedRows.map(r => r.phoneNumber).filter(p => !answeredPhones.has(p));
+
+  if (retriablePhones.length === 0) {
+    return { retriedCount: 0, deletedLogs: 0 };
+  }
+
+  // Delete call logs for retriable phones (so they can be re-dialed)
+  const logResult = await db.delete(callLogs).where(and(
+    eq(callLogs.campaignId, campaignId),
+    eq(callLogs.userId, userId),
+    inArray(callLogs.phoneNumber, retriablePhones),
+  ));
+
+  // Delete any existing queue items for these phones
+  await db.delete(callQueue).where(and(
+    eq(callQueue.campaignId, campaignId),
+    eq(callQueue.userId, userId),
+    inArray(callQueue.phoneNumber, retriablePhones),
+  ));
+
+  // Set campaign back to draft so it can be restarted
+  await db.update(campaigns)
+    .set({ status: "paused" })
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
+
+  return { retriedCount: retriablePhones.length, deletedLogs: Number((logResult as any)[0]?.affectedRows ?? retriablePhones.length) };
 }
