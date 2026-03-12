@@ -140,6 +140,7 @@ export async function generatePersonalizedTTS(params: {
     databaseName?: string | null;
   };
   callerIdNumber?: string;
+  callbackNumber?: string;
   campaignId: number;
   contactId: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
@@ -156,12 +157,30 @@ export async function generatePersonalizedTTS(params: {
     state: params.contactData.state || "",
     database_name: params.contactData.databaseName || "",
     caller_id: params.callerIdNumber || "",
+    callback_number: "",
   };
 
   // Format caller_id as phone number if it's just digits
   if (variables.caller_id && /^\d{10}$/.test(variables.caller_id.replace(/\D/g, ""))) {
     const digits = variables.caller_id.replace(/\D/g, "");
     variables.caller_id = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  // Format callback_number as spoken digits for TTS
+  if (params.callbackNumber) {
+    const digits = params.callbackNumber.replace(/\D/g, "");
+    if (digits.length >= 10) {
+      const digitWords: Record<string, string> = {
+        "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+        "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+      };
+      const areaCode = digits.slice(-10, -7).split("").map(d => digitWords[d]).join(" ");
+      const prefix = digits.slice(-7, -4).split("").map(d => digitWords[d]).join(" ");
+      const line = digits.slice(-4).split("").map(d => digitWords[d]).join(" ");
+      variables.callback_number = `${areaCode}, ${prefix}, ${line}`;
+    } else {
+      variables.callback_number = params.callbackNumber;
+    }
   }
 
   const renderedText = renderMessageTemplate(params.messageTemplate, variables);
@@ -293,6 +312,7 @@ export async function generateGooglePersonalizedTTS(params: {
     databaseName?: string | null;
   };
   callerIdNumber?: string;
+  callbackNumber?: string;
   campaignId: number;
   contactId: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
@@ -308,11 +328,29 @@ export async function generateGooglePersonalizedTTS(params: {
     state: params.contactData.state || "",
     database_name: params.contactData.databaseName || "",
     caller_id: params.callerIdNumber || "",
+    callback_number: "",
   };
 
   if (variables.caller_id && /^\d{10}$/.test(variables.caller_id.replace(/\D/g, ""))) {
     const digits = variables.caller_id.replace(/\D/g, "");
     variables.caller_id = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
+  // Format callback_number as spoken digits for TTS
+  if (params.callbackNumber) {
+    const digits = params.callbackNumber.replace(/\D/g, "");
+    if (digits.length >= 10) {
+      const digitWords: Record<string, string> = {
+        "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+        "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+      };
+      const areaCode = digits.slice(-10, -7).split("").map(d => digitWords[d]).join(" ");
+      const prefix = digits.slice(-7, -4).split("").map(d => digitWords[d]).join(" ");
+      const line = digits.slice(-4).split("").map(d => digitWords[d]).join(" ");
+      variables.callback_number = `${areaCode}, ${prefix}, ${line}`;
+    } else {
+      variables.callback_number = params.callbackNumber;
+    }
   }
 
   const renderedText = renderMessageTemplate(params.messageTemplate, variables);

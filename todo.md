@@ -275,3 +275,7 @@
 - [x] Backend: store and handle useDidCallbackNumber flag on campaigns
 - [x] Add "Use DID Rotation # as Callback Number" toggle to Personalized TTS section in campaign create/edit
 - [x] Wire useDidCallbackNumber through dialer engine for personalized TTS calls (resolve caller_id merge field from rotating DID)
+- [x] Add {{callback_number}} merge field to Personalized TTS (separate from {{caller_id}})
+- [x] UI: callback number input field in Personalized TTS section (static number or DID rotation)
+- [x] Backend: resolve callback_number merge field in personalized TTS generation
+- [x] Add {{callback_number}} to MERGE_FIELDS list in campaign form UI

@@ -72,6 +72,7 @@ const MERGE_FIELDS = [
   { key: "last_name", label: "Last Name", example: "Smith" },
   { key: "full_name", label: "Full Name", example: "John Smith" },
   { key: "caller_id", label: "Caller ID", example: "(407) 555-1177" },
+  { key: "callback_number", label: "Callback #", example: "four zero seven, five five five, one two three four" },
   { key: "company", label: "Company", example: "Acme Corp" },
   { key: "state", label: "State", example: "FL" },
   { key: "database_name", label: "Database", example: "Spring 2026" },
@@ -394,12 +395,19 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                     <p className="text-sm text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
                       <Phone className="h-3.5 w-3.5" />
-                      <span>The <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900/50 px-1 rounded">{'{{caller_id}}'}</code> merge field will match the rotating DID used for each call</span>
+                      <span>Callback number will match the rotating DID used for each call</span>
                     </p>
-                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Each contact hears the same number that appeared on their caller ID</p>
+                    <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Both <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900/50 px-1 rounded">{'{{callback_number}}'}</code> and <code className="font-mono text-xs bg-blue-100 dark:bg-blue-900/50 px-1 rounded">{'{{caller_id}}'}</code> will resolve to the rotating DID</p>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">Enable to dynamically set <code className="font-mono">{'{{caller_id}}'}</code> to the rotating DID for each call. Otherwise it uses the outbound caller ID.</p>
+                  <>
+                    <Input
+                      value={form.callbackNumber}
+                      onChange={e => setForm(p => ({ ...p, callbackNumber: e.target.value }))}
+                      placeholder="e.g. 4075551234"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Used for <code className="font-mono">{'{{callback_number}}'}</code> merge field (spoken as digits in TTS)</p>
+                  </>
                 )}
               </div>
             </div>
