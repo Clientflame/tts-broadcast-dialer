@@ -1581,6 +1581,51 @@ Return ONLY the message text, nothing else.`;
         return { oneLiner, apiUrl, apiKey, maxCalls, agentName: agent.name };
       }),
   }),
+
+  onboarding: router({
+    /** Get onboarding status — checks which setup steps are completed */
+    status: protectedProcedure.query(async ({ ctx }) => {
+      const userId = ctx.user.id;
+
+      // Step 1: Account created (always true if they're authenticated)
+      const accountCreated = true;
+
+      // Step 2: FreePBX connected (at least one PBX agent registered)
+      const agents = await db.getPbxAgents();
+      const pbxConnected = agents.length > 0;
+      const pbxOnline = agents.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 30000);
+
+      // Step 3: Caller IDs imported (at least one caller ID)
+      const callerIds = await db.getCallerIds(userId);
+      const hasCallerIds = callerIds.length > 0;
+
+      // Step 4: Contacts imported (at least one contact list with contacts)
+      const contactLists = await db.getContactLists(userId);
+      const hasContacts = contactLists.some((l: any) => (l.contactCount ?? 0) > 0);
+
+      // Step 5: Campaign created
+      const campaigns = await db.getCampaigns(userId);
+      const hasCampaigns = campaigns.length > 0;
+
+      const steps = [
+        { id: "account", label: "Create Account", completed: accountCreated },
+        { id: "pbx", label: "Connect FreePBX", completed: pbxConnected, detail: pbxOnline ? "Online" : pbxConnected ? "Registered (offline)" : undefined },
+        { id: "callerIds", label: "Add Caller IDs", completed: hasCallerIds, detail: hasCallerIds ? `${callerIds.length} DID(s)` : undefined },
+        { id: "contacts", label: "Import Contacts", completed: hasContacts, detail: hasContacts ? `${contactLists.length} list(s)` : undefined },
+        { id: "campaign", label: "Create Campaign", completed: hasCampaigns, detail: hasCampaigns ? `${campaigns.length} campaign(s)` : undefined },
+      ];
+
+      const completedCount = steps.filter(s => s.completed).length;
+      const isComplete = completedCount === steps.length;
+
+      return { steps, completedCount, totalSteps: steps.length, isComplete };
+    }),
+
+    /** Mark onboarding as dismissed (stores in localStorage on frontend) */
+    dismiss: protectedProcedure.mutation(async () => {
+      return { success: true };
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

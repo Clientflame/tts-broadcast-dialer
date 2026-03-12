@@ -301,3 +301,15 @@
 - [x] Add "Retry Failed Only" button on campaign detail to re-queue failed/no-answer contacts
 - [x] Backend: getRetriableCount query + retryFailed mutation (clears failed logs, re-queues contacts, preserves answered)
 - [x] Frontend: RetryFailedButton component with dynamic count (16), confirmation dialog, and toast feedback
+- [x] Build client onboarding wizard for first-time setup
+- [x] Backend: onboarding status tracking (which steps are completed)
+- [x] Step 1: Welcome & account setup (auto-detected from auth)
+- [x] Step 2: FreePBX connection setup (links to /freepbx, auto-detects PBX agents)
+- [x] Step 3: Import DIDs / Caller IDs (links to /caller-ids, auto-detects DIDs)
+- [x] Step 4: Import contacts / create first contact list (links to /contacts, auto-detects lists)
+- [x] Step 5: Create first campaign (links to /campaigns, auto-detects campaigns)
+- [x] Step 6: Completion celebration with Go to Dashboard and Start a Campaign buttons
+- [x] Auto-detect onboarding status and show wizard for new clients (auto-redirect from dashboard)
+- [x] Skip button to dismiss wizard and go to dashboard (localStorage persistence)
+- [x] Getting Started link in sidebar navigation
+- [x] Vitest tests for onboarding endpoint (10 tests, 142 total passing)

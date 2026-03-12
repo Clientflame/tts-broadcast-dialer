@@ -23,6 +23,7 @@ import Login from "./pages/Login";
 import Setup from "./pages/Setup";
 import Scripts from "./pages/Scripts";
 import DidAnalytics from "./pages/DidAnalytics";
+import Onboarding from "./pages/Onboarding";
 
 function Router() {
   return (
@@ -46,6 +47,7 @@ function Router() {
       <Route path={"/users"} component={UserManagement} />
       <Route path={"/login"} component={Login} />
       <Route path={"/setup"} component={Setup} />
+      <Route path={"/onboarding"} component={Onboarding} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

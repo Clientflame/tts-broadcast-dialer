@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -303,9 +304,25 @@ function AreaCodeDistribution() {
   );
 }
 
+const ONBOARDING_DISMISSED_KEY = "onboarding_dismissed";
+
 export default function Home() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
+
+  // Auto-redirect to onboarding if setup is incomplete and not dismissed
+  const onboardingStatus = trpc.onboarding.status.useQuery(undefined, { enabled: !!user });
+  useEffect(() => {
+    if (
+      onboardingStatus.data &&
+      !onboardingStatus.data.isComplete &&
+      typeof window !== "undefined" &&
+      localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "true"
+    ) {
+      setLocation("/onboarding");
+    }
+  }, [onboardingStatus.data, setLocation]);
   const amiStatus = trpc.dashboard.amiStatus.useQuery(undefined, { enabled: !!user, refetchInterval: 15000 });
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 
