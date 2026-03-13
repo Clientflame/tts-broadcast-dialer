@@ -916,12 +916,21 @@ export async function recordDidCallResult(
 }
 
 export async function recordDidCallResultByNumber(
-  phoneNumber: string,
+  phoneNumberOrCallerIdStr: string,
   userId: number,
   result: string,
 ) {
   const db = await getDb();
   if (!db) return { flagged: false };
+
+  // Extract bare phone number from formatted callerIdStr like '"Broadcast" <4075551234>'
+  let phoneNumber = phoneNumberOrCallerIdStr;
+  const angleMatch = phoneNumberOrCallerIdStr.match(/<([^>]+)>/);
+  if (angleMatch) {
+    phoneNumber = angleMatch[1];
+  }
+  // Strip any non-digit characters except leading +
+  phoneNumber = phoneNumber.replace(/[^0-9+]/g, "");
 
   // Look up the caller ID by phone number and userId
   const did = await db.select({ id: callerIds.id })

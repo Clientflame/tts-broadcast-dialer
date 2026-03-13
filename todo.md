@@ -367,4 +367,9 @@
 - [x] Add system health backend endpoint checking AMI connection, SSH reachability, and TTS API key validity
 - [x] Add system health dashboard widget on main dashboard showing connection status at a glance
 - [x] Vitest tests for dashboard.systemHealth (2 new tests, 165 total passing)
-- [ ] Tag v1.0.9 and push to GitHub for Docker build
+- [x] Tag v1.0.9 and push to GitHub for Docker build
+- [x] Bug: Disabled Caller IDs still being used in dialer — generating notification emails with wrong numbers
+- [x] Disable DID auto-flag notification emails until Caller ID bugs are fixed
+- [x] Fix: recordDidCallResultByNumber now parses phone from formatted callerIdStr ("Label" <number>)
+- [x] Fix: Dialer refreshes caller ID pool from DB before each call (respects disabled/flagged DIDs mid-campaign)
+- [x] Vitest tests for callerIdStr parsing (5 new tests, 170 total passing)

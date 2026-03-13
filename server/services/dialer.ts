@@ -351,9 +351,25 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   const phoneNumber = callLog.phoneNumber.replace(/[^0-9+]/g, "");
   const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
 
-  // Determine caller ID
+  // Determine caller ID — refresh from DB each call to respect disabled/flagged DIDs
   let callerIdStr: string | undefined;
   let callerIdNumber: string | undefined;
+  if (active.callerIds.length > 0) {
+    // Refresh the active caller ID pool from DB to pick up any disabled/flagged changes
+    try {
+      const freshPool = await db.getActiveCallerIds(userId);
+      if (freshPool.length > 0) {
+        active.callerIds = freshPool;
+      } else {
+        // All DIDs disabled — log warning but continue with campaign's static caller ID if set
+        console.warn(`[Dialer] All DIDs disabled for user ${userId} — falling back to campaign caller ID`);
+        active.callerIds = [];
+      }
+    } catch (err) {
+      console.warn("[Dialer] Failed to refresh caller ID pool:", err);
+      // Continue with existing pool on error
+    }
+  }
   if (active.callerIds.length > 0) {
     const did = active.callerIds[active.callerIdIndex % active.callerIds.length];
     active.callerIdIndex++;

@@ -219,14 +219,15 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
             const didResult = await db.recordDidCallResultByNumber(queueItem.callerIdStr, queueItem.userId, result);
             if (didResult.flagged && 'phoneNumber' in didResult) {
               console.log(`[PBX-API] DID ${didResult.phoneNumber} auto-flagged: ${didResult.failureRate}% failure rate`);
-              notifyOwner({
-                title: `DID Auto-Flagged: ${didResult.phoneNumber}`,
-                content: `Caller ID ${didResult.phoneNumber} has been automatically removed from rotation due to a high failure rate (${didResult.failureRate}%).
-
-The DID will be placed on a 30-minute cooldown and then automatically re-enabled.
-
-You can manually re-enable it from the Caller IDs page.`,
-              }).catch(err => console.warn("[PBX-API] Failed to send DID flag notification:", err));
+              // DID auto-flag notifications disabled — re-enable once Caller ID bugs are fully resolved
+              // notifyOwner({
+              //   title: `DID Auto-Flagged: ${didResult.phoneNumber}`,
+              //   content: `Caller ID ${didResult.phoneNumber} has been automatically removed from rotation due to a high failure rate (${didResult.failureRate}%).
+              //
+              // The DID will be placed on a 30-minute cooldown and then automatically re-enabled.
+              //
+              // You can manually re-enable it from the Caller IDs page.`,
+              // }).catch(err => console.warn("[PBX-API] Failed to send DID flag notification:", err));
             }
           } catch (err) {
             console.warn("[PBX-API] DID health tracking error:", err);
@@ -353,11 +354,11 @@ pbxRouter.post("/health-check-result", async (req: Request, res: Response) => {
     const updateResult = await db.updateCallerIdHealthCheck(callerIdId, result, details);
 
     if (updateResult.autoDisabled) {
-      // Notify owner that a DID was auto-disabled
-      notifyOwner({
-        title: `Caller ID Auto-Disabled: ${updateResult.phoneNumber}`,
-        content: `Caller ID ${updateResult.phoneNumber} has been automatically disabled after ${updateResult.failCount} consecutive health check failures.\n\nLast check result: ${details || result}\n\nYou can re-enable it from the Caller IDs page after verifying the number is working.`,
-      }).catch(err => console.warn("[PBX-API] Failed to send auto-disable notification:", err));
+      // DID auto-disable notifications disabled — re-enable once Caller ID bugs are fully resolved
+      // notifyOwner({
+      //   title: `Caller ID Auto-Disabled: ${updateResult.phoneNumber}`,
+      //   content: `Caller ID ${updateResult.phoneNumber} has been automatically disabled after ${updateResult.failCount} consecutive health check failures.\n\nLast check result: ${details || result}\n\nYou can re-enable it from the Caller IDs page after verifying the number is working.`,
+      // }).catch(err => console.warn("[PBX-API] Failed to send auto-disable notification:", err));
       console.log(`[PBX-API] Caller ID ${updateResult.phoneNumber} auto-disabled after ${updateResult.failCount} failures`);
     }
 
