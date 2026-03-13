@@ -702,6 +702,33 @@ def monitor_ami_events(ami):
     log.info("AMI event monitor stopped")
 
 
+# ─── Independent Heartbeat Thread ────────────────────────────────────────────
+def heartbeat_loop():
+    """
+    Independent heartbeat thread that runs every 10 seconds.
+    This ensures the agent stays "online" in the dashboard even when
+    the poll loop is slow (e.g., during large batch deletes on the server).
+    """
+    consecutive_failures = 0
+    while True:
+        try:
+            with active_calls_lock:
+                current_active = len(active_calls)
+            resp = api_request("heartbeat", method="POST", data={
+                "activeCalls": current_active,
+            })
+            if resp:
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    log.warning(f"Heartbeat failed {consecutive_failures} times in a row — server may be busy")
+        except Exception as e:
+            consecutive_failures += 1
+            log.error(f"Heartbeat error: {e}")
+        time.sleep(10)  # Send heartbeat every 10 seconds
+
+
 # ─── Main Loop ───────────────────────────────────────────────────────────────
 def main():
     log.info("=" * 60)
@@ -720,7 +747,13 @@ def main():
     # Ensure audio directory exists
     os.makedirs(CONFIG["audio_dir"], exist_ok=True)
 
+    # Start independent heartbeat thread (keeps agent "online" even if poll is slow)
+    heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    heartbeat_thread.start()
+    log.info("Independent heartbeat thread started (every 10s)")
+
     ami = AMIConnection()
+    poll_failures = 0  # Track consecutive poll failures
 
     while True:
         # Connect to AMI if not connected
@@ -754,6 +787,17 @@ def main():
                 "activeCalls": current_active,
             })
 
+            if response is None:
+                # Server error (500, timeout, etc.) — back off gradually
+                poll_failures += 1
+                if poll_failures >= 5:
+                    backoff = min(30, CONFIG["poll_interval"] * poll_failures)
+                    log.warning(f"Poll failed {poll_failures} times — backing off {backoff}s")
+                    time.sleep(backoff)
+                    continue
+            else:
+                poll_failures = 0  # Reset on success
+
             if response and response.get("calls"):
                 calls = response["calls"]
                 log.info(f"Received {len(calls)} call(s) from queue")
@@ -784,12 +828,8 @@ def main():
                         log.error(f"Error processing call {call_data.get('id')}: {e}")
                         report_result(call_data["id"], "failed", {"error": str(e)})
 
-            # Send heartbeat
-            api_request("heartbeat", method="POST", data={
-                "activeCalls": current_active,
-            })
-
         except Exception as e:
+            poll_failures += 1
             log.error(f"Poll loop error: {e}")
 
         # Auto-hangup health check calls that have been answered

@@ -53,7 +53,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         if (a.agentId === agent.agentId) return true; // Always include self
         if (!a.lastHeartbeat) return false;
         const lastSeen = new Date(a.lastHeartbeat).getTime();
-        return Date.now() - lastSeen < 30000; // Online if heartbeat within 30s
+        return Date.now() - lastSeen < 60000; // Online if heartbeat within 60s
       });
 
       if (onlineAgents.length > 1) {

@@ -430,11 +430,19 @@ export async function resetCampaignCallHistory(campaignId: number, userId: numbe
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   
-  // Delete in batches to avoid long-running locks that block PBX agent heartbeats
+  // Delete in small batches with delays to avoid long-running locks
+  // that block PBX agent heartbeats and cause ECONNRESET errors
   let totalDeleted = 0;
-  const BATCH_SIZE = 500;
+  const BATCH_SIZE = 200;
+  const BATCH_DELAY_MS = 100; // Brief pause between batches to let other queries through
   
-  // Batch-delete call_logs
+  // Step 1: Mark any "claimed" call_queue items as "failed" first
+  // so the PBX agent won't get 404 when reporting results
+  await db.execute(
+    sql`UPDATE ${callQueue} SET ${callQueue.status} = 'failed', ${callQueue.result} = 'cancelled' WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.userId} = ${userId} AND ${callQueue.status} = 'claimed'`
+  );
+  
+  // Step 2: Batch-delete call_logs with delays between batches
   let deleted = 0;
   do {
     const result = await db.execute(
@@ -442,17 +450,23 @@ export async function resetCampaignCallHistory(campaignId: number, userId: numbe
     );
     deleted = (result as any)[0]?.affectedRows ?? 0;
     totalDeleted += deleted;
+    if (deleted >= BATCH_SIZE) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    }
   } while (deleted >= BATCH_SIZE);
   
-  // Batch-delete call_queue
+  // Step 3: Batch-delete call_queue with delays between batches
   do {
     const result = await db.execute(
       sql`DELETE FROM ${callQueue} WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.userId} = ${userId} LIMIT ${BATCH_SIZE}`
     );
     deleted = (result as any)[0]?.affectedRows ?? 0;
+    if (deleted >= BATCH_SIZE) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+    }
   } while (deleted >= BATCH_SIZE);
   
-  // Reset campaign status back to draft
+  // Step 4: Reset campaign status back to draft
   await db.update(campaigns)
     .set({ status: "draft" })
     .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));

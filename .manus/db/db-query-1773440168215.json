@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, agentId, name, lastHeartbeat, status, activeCalls, maxCalls, ipAddress, NOW() as serverNow, TIMESTAMPDIFF(SECOND, lastHeartbeat, NOW()) as secondsSinceHeartbeat FROM pbx_agents ORDER BY lastHeartbeat DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, agentId, name, lastHeartbeat, status, activeCalls, maxCalls, ipAddress, NOW() as serverNow, TIMESTAMPDIFF(SECOND, lastHeartbeat, NOW()) as secondsSinceHeartbeat FROM pbx_agents ORDER BY lastHeartbeat DESC;",
+  "rows": [
+    {
+      "id": "29",
+      "agentId": "agent-749bdb14",
+      "name": "Magic Agent",
+      "lastHeartbeat": "1773439783171",
+      "status": "online",
+      "activeCalls": "0",
+      "maxCalls": "1",
+      "ipAddress": "NULL",
+      "serverNow": "2026-03-13 22:16:08",
+      "secondsSinceHeartbeat": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tagentId\tname\tlastHeartbeat\tstatus\tactiveCalls\tmaxCalls\tipAddress\tserverNow\tsecondsSinceHeartbeat\n29\tagent-749bdb14\tMagic Agent\t1773439783171\tonline\t0\t1\tNULL\t2026-03-13 22:16:08\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 50
+}

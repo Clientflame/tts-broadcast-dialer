@@ -1,0 +1,9 @@
+{
+  "query": "SELECT u.id, u.name, u.email, u.role, la.email as auth_email FROM users u JOIN local_auth la ON u.id = la.userId WHERE u.role = 'admin' LIMIT 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT u.id, u.name, u.email, u.role, la.email as auth_email FROM users u JOIN local_auth la ON u.id = la.userId WHERE u.role = 'admin' LIMIT 1;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 51
+}

@@ -438,5 +438,8 @@
 - [x] Fallback chain: git describe → package.json version → "dev"
 - [x] Fix: Manus deployment shows v1.0.0 because no git history — update package.json version to 1.1.5 as fallback
 - [x] Bug: FreePBX agent disconnects when resetting campaign history
-- [x] Fix: Batch-delete call_logs and call_queue in chunks of 500 to avoid long DB locks
-- [x] Fix: Increased heartbeat threshold from 30s to 60s across all 5 agent status checks
+- [x] Fix: Batch-delete call_logs and call_queue in chunks of 200 with 100ms delays between batches
+- [x] Fix: Mark "claimed" queue items as "failed/cancelled" before deletion to prevent 404s
+- [x] Fix: Increased heartbeat threshold from 30s to 60s across all 6 agent status checks (including load balancer)
+- [x] Fix: PBX agent now has independent heartbeat thread (every 10s) decoupled from poll loop
+- [x] Fix: PBX agent poll failure backoff (gradual backoff up to 30s after 5+ consecutive failures)

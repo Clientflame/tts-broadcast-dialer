@@ -1,0 +1,50 @@
+{
+  "query": "SELECT u.id, u.name, u.email, u.role, u.openId, la.email as local_email FROM users u LEFT JOIN local_auth la ON u.id = la.userId ORDER BY u.id LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT u.id, u.name, u.email, u.role, u.openId, la.email as local_email FROM users u LEFT JOIN local_auth la ON u.id = la.userId ORDER BY u.id LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Jamar Christian",
+      "email": "jchristian@clientflame.com",
+      "role": "admin",
+      "openId": "NK2jqiGrJVWfHZ2S5DZe5F",
+      "local_email": "NULL"
+    },
+    {
+      "id": "37444",
+      "name": "Jay Testing",
+      "email": "jamar.christian@gmail.com",
+      "role": "user",
+      "openId": "local_1773093025055_yy69htjhyh",
+      "local_email": "jamar.christian@gmail.com"
+    },
+    {
+      "id": "42228",
+      "name": "J Christian",
+      "email": "jamar.christian@gmail.com",
+      "role": "user",
+      "openId": "WYpjcjbhTB5RAMemu9w3Nq",
+      "local_email": "NULL"
+    },
+    {
+      "id": "42236",
+      "name": "Melissa Lavigne",
+      "email": "mlavigne@clientflame.com",
+      "role": "user",
+      "openId": "4YFgEzZDA8pDPS7KkjM9YE",
+      "local_email": "NULL"
+    },
+    {
+      "id": "61181",
+      "name": "New User",
+      "email": "newuser@test.com",
+      "role": "user",
+      "openId": "local_1773407993448_yayhdxwo19s",
+      "local_email": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\topenId\tlocal_email\n1\tJamar Christian\tjchristian@clientflame.com\tadmin\tNK2jqiGrJVWfHZ2S5DZe5F\tNULL\n37444\tJay Testing\tjamar.christian@gmail.com\tuser\tlocal_1773093025055_yy69htjhyh\tjamar.christian@gmail.com\n42228\tJ Christian\tjamar.christian@gmail.com\tuser\tWYpjcjbhTB5RAMemu9w3Nq\tNULL\n42236\tMelissa Lavigne\tmlavigne@clientflame.com\tuser\t4YFgEzZDA8pDPS7KkjM9YE\tNULL\n61181\tNew User\tnewuser@test.com\tuser\tlocal_1773407993448_yayhdxwo19s\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}
