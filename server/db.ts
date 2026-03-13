@@ -521,6 +521,36 @@ export async function getAuditLogs(limit = 100) {
   return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
 }
 
+export async function getAuditLogsFiltered(opts: {
+  limit?: number;
+  offset?: number;
+  action?: string;
+  resource?: string;
+  search?: string;
+}) {
+  const db = await getDb();
+  if (!db) return { logs: [], total: 0 };
+  const conditions: any[] = [];
+  if (opts.action) conditions.push(eq(auditLogs.action, opts.action));
+  if (opts.resource) conditions.push(eq(auditLogs.resource, opts.resource));
+  if (opts.search) conditions.push(
+    sql`(${auditLogs.userName} LIKE ${"%" + opts.search + "%"} OR ${auditLogs.action} LIKE ${"%" + opts.search + "%"} OR CAST(${auditLogs.details} AS CHAR) LIKE ${"%" + opts.search + "%"})`
+  );
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const [logs, countResult] = await Promise.all([
+    db.select().from(auditLogs).where(where).orderBy(desc(auditLogs.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: sql<number>`COUNT(*)` }).from(auditLogs).where(where),
+  ]);
+  return { logs, total: Number(countResult[0]?.count || 0) };
+}
+
+export async function getAuditLogActions() {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.selectDistinct({ action: auditLogs.action }).from(auditLogs).orderBy(auditLogs.action);
+  return result.map(r => r.action);
+}
+
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 export async function getDashboardStats(userId: number) {
   const db = await getDb();

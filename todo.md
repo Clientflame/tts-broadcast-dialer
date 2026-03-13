@@ -379,4 +379,8 @@
 - [x] Add system version number (v1.1.0) next to "Dashboard" header
 - [x] Add FreePBX system restart button on Settings page (fwconsole restart via SSH with confirmation)
 - [x] Vitest tests for notification prefs, freepbxRestart (8 new tests, 176 total passing)
-- [ ] Tag v1.1.0 and push to GitHub for Docker build
+- [x] Tag v1.1.0 and push to GitHub for Docker build
+- [x] Add live EST system clock next to version number on dashboard header
+- [x] Add system audit log viewer page (search, filter by action, pagination, color-coded actions, resource icons)
+- [x] Vitest tests for auditLogs.filtered and auditLogs.actions (5 new tests, 181 total passing)
+- [ ] Tag v1.1.1 and push to GitHub for Docker build

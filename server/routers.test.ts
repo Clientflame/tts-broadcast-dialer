@@ -273,6 +273,42 @@ describe("protected routes require auth", () => {
     const caller = appRouter.createCaller(publicCtx);
     await expect(caller.auditLogs.list({})).rejects.toThrow();
   });
+
+  it("auditLogs.filtered returns paginated results", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auditLogs.filtered({ limit: 10, offset: 0 });
+    expect(result).toHaveProperty("logs");
+    expect(result).toHaveProperty("total");
+    expect(Array.isArray(result.logs)).toBe(true);
+    expect(typeof result.total).toBe("number");
+  });
+
+  it("auditLogs.filtered supports search", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auditLogs.filtered({ search: "nonexistent_xyz_12345" });
+    expect(result.logs).toHaveLength(0);
+  });
+
+  it("auditLogs.filtered supports action filter", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auditLogs.filtered({ action: "nonexistent.action" });
+    expect(result.logs).toHaveLength(0);
+  });
+
+  it("auditLogs.actions returns array of strings", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.auditLogs.actions();
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  it("auditLogs.filtered requires auth", async () => {
+    const caller = appRouter.createCaller(publicCtx);
+    await expect(caller.auditLogs.filtered({})).rejects.toThrow();
+  });
 });
 
 describe("dnc - input validation", () => {

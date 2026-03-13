@@ -17,6 +17,33 @@ import {
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
+function useESTClock() {
+  const [time, setTime] = useState("");
+  useEffect(() => {
+    const update = () => {
+      const now = new Date();
+      const est = now.toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      });
+      const day = now.toLocaleDateString("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      setTime(`${day} ${est} EST`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return time;
+}
+
 function formatPhone(phone: string) {
   const d = phone.replace(/\D/g, "");
   if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
@@ -452,6 +479,7 @@ const ONBOARDING_DISMISSED_KEY = "onboarding_dismissed";
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const estClock = useESTClock();
   const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
 
   // Auto-redirect to onboarding if setup is incomplete and not dismissed
@@ -480,7 +508,13 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span></h1>
-            <p className="text-muted-foreground mt-1 text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-muted-foreground text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
+              <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">
+                <Clock className="h-3 w-3" />
+                {estClock}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {isDialerActive && (

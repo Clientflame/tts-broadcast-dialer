@@ -613,6 +613,18 @@ export const appRouter = router({
     list: protectedProcedure.input(z.object({ limit: z.number().min(1).max(500).optional() })).query(async ({ input }) => {
       return db.getAuditLogs(input.limit || 100);
     }),
+    filtered: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(100).optional(),
+      offset: z.number().min(0).optional(),
+      action: z.string().optional(),
+      resource: z.string().optional(),
+      search: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.getAuditLogsFiltered(input);
+    }),
+    actions: protectedProcedure.query(async () => {
+      return db.getAuditLogActions();
+    }),
   }),
 
   dnc: router({
