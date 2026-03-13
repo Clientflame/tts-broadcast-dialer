@@ -1081,12 +1081,21 @@ Return ONLY the message text, nothing else.`;
       const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
       const audioName = `quicktest_${audioFile.id}`;
 
-      // Resolve caller ID if specified
+      // Resolve caller ID — use selected DID or pick a random active one
       let callerIdStr: string | undefined;
+      const callerIdList = await db.getCallerIds(ctx.user.id);
       if (input.callerIdId) {
-        const callerIdList = await db.getCallerIds(ctx.user.id);
         const selectedCid = callerIdList.find(c => c.id === input.callerIdId);
         if (selectedCid) callerIdStr = selectedCid.phoneNumber;
+      }
+      // If no caller ID selected, pick a random active DID to avoid trunk default (1111111111)
+      if (!callerIdStr) {
+        const activeDids = callerIdList.filter(c => c.isActive && !c.autoDisabled);
+        if (activeDids.length > 0) {
+          const randomDid = activeDids[Math.floor(Math.random() * activeDids.length)];
+          callerIdStr = randomDid.phoneNumber;
+          console.log(`[QuickTest] No caller ID selected, using random DID: ${callerIdStr}`);
+        }
       }
 
       console.log(`[QuickTest] Enqueuing call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...${callerIdStr ? ` CallerID: ${callerIdStr}` : ''}`);

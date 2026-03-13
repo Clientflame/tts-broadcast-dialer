@@ -1,0 +1,100 @@
+{
+  "query": "\nSELECT phoneNumber, isActive, autoDisabled, healthStatus, lastCheckAt, lastCheckResult, consecutiveFailures \nFROM caller_ids \nORDER BY lastCheckAt DESC \nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute \nSELECT phoneNumber, isActive, autoDisabled, healthStatus, lastCheckAt, lastCheckResult, consecutiveFailures \nFROM caller_ids \nORDER BY lastCheckAt DESC \nLIMIT 10;\n",
+  "rows": [
+    {
+      "phoneNumber": "9503325693",
+      "isActive": "1",
+      "autoDisabled": "0",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443354786",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9523326041",
+      "isActive": "1",
+      "autoDisabled": "0",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443326094",
+      "lastCheckResult": "SIP 200 OK",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9513325961",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "failed",
+      "lastCheckAt": "1773443326032",
+      "lastCheckResult": "SIP 503",
+      "consecutiveFailures": "3"
+    },
+    {
+      "phoneNumber": "9504666175",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443162261",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9509243423",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443156006",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9505218636",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443149741",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9506558901",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443143465",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9508662130",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443137176",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9505550001",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443130916",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    },
+    {
+      "phoneNumber": "9500059693",
+      "isActive": "0",
+      "autoDisabled": "1",
+      "healthStatus": "healthy",
+      "lastCheckAt": "1773443124656",
+      "lastCheckResult": "Test call answered successfully",
+      "consecutiveFailures": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "phoneNumber\tisActive\tautoDisabled\thealthStatus\tlastCheckAt\tlastCheckResult\tconsecutiveFailures\n9503325693\t1\t0\thealthy\t1773443354786\tTest call answered successfully\t0\n9523326041\t1\t0\thealthy\t1773443326094\tSIP 200 OK\t0\n9513325961\t0\t1\tfailed\t1773443326032\tSIP 503\t3\n9504666175\t0\t1\thealthy\t1773443162261\tTest call answered successfully\t0\n9509243423\t0\t1\thealthy\t1773443156006\tTest call answered successfully\t0\n9505218636\t0\t1\thealthy\t1773443149741\tTest call answered successfully\t0\n9506558901\t0\t1\thealthy\t1773443143465\tTest call answered successfully\t0\n9508662130\t0\t1\thealthy\t1773443137176\tTest call answered successfully\t0\n9505550001\t0\t1\thealthy\t1773443130916\tTest call answered successfully\t0\n9500059693\t0\t1\thealthy\t1773443124656\tTest call answered successfully\t0\n",
+  "stderr": "",
+  "execution_time_ms": 83
+}

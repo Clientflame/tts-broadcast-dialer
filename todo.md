@@ -457,3 +457,4 @@
 - [x] Fix: Set Quick Test call priority to 0 (highest) for immediate processing
 - [x] Fix: Add flood guard - check pending health-check count before queuing more (max 50)
 - [x] Fix: Clean up 426 stale health-check calls from queue (done via SQL)
+- [x] Bug: Test Call shows caller ID as 1111111111 — fix: auto-select random active DID when no caller ID chosen
