@@ -592,6 +592,107 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
 }
 
 /**
+ * Resume a campaign after server restart by rebuilding the in-memory state.
+ * Unlike startCampaign(), this doesn't re-filter contacts or create new call_logs —
+ * it just restores the dialer loop so existing pending call_logs/queue items get processed.
+ */
+async function resumeCampaignAfterRestart(campaignId: number, userId: number): Promise<void> {
+  const campaign = await db.getCampaign(campaignId, userId);
+  if (!campaign) throw new Error("Campaign not found");
+  if (campaign.status !== "running") throw new Error(`Campaign status is '${campaign.status}', expected 'running'`);
+
+  // Already active in memory — skip
+  if (activeCampaigns.has(campaignId)) {
+    console.log(`[Dialer Recovery] Campaign ${campaignId} already active in memory — skipping`);
+    return;
+  }
+
+  // Load audio file
+  let audioS3Url: string | null = null;
+  let audioName: string | null = null;
+  if (campaign.audioFileId) {
+    try {
+      const audioFile = await db.getAudioFile(campaign.audioFileId, userId);
+      if (audioFile?.s3Url) {
+        audioS3Url = audioFile.s3Url;
+        audioName = `campaign_${campaignId}_${audioFile.id}`;
+      }
+    } catch (err) {
+      console.warn(`[Dialer Recovery] Could not load audio for campaign ${campaignId}:`, err);
+    }
+  }
+
+  // Load caller IDs
+  let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
+  if ((campaign as any).useDidRotation) {
+    try {
+      callerIdPool = await db.getActiveCallerIds(userId);
+    } catch (err) {
+      console.warn(`[Dialer Recovery] Could not load caller IDs for campaign ${campaignId}:`, err);
+    }
+  }
+
+  // Build pacing config
+  const pacingConfig: PacingConfig = {
+    mode: ((campaign as any).pacingMode as "fixed" | "adaptive" | "predictive") || "fixed",
+    fixedConcurrent: campaign.maxConcurrentCalls || 1,
+    targetDropRate: (campaign as any).pacingTargetDropRate ?? 3,
+    minConcurrent: (campaign as any).pacingMinConcurrent ?? 1,
+    maxConcurrent: (campaign as any).pacingMaxConcurrent ?? 10,
+  };
+
+  initPacing(campaignId, pacingConfig);
+  registerPacingConfig(campaignId, pacingConfig);
+
+  // Load call script if campaign uses one
+  let scriptSegments: ScriptSegment[] | null = null;
+  const callbackNumber = (campaign as any).callbackNumber || null;
+  if ((campaign as any).scriptId) {
+    try {
+      const script = await db.getCallScriptById((campaign as any).scriptId);
+      if (script?.segments) {
+        scriptSegments = script.segments;
+        console.log(`[Dialer Recovery] Script loaded: "${script.name}" with ${scriptSegments.length} segments`);
+      }
+    } catch (err) {
+      console.warn(`[Dialer Recovery] Could not load script for campaign ${campaignId}:`, err);
+    }
+  }
+
+  const active: ActiveCampaign = {
+    campaign,
+    intervalId: null,
+    audioS3Url,
+    audioName,
+    callerIds: callerIdPool,
+    callerIdIndex: 0,
+    usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
+    pacingConfig,
+    scriptSegments,
+    callbackNumber,
+    useDidCallbackNumber: !!(campaign as any).useDidCallbackNumber,
+    // No remaining contacts — they were already loaded into call_logs before the restart
+    remainingContacts: [],
+    totalEligible: campaign.totalContacts || 0,
+    dedupSkipped: 0,
+  };
+
+  activeCampaigns.set(campaignId, active);
+
+  // Start the enqueue loop
+  active.intervalId = setInterval(() => {
+    processCampaignCalls(campaignId, userId).catch(err => {
+      console.error(`[Dialer] Error processing campaign ${campaignId}:`, err);
+    });
+  }, 3000);
+
+  // Trigger first batch immediately
+  processCampaignCalls(campaignId, userId).catch(console.error);
+
+  console.log(`[Dialer Recovery] Campaign ${campaignId} ("${campaign.name}") resumed — dialer loop started`);
+}
+
+/**
  * Recovery function: runs on server startup to handle campaigns that were
  * left in "running" state after a server restart. For each such campaign,
  * check if all calls are done (no pending call_logs and no active/claimed queue items).
@@ -679,7 +780,18 @@ export async function recoverStaleCampaigns(): Promise<void> {
           eq(callQueue.status, "claimed")
         ));
 
-        console.log(`[Dialer Recovery] Campaign ${campaign.id} has ${pendingLogCount} pending logs and ${pendingQueueCount} pending queue items — left in 'running' for manual action`);
+        console.log(`[Dialer Recovery] Campaign ${campaign.id} has ${pendingLogCount} pending logs and ${pendingQueueCount} pending queue items — auto-resuming dialer`);
+
+        // Auto-resume: re-register the campaign in the dialer so the PBX agent gets calls
+        try {
+          await resumeCampaignAfterRestart(campaign.id, campaign.userId);
+          console.log(`[Dialer Recovery] Campaign ${campaign.id} successfully resumed`);
+        } catch (resumeErr) {
+          console.error(`[Dialer Recovery] Failed to resume campaign ${campaign.id}:`, resumeErr);
+          // If resume fails, pause the campaign so user can manually restart
+          await db.updateCampaign(campaign.id, campaign.userId, { status: "paused" });
+          console.log(`[Dialer Recovery] Campaign ${campaign.id} paused due to resume failure — user can restart manually`);
+        }
       }
     }
   } catch (err) {

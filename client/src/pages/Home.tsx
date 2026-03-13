@@ -7,13 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Megaphone, Users, Phone, PhoneCall, CheckCircle2,
   ListChecks, Wifi, WifiOff, RefreshCw, Activity,
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings,
+  Settings, Volume2,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -384,6 +389,120 @@ function CallActivityFeed() {
   );
 }
 
+function TestCallWidget() {
+  const { user } = useAuth();
+  const [testPhone, setTestPhone] = useState("");
+  const [testAudioId, setTestAudioId] = useState<number | null>(null);
+  const [testCallerId, setTestCallerId] = useState<number | undefined>(undefined);
+
+  // Fetch audio files and caller IDs
+  const audioFiles = trpc.audio.list.useQuery(undefined, { enabled: !!user });
+  const callerIds = trpc.callerIds.list.useQuery(undefined, { enabled: !!user });
+
+  const readyFiles = (audioFiles.data ?? []).filter((f: any) => f.s3Url);
+  const activeCallerIds = (callerIds.data ?? []).filter((c: any) => c.isActive);
+
+  const quickTestMut = trpc.quickTest.dial.useMutation({
+    onSuccess: (r) => {
+      if (r.success) {
+        toast.success("Test call initiated! Your phone should ring shortly.");
+        setTestPhone("");
+      } else {
+        toast.error(r.message || "Failed to initiate call");
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const canDial = testPhone.replace(/\D/g, "").length >= 10 && testAudioId;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Phone className="h-5 w-5 text-muted-foreground" />
+          <CardTitle className="text-base">Test Call</CardTitle>
+        </div>
+        <CardDescription className="text-xs">Quick dial to test your system</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Phone Number</Label>
+          <Input
+            placeholder="(407) 555-1177"
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+            className="h-8 text-sm"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Audio File</Label>
+          <Select
+            value={testAudioId?.toString() || ""}
+            onValueChange={(v) => setTestAudioId(v ? parseInt(v) : null)}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Select audio..." />
+            </SelectTrigger>
+            <SelectContent>
+              {readyFiles.map((f: any) => (
+                <SelectItem key={f.id} value={f.id.toString()}>
+                  <span className="flex items-center gap-1.5">
+                    <Volume2 className="h-3 w-3" />
+                    {f.name}
+                  </span>
+                </SelectItem>
+              ))}
+              {readyFiles.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">No audio files ready</div>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Caller ID</Label>
+          <Select
+            value={testCallerId?.toString() || "auto"}
+            onValueChange={(v) => setTestCallerId(v === "auto" ? undefined : parseInt(v))}
+          >
+            <SelectTrigger className="h-8 text-sm">
+              <SelectValue placeholder="Auto (random)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto (random rotation)</SelectItem>
+              {activeCallerIds.map((c: any) => (
+                <SelectItem key={c.id} value={c.id.toString()}>
+                  {c.label ? `${c.label} - ${c.phoneNumber}` : c.phoneNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          className="w-full"
+          size="sm"
+          disabled={!canDial || quickTestMut.isPending}
+          onClick={() => {
+            if (testAudioId && testPhone) {
+              quickTestMut.mutate({
+                phoneNumber: testPhone,
+                audioFileId: testAudioId,
+                callerIdId: testCallerId,
+              });
+            }
+          }}
+        >
+          {quickTestMut.isPending ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Calling...</>
+          ) : (
+            <><PhoneCall className="h-4 w-4 mr-2" />Dial Test Call</>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AreaCodeDistribution() {
   const { user } = useAuth();
   const areaCodeData = trpc.dashboard.areaCodeDistribution.useQuery(
@@ -727,20 +846,7 @@ export default function Home() {
               </Button>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start" onClick={() => window.location.href = "/campaigns"}>
-                <Megaphone className="h-4 w-4 mr-2" />Create New Campaign
-              </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => window.location.href = "/contacts"}>
-                <Users className="h-4 w-4 mr-2" />Manage Contacts
-              </Button>
-              <Button variant="outline" className="w-full justify-start" onClick={() => window.location.href = "/audio"}>
-                <PhoneCall className="h-4 w-4 mr-2" />Generate TTS Audio
-              </Button>
-            </CardContent>
-          </Card>
+          <TestCallWidget />
         </div>
       </div>
     </DashboardLayout>

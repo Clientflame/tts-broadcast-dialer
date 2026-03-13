@@ -443,3 +443,7 @@
 - [x] Fix: Increased heartbeat threshold from 30s to 60s across all 6 agent status checks (including load balancer)
 - [x] Fix: PBX agent now has independent heartbeat thread (every 10s) decoupled from poll loop
 - [x] Fix: PBX agent poll failure backoff (gradual backoff up to 30s after 5+ consecutive failures)
+- [x] Bug: Not getting calls — campaign stuck in 'running' after server restart, dialer recovery doesn't auto-resume
+- [x] Fix: Dialer recovery auto-resumes campaigns with pending queue items (resumeCampaignAfterRestart)
+- [x] Fix: Campaign 30012 successfully resumed after restart
+- [x] Add test call widget on Dashboard to quickly test the system (enter phone number, select caller ID, dial)

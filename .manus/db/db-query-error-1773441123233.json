@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, name, status, created_at, completed_at FROM campaigns WHERE id = 30012; SELECT id, campaign_id, phone_number, status, result, claimed_at, completed_at FROM call_queue WHERE campaign_id = 30012 ORDER BY id DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, status, created_at, completed_at FROM campaigns WHERE id = 30012; SELECT id, campaign_id, phone_number, status, result, claimed_at, completed_at FROM call_queue WHERE campaign_id = 30012 ORDER BY id DESC LIMIT 20;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'created_at' in 'field list'"
+  ]
+}

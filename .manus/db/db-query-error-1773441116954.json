@@ -1,0 +1,10 @@
+{
+  "query": "SELECT id, name, status, createdAt, completedAt FROM campaigns WHERE id = 30012; SELECT id, campaignId, phoneNumber, status, result, claimedAt, completedAt FROM call_queue WHERE campaignId = 30012 ORDER BY id DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, status, createdAt, completedAt FROM campaigns WHERE id = 30012; SELECT id, campaignId, phoneNumber, status, result, claimedAt, completedAt FROM call_queue WHERE campaignId = 30012 ORDER BY id DESC LIMIT 20;",
+  "returncode": 1,
+  "logs": [
+    "id\tname\tstatus\tcreatedAt\tcompletedAt",
+    "30012\tJC Phone Test\trunning\t2026-03-11 22:48:11\tNULL",
+    "ERROR 1054 (42S22) at line 1: Unknown column 'completedat' in 'field list'"
+  ]
+}
