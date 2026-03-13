@@ -192,6 +192,55 @@ describe("appSettings", () => {
     });
   });
 
+  describe("appSettings.freepbxReconnect", () => {
+    it("attempts to reconnect AMI (returns result object)", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxReconnect();
+
+      // Will likely fail in test env since no real FreePBX, but should return structured result
+      expect(result).toHaveProperty("success");
+      expect(result).toHaveProperty("host");
+      expect(result).toHaveProperty("port");
+      expect(typeof result.success).toBe("boolean");
+    }, 15000);
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(userCaller.appSettings.freepbxReconnect()).rejects.toThrow();
+    });
+  });
+
+  describe("appSettings.freepbxTestConnection", () => {
+    it("returns failure for unreachable host", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxTestConnection({
+        host: "127.0.0.1", // localhost — no AMI running
+        port: 59999,        // unused port
+        username: "test",
+        password: "test",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeTruthy();
+    }, 15000);
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(
+        userCaller.appSettings.freepbxTestConnection({
+          host: "localhost",
+          port: 5038,
+          username: "test",
+          password: "test",
+        })
+      ).rejects.toThrow();
+    });
+  });
+
   describe("appSettings.freepbxStatus", () => {
     it("returns FreePBX configuration status", async () => {
       const { ctx } = createAuthContext();

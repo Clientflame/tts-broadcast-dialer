@@ -281,7 +281,7 @@ class AMIClient extends EventEmitter {
 let amiClient: AMIClient | null = null;
 let amiConnecting = false;
 
-function getAMIConfig(): AMIConfig {
+function getAMIConfigSync(): AMIConfig {
   return {
     host: process.env.FREEPBX_HOST || "45.77.75.198",
     port: parseInt(process.env.FREEPBX_AMI_PORT || "5038"),
@@ -290,9 +290,23 @@ function getAMIConfig(): AMIConfig {
   };
 }
 
+/** Get AMI config from database first, falling back to env vars */
+export async function getAMIConfigFromDB(): Promise<AMIConfig> {
+  try {
+    const { getAppSetting } = await import("../db");
+    const host = await getAppSetting("freepbx_host") || process.env.FREEPBX_HOST || "45.77.75.198";
+    const port = parseInt(await getAppSetting("freepbx_ami_port") || process.env.FREEPBX_AMI_PORT || "5038");
+    const username = await getAppSetting("freepbx_ami_user") || process.env.FREEPBX_AMI_USER || "broadcast_dialer";
+    const password = await getAppSetting("freepbx_ami_password") || process.env.FREEPBX_AMI_PASSWORD || "";
+    return { host, port, username, password };
+  } catch {
+    return getAMIConfigSync();
+  }
+}
+
 export function getAMIClient(): AMIClient {
   if (!amiClient) {
-    amiClient = new AMIClient(getAMIConfig());
+    amiClient = new AMIClient(getAMIConfigSync());
   }
   return amiClient;
 }
@@ -324,6 +338,50 @@ export function getAMIStatus(): { connected: boolean; host: string; port: number
     host: process.env.FREEPBX_HOST || "45.77.75.198",
     port: parseInt(process.env.FREEPBX_AMI_PORT || "5038"),
   };
+}
+
+/** Disconnect existing client, re-read config from DB, and reconnect */
+export async function reconnectAMI(): Promise<{ success: boolean; host: string; port: number; error?: string }> {
+  // Disconnect existing client
+  if (amiClient) {
+    amiClient.disconnect();
+    amiClient = null;
+    amiConnecting = false;
+  }
+
+  // Get fresh config from DB
+  const config = await getAMIConfigFromDB();
+
+  // Create new client with fresh config
+  amiClient = new AMIClient(config);
+
+  try {
+    await amiClient.connect();
+    return { success: true, host: config.host, port: config.port };
+  } catch (err: any) {
+    return { success: false, host: config.host, port: config.port, error: err.message || "Connection failed" };
+  }
+}
+
+/** Test AMI connection with specific credentials (does not affect the main client) */
+export async function testAMIConnection(config: AMIConfig): Promise<{ success: boolean; error?: string; latencyMs?: number }> {
+  const testClient = new AMIClient(config);
+  const start = Date.now();
+  try {
+    await testClient.connect();
+    const latencyMs = Date.now() - start;
+    // Send a Ping to verify full round-trip
+    try {
+      await testClient.sendAction({ Action: "Ping" });
+    } catch {
+      // Ping may timeout but connection was established
+    }
+    testClient.disconnect();
+    return { success: true, latencyMs };
+  } catch (err: any) {
+    testClient.disconnect();
+    return { success: false, error: err.message || "Connection failed" };
+  }
 }
 
 // AMI auto-connect disabled - PBX agent handles AMI locally on the FreePBX server

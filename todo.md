@@ -354,4 +354,8 @@
 - [x] Add "Test API Key" button for OpenAI TTS on Settings page (validates key against API)
 - [x] Add "Test API Key" button for Google TTS on Settings page (validates key against API)
 - [x] Vitest tests for testTtsKey and freepbxStatus endpoints (5 new tests, 155 total passing)
-- [ ] Tag v1.0.6 and push to GitHub for Docker build
+- [x] Tag v1.0.6 and push to GitHub for Docker build
+- [x] Add FreePBX hot-reload: "Reconnect" button that re-reads settings from DB and reconnects AMI without restart
+- [x] Add "Test Connection" button for FreePBX that attempts AMI connection to verify host/credentials
+- [x] Vitest tests for freepbxReconnect and freepbxTestConnection (4 new tests, 159 total passing)
+- [ ] Tag v1.0.7 and push to GitHub for Docker build

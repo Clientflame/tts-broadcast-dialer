@@ -9,6 +9,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Settings as SettingsIcon, Key, Eye, EyeOff, CheckCircle2, XCircle,
   Loader2, ExternalLink, Save, Server, FlaskConical, ShieldCheck, ShieldAlert,
+  PlugZap, Unplug, Wifi,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -299,11 +300,15 @@ function FreePBXSettingsSection() {
   const settingsList = trpc.appSettings.list.useQuery();
   const freepbxStatus = trpc.appSettings.freepbxStatus.useQuery();
   const bulkUpdate = trpc.appSettings.bulkUpdate.useMutation();
+  const reconnect = trpc.appSettings.freepbxReconnect.useMutation();
+  const testConnection = trpc.appSettings.freepbxTestConnection.useMutation();
   const utils = trpc.useUtils();
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [showValues, setShowValues] = useState<Record<string, boolean>>({});
   const [isDirty, setIsDirty] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string; latencyMs?: number } | null>(null);
+  const [reconnectResult, setReconnectResult] = useState<{ success: boolean; host?: string; error?: string } | null>(null);
 
   useEffect(() => {
     if (settingsList.data && freepbxStatus.data) {
@@ -350,9 +355,53 @@ function FreePBXSettingsSection() {
       await utils.appSettings.list.invalidate();
       await utils.appSettings.freepbxStatus.invalidate();
       setIsDirty(false);
-      toast.success("FreePBX settings saved. Restart the application for changes to take effect.");
+      setTestResult(null);
+      setReconnectResult(null);
+      toast.success("FreePBX settings saved. Use Reconnect to apply without restarting.");
     } catch (err: any) {
       toast.error(err.message || "Failed to save settings");
+    }
+  };
+
+  const handleTestConnection = async () => {
+    const host = values["freepbx_host"];
+    const username = values["freepbx_ami_user"];
+    const password = values["freepbx_ami_password"];
+    const port = parseInt(values["freepbx_ami_port"] || "5038");
+
+    if (!host || !username || !password) {
+      toast.error("Fill in Host, AMI Username, and AMI Password to test");
+      return;
+    }
+
+    setTestResult(null);
+    try {
+      const result = await testConnection.mutateAsync({ host, port, username, password });
+      setTestResult(result);
+      if (result.success) {
+        toast.success(`Connection successful! Latency: ${result.latencyMs}ms`);
+      } else {
+        toast.error(`Connection failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, error: err.message });
+      toast.error(err.message || "Test failed");
+    }
+  };
+
+  const handleReconnect = async () => {
+    setReconnectResult(null);
+    try {
+      const result = await reconnect.mutateAsync();
+      setReconnectResult(result);
+      if (result.success) {
+        toast.success(`Reconnected to ${result.host}:${result.port}`);
+      } else {
+        toast.error(`Reconnect failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      setReconnectResult({ success: false, error: err.message });
+      toast.error(err.message || "Reconnect failed");
     }
   };
 
@@ -414,10 +463,59 @@ function FreePBXSettingsSection() {
 
         <Separator />
 
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            Changes require an application restart to take effect.
-          </p>
+        {/* Test / Reconnect result feedback */}
+        {testResult && (
+          <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${testResult.success ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
+            {testResult.success ? <Wifi className="h-4 w-4" /> : <Unplug className="h-4 w-4" />}
+            <span>
+              {testResult.success
+                ? `AMI connection successful${testResult.latencyMs ? ` (${testResult.latencyMs}ms)` : ""}`
+                : `AMI connection failed: ${testResult.error}`}
+            </span>
+          </div>
+        )}
+        {reconnectResult && (
+          <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${reconnectResult.success ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
+            {reconnectResult.success ? <PlugZap className="h-4 w-4" /> : <Unplug className="h-4 w-4" />}
+            <span>
+              {reconnectResult.success
+                ? `Reconnected to ${reconnectResult.host}`
+                : `Reconnect failed: ${reconnectResult.error}`}
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={testConnection.isPending}
+              className="gap-1.5"
+            >
+              {testConnection.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FlaskConical className="h-3.5 w-3.5" />
+              )}
+              Test Connection
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReconnect}
+              disabled={reconnect.isPending}
+              className="gap-1.5"
+            >
+              {reconnect.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <PlugZap className="h-3.5 w-3.5" />
+              )}
+              Reconnect
+            </Button>
+          </div>
           <Button
             onClick={handleSave}
             disabled={!isDirty || bulkUpdate.isPending}

@@ -1677,6 +1677,30 @@ Return ONLY the message text, nothing else.`;
       }
     }),
 
+    /** Reconnect AMI with fresh settings from DB (admin only) */
+    freepbxReconnect: adminProcedure.mutation(async () => {
+      const { reconnectAMI } = await import("./services/ami");
+      const result = await reconnectAMI();
+      return result;
+    }),
+
+    /** Test FreePBX AMI connection with provided credentials (admin only) */
+    freepbxTestConnection: adminProcedure.input(z.object({
+      host: z.string().min(1),
+      port: z.coerce.number().int().min(1).max(65535).default(5038),
+      username: z.string().min(1),
+      password: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const { testAMIConnection } = await import("./services/ami");
+      const result = await testAMIConnection({
+        host: input.host,
+        port: input.port,
+        username: input.username,
+        password: input.password,
+      });
+      return result;
+    }),
+
     /** Get FreePBX connection settings status */
     freepbxStatus: protectedProcedure.query(async () => {
       const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
