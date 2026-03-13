@@ -1639,6 +1639,62 @@ Return ONLY the message text, nothing else.`;
       await db.deleteAppSetting(input.key);
       return { success: true };
     }),
+
+    /** Test an API key against the provider (admin only) */
+    testTtsKey: adminProcedure.input(z.object({
+      provider: z.enum(["openai", "google"]),
+      apiKey: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      try {
+        if (input.provider === "openai") {
+          // Test by listing models — lightweight, no cost
+          const res = await fetch("https://api.openai.com/v1/models", {
+            headers: { "Authorization": `Bearer ${input.apiKey}` },
+          });
+          if (!res.ok) {
+            const errText = await res.text();
+            if (res.status === 401) return { valid: false, error: "Invalid API key — authentication failed" };
+            if (res.status === 429) return { valid: false, error: "Rate limited — key may be valid but quota exceeded" };
+            return { valid: false, error: `API returned ${res.status}: ${errText.slice(0, 200)}` };
+          }
+          return { valid: true, error: null };
+        } else {
+          // Google TTS — test by listing voices (free, no cost)
+          const res = await fetch(
+            `https://texttospeech.googleapis.com/v1/voices?key=${input.apiKey}&languageCode=en-US`
+          );
+          if (!res.ok) {
+            const errText = await res.text();
+            if (res.status === 400 || res.status === 403) return { valid: false, error: "Invalid API key or TTS API not enabled" };
+            return { valid: false, error: `API returned ${res.status}: ${errText.slice(0, 200)}` };
+          }
+          const data = await res.json();
+          const voiceCount = data.voices?.length || 0;
+          return { valid: true, error: null, detail: `Found ${voiceCount} en-US voices` };
+        }
+      } catch (err: any) {
+        return { valid: false, error: err.message || "Network error" };
+      }
+    }),
+
+    /** Get FreePBX connection settings status */
+    freepbxStatus: protectedProcedure.query(async () => {
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const amiUser = await db.getAppSetting("freepbx_ami_user") || process.env.FREEPBX_AMI_USER;
+      const amiPassword = await db.getAppSetting("freepbx_ami_password") || process.env.FREEPBX_AMI_PASSWORD;
+      const amiPort = await db.getAppSetting("freepbx_ami_port") || process.env.FREEPBX_AMI_PORT;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      return {
+        hostConfigured: !!host,
+        amiConfigured: !!(amiUser && amiPassword),
+        sshConfigured: !!(sshUser && sshPassword),
+        host: host || null,
+        amiPort: amiPort || "5038",
+        amiUser: amiUser || null,
+        sshUser: sshUser || null,
+      };
+    }),
   }),
 
   onboarding: router({

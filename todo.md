@@ -349,3 +349,9 @@
 - [x] Backend: settings CRUD endpoints to store/retrieve TTS API keys in database
 - [x] Update TTS services to read API keys from database with env var fallback
 - [x] Vitest tests for appSettings CRUD (8 tests, 150 total passing)
+- [x] Add FreePBX connection settings to admin Settings page (host, AMI user/pass/port, SSH user/pass)
+- [x] Backend: store FreePBX settings in app_settings table with env var fallback
+- [x] Add "Test API Key" button for OpenAI TTS on Settings page (validates key against API)
+- [x] Add "Test API Key" button for Google TTS on Settings page (validates key against API)
+- [x] Vitest tests for testTtsKey and freepbxStatus endpoints (5 new tests, 155 total passing)
+- [ ] Tag v1.0.6 and push to GitHub for Docker build

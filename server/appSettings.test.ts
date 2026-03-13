@@ -159,4 +159,62 @@ describe("appSettings", () => {
       expect(getResult.value).toBeNull();
     });
   });
+
+  describe("appSettings.testTtsKey", () => {
+    it("rejects an invalid OpenAI key", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.testTtsKey({
+        provider: "openai",
+        apiKey: "sk-invalid-key-12345",
+      });
+      expect(result.valid).toBe(false);
+      expect(result.error).toBeTruthy();
+    });
+
+    it("rejects an invalid Google key", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.testTtsKey({
+        provider: "google",
+        apiKey: "AIza-invalid-key-12345",
+      });
+      expect(result.valid).toBe(false);
+      expect(result.error).toBeTruthy();
+    });
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(
+        userCaller.appSettings.testTtsKey({ provider: "openai", apiKey: "sk-test" })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("appSettings.freepbxStatus", () => {
+    it("returns FreePBX configuration status", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxStatus();
+
+      expect(result).toHaveProperty("hostConfigured");
+      expect(result).toHaveProperty("amiConfigured");
+      expect(result).toHaveProperty("sshConfigured");
+      expect(typeof result.hostConfigured).toBe("boolean");
+      expect(typeof result.amiConfigured).toBe("boolean");
+      expect(typeof result.sshConfigured).toBe("boolean");
+    });
+
+    it("returns host and user info", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxStatus();
+
+      expect(result).toHaveProperty("host");
+      expect(result).toHaveProperty("amiPort");
+      expect(result).toHaveProperty("amiUser");
+      expect(result).toHaveProperty("sshUser");
+    });
+  });
 });
