@@ -373,3 +373,4 @@
 - [x] Fix: recordDidCallResultByNumber now parses phone from formatted callerIdStr ("Label" <number>)
 - [x] Fix: Dialer refreshes caller ID pool from DB before each call (respects disabled/flagged DIDs mid-campaign)
 - [x] Vitest tests for callerIdStr parsing (5 new tests, 170 total passing)
+- [x] Publish fix: DID notification emails disabled on production (vai26.407hosted.com)
