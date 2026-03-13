@@ -10,6 +10,7 @@ import {
   Settings as SettingsIcon, Key, Eye, EyeOff, CheckCircle2, XCircle,
   Loader2, ExternalLink, Save, Server, FlaskConical, ShieldCheck, ShieldAlert,
   PlugZap, Unplug, Wifi, Terminal, RotateCcw, AlertTriangle, Bell, BellOff,
+  Mail,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
@@ -72,6 +73,7 @@ export default function Settings() {
           <>
             <TTSApiKeysSection />
             <FreePBXSettingsSection />
+            <SmtpSettingsSection />
             <NotificationPreferencesSection />
           </>
         ) : (
@@ -655,6 +657,204 @@ function FreePBXSettingsSection() {
               Save & Reconnect
             </Button>
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// SMTP settings for email sending (password resets, notifications)
+const SMTP_SETTINGS = [
+  { key: "smtp_host", label: "SMTP Host", placeholder: "smtp.gmail.com", isSecret: 0, type: "text" },
+  { key: "smtp_port", label: "SMTP Port", placeholder: "587", isSecret: 0, type: "text" },
+  { key: "smtp_secure", label: "Use TLS/SSL", placeholder: "false", isSecret: 0, type: "toggle" },
+  { key: "smtp_user", label: "SMTP Username", placeholder: "your@email.com", isSecret: 0, type: "text" },
+  { key: "smtp_pass", label: "SMTP Password", placeholder: "App password or SMTP password", isSecret: 1, type: "password" },
+  { key: "smtp_from_email", label: "From Email", placeholder: "noreply@yourdomain.com", isSecret: 0, type: "text" },
+  { key: "smtp_from_name", label: "From Name", placeholder: "TTS Broadcast Dialer", isSecret: 0, type: "text" },
+];
+
+function SmtpSettingsSection() {
+  const settingsList = trpc.appSettings.list.useQuery();
+  const smtpStatus = trpc.appSettings.smtpStatus.useQuery();
+  const bulkUpdate = trpc.appSettings.bulkUpdate.useMutation();
+  const testSmtp = trpc.appSettings.testSmtp.useMutation();
+  const utils = trpc.useUtils();
+
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [showValues, setShowValues] = useState<Record<string, boolean>>({});
+  const [isDirty, setIsDirty] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
+
+  useEffect(() => {
+    if (settingsList.data) {
+      const initial: Record<string, string> = {};
+      for (const setting of SMTP_SETTINGS) {
+        const serverVal = settingsList.data.find(s => s.key === setting.key);
+        initial[setting.key] = serverVal?.value && serverVal.value !== "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" ? serverVal.value : "";
+      }
+      setValues(initial);
+    }
+  }, [settingsList.data]);
+
+  const handleChange = (key: string, value: string) => {
+    setValues(prev => ({ ...prev, [key]: value }));
+    setIsDirty(true);
+    setTestResult(null);
+  };
+
+  const handleSave = async () => {
+    const updates = SMTP_SETTINGS
+      .filter(s => (values[s.key] || "").length > 0)
+      .map(s => ({
+        key: s.key,
+        value: values[s.key] || null,
+        description: `SMTP ${s.label}`,
+        isSecret: s.isSecret,
+      }));
+
+    if (updates.length === 0) {
+      toast.info("No changes to save");
+      return;
+    }
+
+    try {
+      await bulkUpdate.mutateAsync(updates);
+      await utils.appSettings.list.invalidate();
+      await utils.appSettings.smtpStatus.invalidate();
+      setIsDirty(false);
+      toast.success("SMTP settings saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save SMTP settings");
+    }
+  };
+
+  const handleTest = async () => {
+    setTestResult(null);
+    try {
+      const result = await testSmtp.mutateAsync();
+      setTestResult(result);
+      if (result.success) {
+        toast.success("SMTP connection successful");
+      } else {
+        toast.error(`SMTP test failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, error: err.message });
+      toast.error(err.message || "SMTP test failed");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          Email / SMTP Settings
+        </CardTitle>
+        <CardDescription>
+          Configure SMTP settings to enable password reset emails and other notifications.
+          For Gmail, use an App Password (not your regular password) with smtp.gmail.com on port 587.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Status */}
+        <div className="flex flex-wrap gap-4 p-4 bg-muted/50 rounded-lg">
+          <StatusBadge label="SMTP" configured={smtpStatus.data?.configured ?? false} loading={smtpStatus.isLoading} />
+          {smtpStatus.data?.configured && smtpStatus.data.fromEmail && (
+            <span className="text-xs text-muted-foreground">Sending as: {smtpStatus.data.fromName} &lt;{smtpStatus.data.fromEmail}&gt;</span>
+          )}
+        </div>
+
+        {/* Settings inputs */}
+        <div className="grid gap-4">
+          {SMTP_SETTINGS.filter(s => s.type !== "toggle").map(setting => {
+            const isPassword = setting.isSecret === 1;
+            const showPassword = showValues[setting.key];
+            return (
+              <div key={setting.key} className="space-y-1.5">
+                <Label htmlFor={setting.key} className="text-sm font-medium">
+                  {setting.label}
+                </Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id={setting.key}
+                      type={isPassword && !showPassword ? "password" : "text"}
+                      placeholder={setting.placeholder}
+                      value={values[setting.key] || ""}
+                      onChange={e => handleChange(setting.key, e.target.value)}
+                      className={`${isPassword ? "pr-10" : ""} font-mono text-sm`}
+                    />
+                    {isPassword && (
+                      <button
+                        type="button"
+                        onClick={() => setShowValues(prev => ({ ...prev, [setting.key]: !prev[setting.key] }))}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* TLS toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <Label className="text-sm font-medium">Use TLS/SSL</Label>
+              <p className="text-xs text-muted-foreground">Enable for port 465 (SSL) or STARTTLS on port 587</p>
+            </div>
+            <Switch
+              checked={values["smtp_secure"] === "true"}
+              onCheckedChange={(checked) => handleChange("smtp_secure", checked ? "true" : "false")}
+            />
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Test result */}
+        {testResult && (
+          <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${testResult.success ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
+            {testResult.success ? <Mail className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            <span>
+              {testResult.success
+                ? "SMTP connection verified successfully"
+                : `SMTP test failed: ${testResult.error}`}
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTest}
+            disabled={testSmtp.isPending}
+            className="gap-1.5"
+          >
+            {testSmtp.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FlaskConical className="h-3.5 w-3.5" />
+            )}
+            Test Connection
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={!isDirty || bulkUpdate.isPending}
+            className="gap-2"
+          >
+            {bulkUpdate.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save SMTP Settings
+          </Button>
         </div>
       </CardContent>
     </Card>

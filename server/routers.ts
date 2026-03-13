@@ -14,6 +14,7 @@ import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
+import { sendPasswordResetEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
 
 // Shared voice enums for OpenAI and Google TTS
 const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
@@ -1173,6 +1174,33 @@ Return ONLY the message text, nothing else.`;
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.create", resource: "user", resourceId: user.id, details: { email: input.email, method: "email" } });
       return { success: true, userId: user.id };
     }),
+    /** Delete a user (admin only) */
+    deleteUser: adminProcedure.input(z.object({
+      userId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      // Prevent admin from deleting themselves
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot delete your own account" });
+      }
+      const targetUser = await db.getUserById(input.userId);
+      if (!targetUser) throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+      await db.deleteUser(input.userId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.delete", resource: "user", resourceId: input.userId, details: { deletedEmail: targetUser.email, deletedName: targetUser.name } });
+      return { success: true };
+    }),
+
+    /** Admin reset password for any user (admin only) */
+    adminResetPassword: adminProcedure.input(z.object({
+      userId: z.number(),
+      newPassword: z.string().min(8).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      const authRecord = await db.getLocalAuthByUserId(input.userId);
+      if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "User does not have email/password login" });
+      const newHash = await bcrypt.hash(input.newPassword, 12);
+      await db.updateLocalAuthPassword(input.userId, newHash);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.adminResetPassword", resource: "user", resourceId: input.userId });
+      return { success: true };
+    }),
   }),
 
   // ─── User Groups ──────────────────────────────────────────────────────────
@@ -1258,14 +1286,21 @@ Return ONLY the message text, nothing else.`;
     }),
     resetPasswordRequest: publicProcedure.input(z.object({
       email: z.string().email(),
-    })).mutation(async ({ input }) => {
+      origin: z.string().url().optional(),
+    })).mutation(async ({ ctx, input }) => {
       const authRecord = await db.getLocalAuthByEmail(input.email);
       if (!authRecord) return { success: true }; // Don't reveal if email exists
       const token = `reset_${Date.now()}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
       const expiry = Date.now() + 3600000; // 1 hour
       await db.setResetToken(input.email, token, expiry);
-      // In production, send email with reset link. For now, log it.
-      console.log(`[Auth] Password reset token for ${input.email}: ${token}`);
+      // Determine origin for reset link
+      const origin = input.origin || `${ctx.req.protocol}://${ctx.req.get("host")}`;
+      // Send password reset email
+      const emailSent = await sendPasswordResetEmail(input.email, token, origin);
+      if (!emailSent) {
+        console.warn(`[Auth] Password reset email could not be sent to ${input.email} — SMTP may not be configured`);
+      }
+      console.log(`[Auth] Password reset requested for ${input.email} (email sent: ${emailSent})`);
       return { success: true };
     }),
     resetPassword: publicProcedure.input(z.object({
@@ -1737,6 +1772,24 @@ Return ONLY the message text, nothing else.`;
       } catch (err: any) {
         return { valid: false, error: err.message || "Network error" };
       }
+    }),
+
+    /** Test SMTP connection (admin only) */
+    testSmtp: adminProcedure.mutation(async () => {
+      const result = await testSmtpConnection();
+      return result;
+    }),
+
+    /** Get SMTP configuration status */
+    smtpStatus: protectedProcedure.query(async () => {
+      const config = await getSmtpConfig();
+      return {
+        configured: !!config,
+        host: config?.host || null,
+        port: config?.port || null,
+        fromEmail: config?.fromEmail || null,
+        fromName: config?.fromName || null,
+      };
     }),
 
     /** Reconnect AMI with fresh settings from DB (admin only) */

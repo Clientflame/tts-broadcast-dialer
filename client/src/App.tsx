@@ -25,6 +25,7 @@ import Scripts from "./pages/Scripts";
 import DidAnalytics from "./pages/DidAnalytics";
 import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
+import ResetPassword from "./pages/ResetPassword";
 
 function Router() {
   return (
@@ -50,6 +51,7 @@ function Router() {
       <Route path={"/setup"} component={Setup} />
       <Route path={"/onboarding"} component={Onboarding} />
       <Route path={"/settings"} component={Settings} />
+      <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

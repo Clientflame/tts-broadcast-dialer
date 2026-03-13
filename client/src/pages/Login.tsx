@@ -55,7 +55,7 @@ export default function Login() {
   const handleReset = (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetEmail) return;
-    resetMutation.mutate({ email: resetEmail });
+    resetMutation.mutate({ email: resetEmail, origin: window.location.origin });
   };
 
   const showOAuth = authConfig.data?.oauthConfigured !== false;

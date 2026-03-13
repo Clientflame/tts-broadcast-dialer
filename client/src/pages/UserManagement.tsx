@@ -11,7 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useState, useMemo } from "react";
-import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2 } from "lucide-react";
+import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const AVAILABLE_PERMISSIONS = [
   { key: "campaigns.view", label: "View Campaigns", category: "Campaigns" },
@@ -107,6 +108,19 @@ export default function UserManagement() {
     onSuccess: () => { toast.success("Group deleted"); utils.groups.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
+
+  const deleteUser = trpc.userManagement.deleteUser.useMutation({
+    onSuccess: () => { toast.success("User deleted"); utils.userManagement.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const adminResetPassword = trpc.userManagement.adminResetPassword.useMutation({
+    onSuccess: () => { toast.success("Password reset successfully"); setResetPasswordUserId(null); setResetPasswordValue(""); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
 
   const filteredUsers = useMemo(() => {
     if (!usersQuery.data) return [];
@@ -310,9 +324,38 @@ export default function UserManagement() {
                         {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleDateString() : "-"}
                       </td>
                       <td className="p-3">
-                        <Badge variant="outline" className="text-xs">
-                          ID: {u.id}
-                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {u.loginMethod === "email" && (
+                              <DropdownMenuItem onClick={() => { setResetPasswordUserId(u.id); setResetPasswordValue(""); }}>
+                                <RotateCcw className="h-4 w-4 mr-2" />
+                                Reset Password
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                if (u.id === user?.id) {
+                                  toast.error("You cannot delete your own account");
+                                  return;
+                                }
+                                if (confirm(`Delete user "${u.name || u.email}"? This action cannot be undone.`)) {
+                                  deleteUser.mutate({ userId: u.id });
+                                }
+                              }}
+                              disabled={u.id === user?.id}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete User
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   ))}
@@ -322,6 +365,51 @@ export default function UserManagement() {
                 </tbody>
               </table>
             </div>
+
+            {/* Admin Reset Password Dialog */}
+            <Dialog open={resetPasswordUserId !== null} onOpenChange={(open) => { if (!open) { setResetPasswordUserId(null); setResetPasswordValue(""); } }}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Reset User Password</DialogTitle>
+                  <DialogDescription>
+                    Set a new password for {filteredUsers.find(u => u.id === resetPasswordUserId)?.name || "this user"}.
+                    The user will need to use this new password to log in.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label>New Password</Label>
+                    <Input
+                      type="password"
+                      value={resetPasswordValue}
+                      onChange={e => setResetPasswordValue(e.target.value)}
+                      placeholder="Minimum 8 characters"
+                      autoComplete="new-password"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      className="flex-1"
+                      onClick={() => {
+                        if (resetPasswordUserId && resetPasswordValue.length >= 8) {
+                          adminResetPassword.mutate({ userId: resetPasswordUserId, newPassword: resetPasswordValue });
+                        }
+                      }}
+                      disabled={resetPasswordValue.length < 8 || adminResetPassword.isPending}
+                    >
+                      {adminResetPassword.isPending ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Resetting...</>
+                      ) : (
+                        "Reset Password"
+                      )}
+                    </Button>
+                    <Button variant="outline" onClick={() => { setResetPasswordUserId(null); setResetPasswordValue(""); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
 

@@ -2371,3 +2371,23 @@ export async function setNotificationPreference(key: string, enabled: boolean, u
   if (!type) throw new Error(`Unknown notification type: ${key}`);
   await upsertAppSetting(key, enabled ? "1" : "0", type.description, 0, updatedBy);
 }
+
+// ─── User Deletion ──────────────────────────────────────────────────────────
+
+export async function deleteUser(userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  // Remove group memberships
+  await db.delete(userGroupMemberships).where(eq(userGroupMemberships.userId, userId));
+  // Remove local auth record
+  await db.delete(localAuth).where(eq(localAuth.userId, userId));
+  // Remove user record
+  await db.delete(users).where(eq(users.id, userId));
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result[0];
+}

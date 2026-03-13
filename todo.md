@@ -397,3 +397,18 @@
   - Root cause: verifySession() required non-empty appId, but standalone auth sets appId=""
   - Fix: Made appId optional in session validation (sdk.ts)
 - [x] Create admin user on demo.407hosted.com (already existed from setup wizard)
+- [x] Add forgot password email flow: send reset link email, reset password page
+- [x] SMTP email service (nodemailer) with configurable settings from admin Settings page
+- [x] Password reset email template (HTML + text fallback) with branded reset link
+- [x] /reset-password page for users to set new password via email token
+- [x] Login page passes origin to resetPasswordRequest for correct reset link URLs
+- [x] SMTP Settings section on admin Settings page (host, port, TLS, user, pass, from email/name)
+- [x] SMTP connection test button on Settings page
+- [x] SMTP status indicator on Settings page
+- [x] Add user management admin page: list users, create/edit/delete users, assign roles
+- [x] Delete user endpoint (admin only, prevents self-deletion, cascades to localAuth + group memberships)
+- [x] Admin reset password endpoint (admin can force-set new password for any email/password user)
+- [x] User actions dropdown menu (reset password, delete user) on User Management page
+- [x] Admin reset password dialog with password input and validation
+- [x] Vitest tests for delete user, admin reset password, SMTP status, reset password request (9 new tests)
+- [ ] Tag v1.1.4 and push to GitHub for Docker build
