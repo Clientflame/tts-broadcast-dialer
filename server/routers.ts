@@ -1677,6 +1677,7 @@ Return ONLY the message text, nothing else.`;
       isSecret: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
       await db.upsertAppSetting(input.key, input.value, input.description, input.isSecret, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "settings.update", resource: "appSettings", details: { key: input.key, isSecret: input.isSecret ? true : false } });
       return { success: true };
     }),
 
@@ -1690,12 +1691,14 @@ Return ONLY the message text, nothing else.`;
       for (const setting of input) {
         await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret, ctx.user.id);
       }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "settings.bulkUpdate", resource: "appSettings", details: { keys: input.map(s => s.key), count: input.length } });
       return { success: true, count: input.length };
     }),
 
     /** Delete a setting (admin only) */
-    delete: adminProcedure.input(z.object({ key: z.string() })).mutation(async ({ input }) => {
+    delete: adminProcedure.input(z.object({ key: z.string() })).mutation(async ({ ctx, input }) => {
       await db.deleteAppSetting(input.key);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "settings.delete", resource: "appSettings", details: { key: input.key } });
       return { success: true };
     }),
 
@@ -1737,9 +1740,10 @@ Return ONLY the message text, nothing else.`;
     }),
 
     /** Reconnect AMI with fresh settings from DB (admin only) */
-    freepbxReconnect: adminProcedure.mutation(async () => {
+    freepbxReconnect: adminProcedure.mutation(async ({ ctx }) => {
       const { reconnectAMI } = await import("./services/ami");
       const result = await reconnectAMI();
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "freepbx.reconnect", resource: "freepbx", details: { success: result.success, host: result.host, error: result.error } });
       return result;
     }),
 
@@ -1833,6 +1837,7 @@ Return ONLY the message text, nothing else.`;
       } catch (err: any) {
         reconnectResult = { success: false, host: "", port: 0, error: err.message };
       }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "freepbx.saveSettings", resource: "freepbx", details: { keys: input.map(s => s.key), count: input.length, reconnectSuccess: reconnectResult.success } });
       return {
         saved: true,
         count: input.length,
@@ -1852,6 +1857,7 @@ Return ONLY the message text, nothing else.`;
       enabled: z.boolean(),
     })).mutation(async ({ ctx, input }) => {
       await db.setNotificationPreference(input.key, input.enabled, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "notifications.update", resource: "notificationPref", details: { key: input.key, enabled: input.enabled } });
       return { success: true };
     }),
 
@@ -1863,11 +1869,12 @@ Return ONLY the message text, nothing else.`;
       for (const pref of input) {
         await db.setNotificationPreference(pref.key, pref.enabled, ctx.user.id);
       }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "notifications.bulkUpdate", resource: "notificationPref", details: { keys: input.map(p => p.key), count: input.length } });
       return { success: true, count: input.length };
     }),
 
     /** Restart FreePBX via SSH (admin only) */
-    freepbxRestart: adminProcedure.mutation(async () => {
+    freepbxRestart: adminProcedure.mutation(async ({ ctx }) => {
       const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
       const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
       const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
@@ -1924,6 +1931,9 @@ Return ONLY the message text, nothing else.`;
           password: sshPassword,
           readyTimeout: 15000,
         });
+      }).then(async (result) => {
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "freepbx.restart", resource: "freepbx", details: { success: result.success, error: result.error } });
+        return result;
       });
     }),
 

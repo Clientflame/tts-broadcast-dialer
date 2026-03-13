@@ -383,4 +383,11 @@
 - [x] Add live EST system clock next to version number on dashboard header
 - [x] Add system audit log viewer page (search, filter by action, pagination, color-coded actions, resource icons)
 - [x] Vitest tests for auditLogs.filtered and auditLogs.actions (5 new tests, 181 total passing)
-- [ ] Tag v1.1.1 and push to GitHub for Docker build
+- [x] Tag v1.1.1 and push to GitHub for Docker build
+- [x] Add audit log entries when TTS API keys are saved/updated
+- [x] Add audit log entries when FreePBX credentials are saved (save & reconnect)
+- [x] Add audit log entries when notification preferences are toggled
+- [x] Add audit log entries for FreePBX restart and reconnect actions
+- [x] Add audit log entries for settings delete and bulk update
+- [x] Vitest tests for audit logging on settings changes (5 new tests, 186 total passing)
+- [ ] Tag v1.1.2 and push to GitHub for Docker build

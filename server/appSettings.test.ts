@@ -378,6 +378,88 @@ describe("appSettings", () => {
     });
   });
 
+  describe("audit logging for settings changes", () => {
+    it("creates audit log when updating a setting", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.appSettings.update({
+        key: "test_audit_key",
+        value: "audit_test_value",
+        description: "Testing audit",
+        isSecret: 0,
+      });
+
+      // Check audit log was created
+      const logs = await caller.auditLogs.filtered({ action: "settings.update", limit: 1 });
+      expect(logs.logs.length).toBeGreaterThan(0);
+      const latest = logs.logs[0];
+      expect(latest.action).toBe("settings.update");
+      expect(latest.resource).toBe("appSettings");
+
+      // Clean up
+      await db.deleteAppSetting("test_audit_key");
+    });
+
+    it("creates audit log when bulk updating settings", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.appSettings.bulkUpdate([
+        { key: "test_audit_bulk_1", value: "v1" },
+        { key: "test_audit_bulk_2", value: "v2" },
+      ]);
+
+      const logs = await caller.auditLogs.filtered({ action: "settings.bulkUpdate", limit: 1 });
+      expect(logs.logs.length).toBeGreaterThan(0);
+      expect(logs.logs[0].action).toBe("settings.bulkUpdate");
+
+      // Clean up
+      await db.deleteAppSetting("test_audit_bulk_1");
+      await db.deleteAppSetting("test_audit_bulk_2");
+    });
+
+    it("creates audit log when deleting a setting", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.appSettings.update({ key: "test_audit_delete", value: "to_delete" });
+      await caller.appSettings.delete({ key: "test_audit_delete" });
+
+      const logs = await caller.auditLogs.filtered({ action: "settings.delete", limit: 1 });
+      expect(logs.logs.length).toBeGreaterThan(0);
+      expect(logs.logs[0].action).toBe("settings.delete");
+    });
+
+    it("creates audit log when updating notification preference", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.appSettings.setNotificationPref({
+        key: "notify_campaign_complete",
+        enabled: false,
+      });
+
+      const logs = await caller.auditLogs.filtered({ action: "notifications.update", limit: 1 });
+      expect(logs.logs.length).toBeGreaterThan(0);
+      expect(logs.logs[0].action).toBe("notifications.update");
+
+      // Reset
+      await caller.appSettings.setNotificationPref({ key: "notify_campaign_complete", enabled: true });
+    });
+
+    it("creates audit log when reconnecting FreePBX", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+
+      await caller.appSettings.freepbxReconnect();
+
+      const logs = await caller.auditLogs.filtered({ action: "freepbx.reconnect", limit: 1 });
+      expect(logs.logs.length).toBeGreaterThan(0);
+      expect(logs.logs[0].action).toBe("freepbx.reconnect");
+    }, 15000);
+  });
+
   describe("appSettings.freepbxStatus", () => {
     it("returns FreePBX configuration status", async () => {
       const { ctx } = createAuthContext();
