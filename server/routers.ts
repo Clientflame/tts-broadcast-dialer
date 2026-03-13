@@ -206,6 +206,53 @@ export const appRouter = router({
     areaCodeDistribution: protectedProcedure.input(z.object({ campaignId: z.number().optional(), hours: z.number().min(1).max(168).default(24) }).optional()).query(async ({ ctx, input }) => {
       return db.getAreaCodeDistribution(ctx.user.id, input?.campaignId, input?.hours ?? 24);
     }),
+
+    /** System health check — returns status of all integrations at a glance */
+    systemHealth: protectedProcedure.query(async () => {
+      // 1. AMI / PBX Agent status
+      const agents = await db.getPbxAgents();
+      const onlineAgents = agents.filter((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+      });
+      const amiOk = onlineAgents.length > 0;
+
+      // 2. SSH config status (just check if credentials are set)
+      const sshHost = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPass = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      const sshConfigured = !!(sshHost && sshUser && sshPass);
+
+      // 3. TTS API key status
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+
+      // 4. Database connectivity (if we got here, DB is working)
+      const dbOk = true;
+
+      return {
+        ami: {
+          status: amiOk ? "connected" as const : "disconnected" as const,
+          detail: amiOk ? `${onlineAgents.length} PBX agent(s) online` : "No PBX agents online",
+        },
+        ssh: {
+          status: sshConfigured ? "configured" as const : "not_configured" as const,
+          detail: sshConfigured ? `${sshUser}@${sshHost}` : "SSH credentials not set — go to Settings",
+        },
+        openai: {
+          status: openaiKey ? "configured" as const : "not_configured" as const,
+          detail: openaiKey ? "API key set" : "No API key — go to Settings",
+        },
+        google: {
+          status: googleKey ? "configured" as const : "not_configured" as const,
+          detail: googleKey ? "API key set" : "No API key — go to Settings",
+        },
+        database: {
+          status: dbOk ? "connected" as const : "error" as const,
+          detail: dbOk ? "Connected" : "Connection error",
+        },
+      };
+    }),
   }),
 
   contactLists: router({

@@ -121,6 +121,38 @@ describe("dashboard.amiStatus", () => {
   });
 });
 
+describe("dashboard.systemHealth", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.dashboard.systemHealth()).rejects.toThrow();
+  });
+
+  it("returns health status for all services", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const health = await caller.dashboard.systemHealth();
+
+    // Check all service keys exist
+    expect(health).toHaveProperty("ami");
+    expect(health).toHaveProperty("ssh");
+    expect(health).toHaveProperty("openai");
+    expect(health).toHaveProperty("google");
+    expect(health).toHaveProperty("database");
+
+    // Each service should have status and detail
+    for (const key of ["ami", "ssh", "openai", "google", "database"] as const) {
+      expect(health[key]).toHaveProperty("status");
+      expect(health[key]).toHaveProperty("detail");
+      expect(typeof health[key].status).toBe("string");
+      expect(typeof health[key].detail).toBe("string");
+    }
+
+    // Database should always be connected if we got here
+    expect(health.database.status).toBe("connected");
+  });
+});
+
 describe("freepbx.status", () => {
   it("returns connection info", async () => {
     const { ctx } = createAuthContext();

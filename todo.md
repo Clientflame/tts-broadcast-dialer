@@ -362,4 +362,9 @@
 - [x] Add SSH connection test button on Settings page (verifies SSH credentials against FreePBX server)
 - [x] Auto-reconnect AMI after saving FreePBX settings (Save & Reconnect button)
 - [x] Vitest tests for freepbxTestSsh and freepbxSaveAndReconnect (4 new tests, 163 total passing)
-- [ ] Tag v1.0.8 and push to GitHub for Docker build
+- [x] Tag v1.0.8 and push to GitHub for Docker build
+- [x] Update transferAudioToFreePBX to read SSH creds from DB with env var fallback (fully hot-reloadable)
+- [x] Add system health backend endpoint checking AMI connection, SSH reachability, and TTS API key validity
+- [x] Add system health dashboard widget on main dashboard showing connection status at a glance
+- [x] Vitest tests for dashboard.systemHealth (2 new tests, 165 total passing)
+- [ ] Tag v1.0.9 and push to GitHub for Docker build

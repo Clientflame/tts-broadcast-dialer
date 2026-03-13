@@ -12,7 +12,8 @@ import {
   ListChecks, Wifi, WifiOff, RefreshCw, Activity,
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
-  MapPin,
+  MapPin, Shield, Terminal, Key, Database, AlertTriangle,
+  Settings,
 } from "lucide-react";
 
 function formatPhone(phone: string) {
@@ -75,6 +76,147 @@ function getStatusConfig(status: string, result: string | null) {
     return { icon: Clock, label: "Pending", color: "text-muted-foreground", bg: "bg-muted/30", border: "border-muted" };
   }
   return { icon: Phone, label: status, color: "text-muted-foreground", bg: "bg-muted/30", border: "border-muted" };
+}
+
+function SystemHealthWidget() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const health = trpc.dashboard.systemHealth.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+
+  if (health.isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-lg">System Health</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[1,2,3,4,5].map(i => (
+              <div key={i} className="h-20 rounded-lg bg-muted/30 animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const data = health.data;
+  if (!data) return null;
+
+  const services = [
+    {
+      key: "ami",
+      label: "FreePBX / AMI",
+      icon: Wifi,
+      status: data.ami.status,
+      detail: data.ami.detail,
+      ok: data.ami.status === "connected",
+    },
+    {
+      key: "ssh",
+      label: "SSH Transfer",
+      icon: Terminal,
+      status: data.ssh.status,
+      detail: data.ssh.detail,
+      ok: data.ssh.status === "configured",
+    },
+    {
+      key: "openai",
+      label: "OpenAI TTS",
+      icon: Key,
+      status: data.openai.status,
+      detail: data.openai.detail,
+      ok: data.openai.status === "configured",
+    },
+    {
+      key: "google",
+      label: "Google TTS",
+      icon: Key,
+      status: data.google.status,
+      detail: data.google.detail,
+      ok: data.google.status === "configured",
+    },
+    {
+      key: "database",
+      label: "Database",
+      icon: Database,
+      status: data.database.status,
+      detail: data.database.detail,
+      ok: data.database.status === "connected",
+    },
+  ];
+
+  const allOk = services.every(s => s.ok);
+  const issueCount = services.filter(s => !s.ok).length;
+
+  return (
+    <Card className={!allOk ? "border-amber-500/30" : "border-green-500/30"}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className={`h-5 w-5 ${allOk ? "text-green-500" : "text-amber-500"}`} />
+            <CardTitle className="text-lg">System Health</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            {allOk ? (
+              <Badge variant="outline" className="text-green-500 border-green-500/30">
+                <CheckCircle2 className="h-3 w-3 mr-1" />All Systems OK
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-amber-500 border-amber-500/30">
+                <AlertTriangle className="h-3 w-3 mr-1" />{issueCount} issue{issueCount > 1 ? "s" : ""}
+              </Badge>
+            )}
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => health.refetch()}>
+              <RefreshCw className={`h-3.5 w-3.5 ${health.isFetching ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {services.map(svc => {
+            const Icon = svc.icon;
+            return (
+              <button
+                key={svc.key}
+                onClick={() => svc.key !== "database" && setLocation("/settings")}
+                className={`rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 ${
+                  svc.ok
+                    ? "border-green-500/20 bg-green-500/5"
+                    : "border-amber-500/20 bg-amber-500/5"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Icon className={`h-4 w-4 ${svc.ok ? "text-green-500" : "text-amber-500"}`} />
+                  <span className="text-xs font-medium truncate">{svc.label}</span>
+                </div>
+                <div className={`text-xs ${svc.ok ? "text-green-600" : "text-amber-600"}`}>
+                  {svc.ok ? (
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{svc.detail}</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">{svc.detail}</span>
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function CallActivityFeed() {
@@ -517,6 +659,9 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {/* System Health Widget */}
+        <SystemHealthWidget />
 
         {/* Real-time Call Activity Feed */}
         <CallActivityFeed />

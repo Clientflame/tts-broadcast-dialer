@@ -405,14 +405,23 @@ export async function generateGooglePersonalizedTTS(params: {
  * 4. Set proper ownership for Asterisk
  * 5. Return the Asterisk-compatible playback path (no extension)
  */
+// Resolve SSH credentials: database setting takes priority, then env var fallback
+async function getSSHConfig(): Promise<{ host: string; user: string; password: string; port: number }> {
+  const host = await getAppSetting("freepbx_host") || process.env.FREEPBX_HOST || "45.77.75.198";
+  const user = await getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER || "root";
+  const password = await getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD || "";
+  return { host, user, password, port: 22 };
+}
+
 export async function transferAudioToFreePBX(params: {
   s3Url: string;
   fileName: string;
 }): Promise<{ remotePath: string }> {
-  const host = process.env.FREEPBX_HOST || "45.77.75.198";
-  const sshUser = process.env.FREEPBX_SSH_USER || "root";
-  const sshPass = process.env.FREEPBX_SSH_PASSWORD || "";
-  const sshPort = 22;
+  const sshConfig = await getSSHConfig();
+  const host = sshConfig.host;
+  const sshUser = sshConfig.user;
+  const sshPass = sshConfig.password;
+  const sshPort = sshConfig.port;
 
   const remoteDir = "/var/lib/asterisk/sounds/custom/broadcast";
   const remoteMp3Path = `${remoteDir}/${params.fileName}`;
@@ -526,7 +535,7 @@ export async function transferAudioToFreePBX(params: {
                       });
                     });
                     chownConn.on("error", () => { chownConn.end(); });
-                    chownConn.connect({ host, port: sshPort, username: sshUser, password: sshPass });
+                    chownConn.connect({ host: sshConfig.host, port: sshConfig.port, username: sshConfig.user, password: sshConfig.password });
 
                     resolve({ remotePath: asteriskPath });
                   }
