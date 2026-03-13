@@ -192,9 +192,10 @@ export const appRouter = router({
     }),
     amiStatus: protectedProcedure.query(async () => {
       const agents = await db.getPbxAgents();
+      const HEARTBEAT_THRESHOLD = 60000; // 60s — generous window to avoid false "offline" during DB-heavy ops
       const onlineAgents = agents.filter((a: any) => {
         if (!a.lastHeartbeat) return false;
-        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
       return {
         connected: onlineAgents.length > 0,
@@ -222,9 +223,10 @@ export const appRouter = router({
     systemHealth: protectedProcedure.query(async () => {
       // 1. AMI / PBX Agent status
       const agents = await db.getPbxAgents();
+      const HEARTBEAT_THRESHOLD = 60000; // 60s — generous window to avoid false "offline" during DB-heavy ops
       const onlineAgents = agents.filter((a: any) => {
         if (!a.lastHeartbeat) return false;
-        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
       const amiOk = onlineAgents.length > 0;
 
@@ -1574,9 +1576,10 @@ Return ONLY the message text, nothing else.`;
   freepbx: router({
     status: protectedProcedure.query(async () => {
       const agents = await db.getPbxAgents();
+      const HEARTBEAT_THRESHOLD = 60000; // 60s — generous window
       const onlineAgents = agents.filter((a: any) => {
         if (!a.lastHeartbeat) return false;
-        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
       return {
         connected: onlineAgents.length > 0,
@@ -1592,9 +1595,10 @@ Return ONLY the message text, nothing else.`;
       if (agents.length === 0) {
         return { success: false, message: "No PBX agents registered. Go to PBX Agent settings to register one." };
       }
+      const HEARTBEAT_THRESHOLD = 60000; // 60s — generous window
       const onlineAgents = agents.filter((a: any) => {
         if (!a.lastHeartbeat) return false;
-        return Date.now() - new Date(a.lastHeartbeat).getTime() < 30000;
+        return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
       if (onlineAgents.length === 0) {
         return { success: false, message: "PBX agent registered but not online. Check the agent service on your FreePBX server." };
@@ -2091,7 +2095,7 @@ Return ONLY the message text, nothing else.`;
       // Step 2: FreePBX connected (at least one PBX agent registered)
       const agents = await db.getPbxAgents();
       const pbxConnected = agents.length > 0;
-      const pbxOnline = agents.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 30000);
+      const pbxOnline = agents.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 60000);
 
       // Step 3: Caller IDs imported (at least one caller ID)
       const callerIds = await db.getCallerIds(userId);

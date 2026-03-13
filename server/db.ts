@@ -429,15 +429,35 @@ export async function deleteCampaign(id: number, userId: number) {
 export async function resetCampaignCallHistory(campaignId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  // Delete all call_logs for this campaign
-  const logResult = await db.delete(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId)));
-  // Delete all call_queue items for this campaign
-  await db.delete(callQueue).where(and(eq(callQueue.campaignId, campaignId), eq(callQueue.userId, userId)));
-  // Reset campaign stats back to draft
+  
+  // Delete in batches to avoid long-running locks that block PBX agent heartbeats
+  let totalDeleted = 0;
+  const BATCH_SIZE = 500;
+  
+  // Batch-delete call_logs
+  let deleted = 0;
+  do {
+    const result = await db.execute(
+      sql`DELETE FROM ${callLogs} WHERE ${callLogs.campaignId} = ${campaignId} AND ${callLogs.userId} = ${userId} LIMIT ${BATCH_SIZE}`
+    );
+    deleted = (result as any)[0]?.affectedRows ?? 0;
+    totalDeleted += deleted;
+  } while (deleted >= BATCH_SIZE);
+  
+  // Batch-delete call_queue
+  do {
+    const result = await db.execute(
+      sql`DELETE FROM ${callQueue} WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.userId} = ${userId} LIMIT ${BATCH_SIZE}`
+    );
+    deleted = (result as any)[0]?.affectedRows ?? 0;
+  } while (deleted >= BATCH_SIZE);
+  
+  // Reset campaign status back to draft
   await db.update(campaigns)
     .set({ status: "draft" })
     .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
-  return { deletedLogs: logResult[0].affectedRows ?? 0 };
+  
+  return { deletedLogs: totalDeleted };
 }
 
 // ─── Call Logs ───────────────────────────────────────────────────────────────

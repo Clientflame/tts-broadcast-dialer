@@ -437,3 +437,6 @@
 - [x] Dockerfile installs git in builder stage for version detection
 - [x] Fallback chain: git describe → package.json version → "dev"
 - [x] Fix: Manus deployment shows v1.0.0 because no git history — update package.json version to 1.1.5 as fallback
+- [x] Bug: FreePBX agent disconnects when resetting campaign history
+- [x] Fix: Batch-delete call_logs and call_queue in chunks of 500 to avoid long DB locks
+- [x] Fix: Increased heartbeat threshold from 30s to 60s across all 5 agent status checks
