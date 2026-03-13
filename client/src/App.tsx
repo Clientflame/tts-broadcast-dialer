@@ -26,6 +26,7 @@ import DidAnalytics from "./pages/DidAnalytics";
 import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
 import ResetPassword from "./pages/ResetPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 
 function Router() {
   return (
@@ -52,6 +53,7 @@ function Router() {
       <Route path={"/onboarding"} component={Onboarding} />
       <Route path={"/settings"} component={Settings} />
       <Route path={"/reset-password"} component={ResetPassword} />
+      <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

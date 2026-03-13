@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Radio, User, Mail, Lock, ArrowRight, ShieldCheck } from "lucide-react";
+import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { validatePassword } from "../../../shared/passwordValidation";
 
 export default function Setup() {
   const [, navigate] = useLocation();
@@ -31,8 +33,9 @@ export default function Setup() {
       toast.error("All fields are required");
       return;
     }
-    if (password.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    const pwResult = validatePassword(password);
+    if (!pwResult.isValid) {
+      toast.error(`Password too weak: ${pwResult.errors[0]}`);
       return;
     }
     if (password !== confirmPassword) {
@@ -114,6 +117,7 @@ export default function Setup() {
                     autoComplete="new-password"
                   />
                 </div>
+                <PasswordStrengthIndicator password={password} />
               </div>
 
               <div>

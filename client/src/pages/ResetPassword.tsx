@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Radio, Lock, CheckCircle2, XCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { validatePassword } from "../../../shared/passwordValidation";
 
 export default function ResetPassword() {
   const [, navigate] = useLocation();
@@ -34,8 +36,9 @@ export default function ResetPassword() {
       toast.error("Passwords do not match");
       return;
     }
-    if (newPassword.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    const pwResult = validatePassword(newPassword);
+    if (!pwResult.isValid) {
+      toast.error(`Password too weak: ${pwResult.errors[0]}`);
       return;
     }
     resetMutation.mutate({ token, newPassword });
@@ -115,7 +118,7 @@ export default function ResetPassword() {
           <CardHeader>
             <CardTitle>Reset Password</CardTitle>
             <CardDescription>
-              Enter your new password below. Must be at least 8 characters.
+              Enter your new password below. Must include uppercase, lowercase, number, and special character.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -136,6 +139,7 @@ export default function ResetPassword() {
                     required
                   />
                 </div>
+                <PasswordStrengthIndicator password={newPassword} />
               </div>
               <div>
                 <Label htmlFor="confirm-password">Confirm Password</Label>

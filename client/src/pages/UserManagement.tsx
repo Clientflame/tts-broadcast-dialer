@@ -12,6 +12,8 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useState, useMemo } from "react";
 import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal } from "lucide-react";
+import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { validatePassword } from "../../../shared/passwordValidation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const AVAILABLE_PERMISSIONS = [
@@ -121,6 +123,18 @@ export default function UserManagement() {
 
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [skipVerification, setSkipVerification] = useState(false);
+
+  const resendVerification = trpc.localAuth.resendVerification.useMutation({
+    onSuccess: (data) => {
+      if (data.emailSent) {
+        toast.success("Verification email sent");
+      } else {
+        toast.warning("Verification token created but email could not be sent. Check SMTP settings.");
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const filteredUsers = useMemo(() => {
     if (!usersQuery.data) return [];
@@ -191,6 +205,7 @@ export default function UserManagement() {
                   <div>
                     <Label>Password</Label>
                     <Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 8 characters" />
+                    <PasswordStrengthIndicator password={newPassword} />
                   </div>
                   {groupsQuery.data && groupsQuery.data.length > 0 && (
                     <div>
@@ -211,10 +226,29 @@ export default function UserManagement() {
                       </div>
                     </div>
                   )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="skipVerification"
+                      checked={skipVerification}
+                      onChange={e => setSkipVerification(e.target.checked)}
+                      className="rounded border-border"
+                    />
+                    <Label htmlFor="skipVerification" className="text-sm font-normal cursor-pointer">
+                      Skip email verification (activate immediately)
+                    </Label>
+                  </div>
                   <Button
                     className="w-full"
-                    onClick={() => createUser.mutate({ name: newName, email: newEmail, password: newPassword, role: newRole, groupIds: selectedGroupIds })}
-                    disabled={!newName || !newEmail || newPassword.length < 8 || createUser.isPending}
+                    onClick={() => {
+                      const pwResult = validatePassword(newPassword);
+                      if (!pwResult.isValid) {
+                        toast.error(`Password too weak: ${pwResult.errors[0]}`);
+                        return;
+                      }
+                      createUser.mutate({ name: newName, email: newEmail, password: newPassword, role: newRole, groupIds: selectedGroupIds, skipVerification, origin: window.location.origin });
+                    }}
+                    disabled={!newName || !newEmail || !validatePassword(newPassword).isValid || createUser.isPending}
                   >
                     {createUser.isPending ? "Creating..." : "Create User"}
                   </Button>
@@ -273,11 +307,19 @@ export default function UserManagement() {
                       </td>
                       <td className="p-3 text-sm text-muted-foreground">{u.email || "-"}</td>
                       <td className="p-3">
-                        <Badge variant="outline" className="text-xs">
-                          {u.loginMethod === "email" ? <><Key className="h-3 w-3 mr-1" />Email</> :
-                           u.loginMethod === "google" ? <><Mail className="h-3 w-3 mr-1" />Google</> :
-                           <><UserCog className="h-3 w-3 mr-1" />{u.loginMethod || "OAuth"}</>}
-                        </Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-xs">
+                            {u.loginMethod === "email" ? <><Key className="h-3 w-3 mr-1" />Email</> :
+                             u.loginMethod === "google" ? <><Mail className="h-3 w-3 mr-1" />Google</> :
+                             <><UserCog className="h-3 w-3 mr-1" />{u.loginMethod || "OAuth"}</>}
+                          </Badge>
+                          {u.hasLocalAuth && !u.isVerified && (
+                            <Badge variant="destructive" className="text-xs">Unverified</Badge>
+                          )}
+                          {u.hasLocalAuth && u.isVerified && (
+                            <Badge variant="secondary" className="text-xs text-green-600">Verified</Badge>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3">
                         <Select
@@ -337,6 +379,12 @@ export default function UserManagement() {
                                 Reset Password
                               </DropdownMenuItem>
                             )}
+                            {u.hasLocalAuth && !u.isVerified && (
+                              <DropdownMenuItem onClick={() => resendVerification.mutate({ userId: u.id, origin: window.location.origin })}>
+                                <Mail className="h-4 w-4 mr-2" />
+                                Resend Verification Email
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
@@ -386,16 +434,22 @@ export default function UserManagement() {
                       placeholder="Minimum 8 characters"
                       autoComplete="new-password"
                     />
+                    <PasswordStrengthIndicator password={resetPasswordValue} />
                   </div>
                   <div className="flex gap-2">
                     <Button
                       className="flex-1"
                       onClick={() => {
-                        if (resetPasswordUserId && resetPasswordValue.length >= 8) {
+                        const pwResult = validatePassword(resetPasswordValue);
+                        if (!pwResult.isValid) {
+                          toast.error(`Password too weak: ${pwResult.errors[0]}`);
+                          return;
+                        }
+                        if (resetPasswordUserId) {
                           adminResetPassword.mutate({ userId: resetPasswordUserId, newPassword: resetPasswordValue });
                         }
                       }}
-                      disabled={resetPasswordValue.length < 8 || adminResetPassword.isPending}
+                      disabled={!validatePassword(resetPasswordValue).isValid || adminResetPassword.isPending}
                     >
                       {adminResetPassword.isPending ? (
                         <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Resetting...</>

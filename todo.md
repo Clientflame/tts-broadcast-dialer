@@ -411,4 +411,20 @@
 - [x] User actions dropdown menu (reset password, delete user) on User Management page
 - [x] Admin reset password dialog with password input and validation
 - [x] Vitest tests for delete user, admin reset password, SMTP status, reset password request (9 new tests)
-- [ ] Tag v1.1.4 and push to GitHub for Docker build
+- [x] Tag v1.1.4 and push to GitHub for Docker build
+- [x] Add SMTP configuration prompts to setup-client.sh installer (host, port, TLS, user, pass, from email/name)
+- [x] Email verification on user registration - require new users to verify email before login
+- [x] Email verification schema (verificationToken, verificationTokenExpiry columns in localAuth)
+- [x] verifyEmail endpoint (public, validates token and marks email verified)
+- [x] resendVerification endpoint (admin only, generates new token and sends email)
+- [x] Login blocks unverified users with helpful message
+- [x] Create user form has "Skip email verification" checkbox
+- [x] User Management shows Verified/Unverified badges and Resend Verification action
+- [x] /verify-email page for users clicking the verification link
+- [x] Password strength requirements - enforce uppercase, lowercase, number, special character
+- [x] Shared passwordValidation.ts utility (validates rules, returns errors + strength score)
+- [x] PasswordStrengthIndicator component (visual bar + rules checklist)
+- [x] Password validation enforced on all 6 endpoints: setup, createWithPassword, changePassword, resetPassword, adminResetPassword
+- [x] Password strength indicator added to Setup, Create User, Reset Password, Admin Reset Password forms
+- [x] 18 new vitest tests for email verification and password strength (all 213 tests passing)
+- [x] Fixed 2 existing tests that used weak passwords (standalone-auth.test.ts)

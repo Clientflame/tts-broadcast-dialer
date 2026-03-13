@@ -220,9 +220,55 @@ OPENAI_KEY=""
 GOOGLE_KEY=""
 
 # ============================================================
-# Step 3: Server Settings
+# Step 3: Email / SMTP (for password resets & notifications)
 # ============================================================
-print_header "3/5  Server Settings"
+print_header "3/7  Email / SMTP"
+
+echo -e "  ${DIM}SMTP is needed for password reset emails and notifications.${NC}"
+echo -e "  ${DIM}You can skip this now and configure it later in Settings.${NC}"
+echo ""
+echo -e "  Common SMTP providers:"
+echo -e "    • Gmail:     smtp.gmail.com, port 587, TLS (use App Password)"
+echo -e "    • Outlook:   smtp.office365.com, port 587, TLS"
+echo -e "    • SendGrid:  smtp.sendgrid.net, port 587, TLS"
+echo -e "    • Mailgun:   smtp.mailgun.org, port 587, TLS"
+echo ""
+read -p "  Configure SMTP now? (y/N): " SETUP_SMTP
+SETUP_SMTP=${SETUP_SMTP:-N}
+
+SMTP_HOST=""
+SMTP_PORT="587"
+SMTP_SECURE="false"
+SMTP_USER=""
+SMTP_PASS=""
+SMTP_FROM_EMAIL=""
+SMTP_FROM_NAME=""
+
+if [[ "$SETUP_SMTP" =~ ^[Yy]$ ]]; then
+  prompt SMTP_HOST "SMTP host" "smtp.gmail.com" ""
+  prompt SMTP_PORT "SMTP port" "587" ""
+  echo ""
+  echo -e "  ${DIM}Use TLS? (port 587 = TLS/STARTTLS, port 465 = SSL)${NC}"
+  if [ "$SMTP_PORT" = "465" ]; then
+    SMTP_SECURE="true"
+    echo -e "  ${GREEN}✓${NC} Auto-detected: SSL (port 465)"
+  else
+    SMTP_SECURE="false"
+    echo -e "  ${GREEN}✓${NC} Auto-detected: STARTTLS (port ${SMTP_PORT})"
+  fi
+  prompt SMTP_USER "SMTP username (usually your email)" "" ""
+  prompt SMTP_PASS "SMTP password" "" "secret"
+  prompt SMTP_FROM_EMAIL "From email address" "$SMTP_USER" ""
+  prompt SMTP_FROM_NAME "From display name" "$APP_TITLE" ""
+  echo -e "  ${GREEN}✓${NC} SMTP: ${BOLD}${SMTP_HOST}:${SMTP_PORT}${NC} as ${SMTP_FROM_EMAIL}"
+else
+  echo -e "  ${DIM}SMTP skipped — configure later in Settings > SMTP${NC}"
+fi
+
+# ============================================================
+# Step 4: Server Settings
+# ============================================================
+print_header "4/7  Server Settings"
 
 prompt APP_PORT "Web app port" "3000" ""
 
@@ -256,7 +302,7 @@ JWT_SECRET=$(openssl rand -hex 32)
 # ============================================================
 # Step 5: Domain & SSL
 # ============================================================
-print_header "4/5  Domain & SSL (Optional)"
+print_header "5/7  Domain & SSL (Optional)"
 
 ENABLE_SSL="false"
 
@@ -330,7 +376,7 @@ fi
 # ============================================================
 # Step 6: Docker Image
 # ============================================================
-print_header "5/5  Docker Image"
+print_header "6/7  Docker Image"
 
 prompt DOCKER_IMAGE "Docker image" "$DEFAULT_IMAGE" ""
 
@@ -378,7 +424,7 @@ fi
 # ============================================================
 # Review before proceeding
 # ============================================================
-print_header "Review"
+print_header "7/7  Review"
 
 echo ""
 echo -e "  ${BOLD}Brand${NC}"
@@ -394,6 +440,14 @@ if [ -n "$PBX_HOST" ]; then
   echo -e "    SSH User:   ${PBX_SSH_USER}"
 else
   echo -e "    ${DIM}(not configured — add later in .env)${NC}"
+fi
+echo ""
+echo -e "  ${BOLD}SMTP${NC}"
+if [ -n "$SMTP_HOST" ]; then
+  echo -e "    Host:       ${SMTP_HOST}:${SMTP_PORT}"
+  echo -e "    From:       ${SMTP_FROM_NAME} <${SMTP_FROM_EMAIL}>"
+else
+  echo -e "    ${DIM}(not configured — add later in Settings > SMTP)${NC}"
 fi
 echo ""
 echo -e "  ${BOLD}TTS${NC}"
@@ -705,6 +759,15 @@ FREEPBX_SSH_PASSWORD=${PBX_SSH_PASS}
 # --- TTS API Keys ---
 OPENAI_API_KEY=${OPENAI_KEY}
 GOOGLE_TTS_API_KEY=${GOOGLE_KEY}
+
+# --- SMTP (for password resets & notifications) ---
+SMTP_HOST=${SMTP_HOST}
+SMTP_PORT=${SMTP_PORT}
+SMTP_SECURE=${SMTP_SECURE}
+SMTP_USER=${SMTP_USER}
+SMTP_PASS=${SMTP_PASS}
+SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+SMTP_FROM_NAME=${SMTP_FROM_NAME}
 
 # --- Auth (auto-generated) ---
 JWT_SECRET=${JWT_SECRET}

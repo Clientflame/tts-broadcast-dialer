@@ -14,7 +14,16 @@ import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
-import { sendPasswordResetEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
+import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
+import { validatePassword } from "../shared/passwordValidation";
+
+/** Server-side password strength validation helper */
+function assertPasswordStrength(password: string) {
+  const result = validatePassword(password);
+  if (!result.isValid) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Password too weak: ${result.errors.join(", ")}` });
+  }
+}
 
 // Shared voice enums for OpenAI and Google TTS
 const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const;
@@ -157,6 +166,7 @@ export const appRouter = router({
       email: z.string().email(),
       password: z.string().min(8).max(100),
     })).mutation(async ({ ctx, input }) => {
+      assertPasswordStrength(input.password);
       const allUsers = await db.getAllUsers();
       if (allUsers.length > 0) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Setup already completed. Users already exist." });
@@ -1107,10 +1117,16 @@ Return ONLY the message text, nothing else.`;
   userManagement: router({
     list: adminProcedure.query(async () => {
       const allUsers = await db.getAllUsers();
-      // Get group memberships for each user
+      // Get group memberships and verification status for each user
       const usersWithGroups = await Promise.all(allUsers.map(async (u) => {
         const groups = await db.getUserGroupMemberships(u.id);
-        return { ...u, groups: groups.map(g => ({ id: g.id, name: g.name })) };
+        const localAuthRecord = await db.getLocalAuthByUserId(u.id);
+        return {
+          ...u,
+          groups: groups.map(g => ({ id: g.id, name: g.name })),
+          isVerified: localAuthRecord ? !!localAuthRecord.isVerified : true, // OAuth users are always verified
+          hasLocalAuth: !!localAuthRecord,
+        };
       }));
       return usersWithGroups;
     }),
@@ -1153,6 +1169,8 @@ Return ONLY the message text, nothing else.`;
       password: z.string().min(8).max(100),
       role: z.enum(["user", "admin"]).optional(),
       groupIds: z.array(z.number()).optional(),
+      skipVerification: z.boolean().optional(),
+      origin: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
       // Check if email already exists
       const existing = await db.getLocalAuthByEmail(input.email);
@@ -1162,17 +1180,31 @@ Return ONLY the message text, nothing else.`;
       await db.upsertUser({ openId, name: input.name, email: input.email, loginMethod: "email", role: input.role || "user" });
       const user = await db.getUserByOpenId(openId);
       if (!user) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      // Validate password strength
+      assertPasswordStrength(input.password);
       // Create local auth record
       const passwordHash = await bcrypt.hash(input.password, 12);
-      await db.createLocalAuth({ userId: user.id, email: input.email, passwordHash, isVerified: 1 });
+      const shouldVerify = input.skipVerification ? 1 : 0;
+      await db.createLocalAuth({ userId: user.id, email: input.email, passwordHash, isVerified: shouldVerify });
+      // Send verification email if not skipped
+      let emailSent = false;
+      if (!input.skipVerification) {
+        const verifyToken = `verify_${Date.now()}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+        const verifyExpiry = Date.now() + 86400000; // 24 hours
+        await db.setVerificationToken(input.email, verifyToken, verifyExpiry);
+        const origin = input.origin || "";
+        if (origin) {
+          emailSent = await sendVerificationEmail(input.email, verifyToken, origin);
+        }
+      }
       // Add to groups
       if (input.groupIds) {
         for (const gid of input.groupIds) {
           await db.addUserToGroup(user.id, gid);
         }
       }
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.create", resource: "user", resourceId: user.id, details: { email: input.email, method: "email" } });
-      return { success: true, userId: user.id };
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.create", resource: "user", resourceId: user.id, details: { email: input.email, method: "email", verified: !!input.skipVerification } });
+      return { success: true, userId: user.id, emailSent };
     }),
     /** Delete a user (admin only) */
     deleteUser: adminProcedure.input(z.object({
@@ -1194,6 +1226,7 @@ Return ONLY the message text, nothing else.`;
       userId: z.number(),
       newPassword: z.string().min(8).max(100),
     })).mutation(async ({ ctx, input }) => {
+      assertPasswordStrength(input.newPassword);
       const authRecord = await db.getLocalAuthByUserId(input.userId);
       if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "User does not have email/password login" });
       const newHash = await bcrypt.hash(input.newPassword, 12);
@@ -1261,6 +1294,10 @@ Return ONLY the message text, nothing else.`;
       if (!authRecord) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
       const valid = await bcrypt.compare(input.password, authRecord.passwordHash);
       if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      // Check email verification status
+      if (!authRecord.isVerified) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Email not verified. Please check your inbox for the verification link, or ask an admin to resend it." });
+      }
       const user = await db.getUserById(authRecord.userId);
       if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "User account not found" });
       // Create session token
@@ -1275,6 +1312,7 @@ Return ONLY the message text, nothing else.`;
       currentPassword: z.string().min(1),
       newPassword: z.string().min(8).max(100),
     })).mutation(async ({ ctx, input }) => {
+      assertPasswordStrength(input.newPassword);
       const authRecord = await db.getLocalAuthByUserId(ctx.user.id);
       if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "No password login configured for this account" });
       const valid = await bcrypt.compare(input.currentPassword, authRecord.passwordHash);
@@ -1307,6 +1345,7 @@ Return ONLY the message text, nothing else.`;
       token: z.string().min(1),
       newPassword: z.string().min(8).max(100),
     })).mutation(async ({ input }) => {
+      assertPasswordStrength(input.newPassword);
       const authRecord = await db.getLocalAuthByResetToken(input.token);
       if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or expired reset token" });
       if (authRecord.resetTokenExpiry && authRecord.resetTokenExpiry < Date.now()) {
@@ -1316,6 +1355,37 @@ Return ONLY the message text, nothing else.`;
       await db.updateLocalAuthPassword(authRecord.userId, newHash);
       await db.clearResetToken(authRecord.userId);
       return { success: true };
+    }),
+    /** Verify email address using token from verification email */
+    verifyEmail: publicProcedure.input(z.object({
+      token: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const authRecord = await db.getLocalAuthByVerificationToken(input.token);
+      if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid or expired verification token" });
+      if (authRecord.verificationTokenExpiry && authRecord.verificationTokenExpiry < Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Verification token has expired. Please ask an admin to resend the verification email." });
+      }
+      await db.markEmailVerified(authRecord.userId);
+      return { success: true };
+    }),
+    /** Resend verification email (admin only) */
+    resendVerification: adminProcedure.input(z.object({
+      userId: z.number(),
+      origin: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const authRecord = await db.getLocalAuthByUserId(input.userId);
+      if (!authRecord) throw new TRPCError({ code: "BAD_REQUEST", message: "User does not have email/password login" });
+      if (authRecord.isVerified) throw new TRPCError({ code: "BAD_REQUEST", message: "Email is already verified" });
+      const verifyToken = `verify_${Date.now()}_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+      const verifyExpiry = Date.now() + 86400000; // 24 hours
+      await db.setVerificationToken(authRecord.email, verifyToken, verifyExpiry);
+      const origin = input.origin || "";
+      let emailSent = false;
+      if (origin) {
+        emailSent = await sendVerificationEmail(authRecord.email, verifyToken, origin);
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "auth.resendVerification", resource: "user", resourceId: input.userId, details: { email: authRecord.email, emailSent } });
+      return { success: true, emailSent };
     }),
   }),
 

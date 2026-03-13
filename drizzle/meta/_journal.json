@@ -162,6 +162,13 @@
       "when": 1773363295091,
       "tag": "0022_past_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1773407272292,
+      "tag": "0023_wealthy_mole_man",
+      "breakpoints": true
     }
   ]
 }

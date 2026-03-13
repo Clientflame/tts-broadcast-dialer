@@ -93,7 +93,7 @@ describe("auth.setup", () => {
       caller.auth.setup({
         name: "New Admin",
         email: "newadmin@test.com",
-        password: "testpassword123",
+        password: "TestPassword123!",
       })
     ).rejects.toThrow(/Setup already completed/);
   });
@@ -106,7 +106,7 @@ describe("auth.setup", () => {
       caller.auth.setup({
         name: "Test",
         email: "not-an-email",
-        password: "testpassword123",
+        password: "TestPassword123!",
       })
     ).rejects.toThrow();
   });
@@ -160,7 +160,7 @@ describe("localAuth.changePassword", () => {
     await expect(
       caller.localAuth.changePassword({
         currentPassword: "old",
-        newPassword: "newpassword123",
+        newPassword: "NewPassword123!",
       })
     ).rejects.toThrow();
   });
@@ -187,7 +187,7 @@ describe("localAuth.resetPassword", () => {
     await expect(
       caller.localAuth.resetPassword({
         token: "invalid_token_12345",
-        newPassword: "newpassword123",
+        newPassword: "NewPassword123!",
       })
     ).rejects.toThrow(/Invalid or expired reset token/);
   });

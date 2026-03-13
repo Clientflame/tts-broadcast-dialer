@@ -57,6 +57,8 @@ export const localAuth = mysqlTable("local_auth", {
   email: varchar("email", { length: 320 }).notNull().unique(),
   passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
   isVerified: int("isVerified").default(0).notNull(),
+  verificationToken: varchar("verificationToken", { length: 255 }),
+  verificationTokenExpiry: bigint("verificationTokenExpiry", { mode: "number" }),
   resetToken: varchar("resetToken", { length: 255 }),
   resetTokenExpiry: bigint("resetTokenExpiry", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
