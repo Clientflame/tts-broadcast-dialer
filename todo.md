@@ -358,4 +358,8 @@
 - [x] Add FreePBX hot-reload: "Reconnect" button that re-reads settings from DB and reconnects AMI without restart
 - [x] Add "Test Connection" button for FreePBX that attempts AMI connection to verify host/credentials
 - [x] Vitest tests for freepbxReconnect and freepbxTestConnection (4 new tests, 159 total passing)
-- [ ] Tag v1.0.7 and push to GitHub for Docker build
+- [x] Tag v1.0.7 and push to GitHub for Docker build
+- [x] Add SSH connection test button on Settings page (verifies SSH credentials against FreePBX server)
+- [x] Auto-reconnect AMI after saving FreePBX settings (Save & Reconnect button)
+- [x] Vitest tests for freepbxTestSsh and freepbxSaveAndReconnect (4 new tests, 163 total passing)
+- [ ] Tag v1.0.8 and push to GitHub for Docker build

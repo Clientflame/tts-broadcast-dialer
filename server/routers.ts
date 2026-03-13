@@ -1701,6 +1701,86 @@ Return ONLY the message text, nothing else.`;
       return result;
     }),
 
+    /** Test FreePBX SSH connection with provided credentials (admin only) */
+    freepbxTestSsh: adminProcedure.input(z.object({
+      host: z.string().min(1),
+      port: z.coerce.number().int().min(1).max(65535).default(22),
+      username: z.string().min(1),
+      password: z.string().min(1),
+    })).mutation(async ({ input }) => {
+      const { Client: SSHClient } = await import("ssh2");
+      return new Promise<{ success: boolean; error?: string; latencyMs?: number }>((resolve) => {
+        const conn = new SSHClient();
+        const start = Date.now();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({ success: false, error: "Connection timeout (10s)" });
+        }, 10000);
+
+        conn.on("ready", () => {
+          const latencyMs = Date.now() - start;
+          // Run a quick command to verify shell access
+          conn.exec("echo ok", (err, stream) => {
+            clearTimeout(timeout);
+            if (err) {
+              conn.end();
+              resolve({ success: true, latencyMs }); // Connected but exec failed - still a success
+              return;
+            }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", () => {
+              conn.end();
+              resolve({ success: true, latencyMs });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          let errorMsg = err.message;
+          if (errorMsg.includes("Authentication")) errorMsg = "Authentication failed — check username/password";
+          else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "Connection refused — SSH not running on this port";
+          else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "Connection timed out — check host/port";
+          resolve({ success: false, error: errorMsg });
+        });
+
+        conn.connect({
+          host: input.host,
+          port: input.port,
+          username: input.username,
+          password: input.password,
+          readyTimeout: 10000,
+        });
+      });
+    }),
+
+    /** Save FreePBX settings and auto-reconnect AMI (admin only) */
+    freepbxSaveAndReconnect: adminProcedure.input(z.array(z.object({
+      key: z.string().min(1).max(100),
+      value: z.string().nullable(),
+      description: z.string().optional(),
+      isSecret: z.number().optional(),
+    }))).mutation(async ({ ctx, input }) => {
+      // Save all settings
+      for (const setting of input) {
+        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret, ctx.user.id);
+      }
+      // Auto-reconnect AMI with fresh settings
+      let reconnectResult: { success: boolean; host: string; port: number; error?: string } = { success: false, host: "", port: 0, error: "" };
+      try {
+        const { reconnectAMI } = await import("./services/ami");
+        reconnectResult = await reconnectAMI();
+      } catch (err: any) {
+        reconnectResult = { success: false, host: "", port: 0, error: err.message };
+      }
+      return {
+        saved: true,
+        count: input.length,
+        reconnect: reconnectResult,
+      };
+    }),
+
     /** Get FreePBX connection settings status */
     freepbxStatus: protectedProcedure.query(async () => {
       const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;

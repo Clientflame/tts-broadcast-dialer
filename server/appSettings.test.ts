@@ -241,6 +241,61 @@ describe("appSettings", () => {
     });
   });
 
+  describe("appSettings.freepbxTestSsh", () => {
+    it("returns failure for unreachable SSH host", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxTestSsh({
+        host: "127.0.0.1",
+        port: 59998,
+        username: "test",
+        password: "test",
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeTruthy();
+    }, 15000);
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(
+        userCaller.appSettings.freepbxTestSsh({
+          host: "localhost",
+          port: 22,
+          username: "test",
+          password: "test",
+        })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("appSettings.freepbxSaveAndReconnect", () => {
+    it("saves settings and returns reconnect result", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.freepbxSaveAndReconnect([
+        { key: "freepbx_host", value: "192.168.1.100", description: "FreePBX Host" },
+      ]);
+
+      expect(result.saved).toBe(true);
+      expect(result.count).toBe(1);
+      expect(result.reconnect).toHaveProperty("success");
+      expect(result.reconnect).toHaveProperty("host");
+      expect(result.reconnect).toHaveProperty("port");
+    }, 15000);
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(
+        userCaller.appSettings.freepbxSaveAndReconnect([
+          { key: "freepbx_host", value: "test" },
+        ])
+      ).rejects.toThrow();
+    });
+  });
+
   describe("appSettings.freepbxStatus", () => {
     it("returns FreePBX configuration status", async () => {
       const { ctx } = createAuthContext();
