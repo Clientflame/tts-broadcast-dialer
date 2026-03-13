@@ -397,15 +397,19 @@ def process_health_check(ami, call_data):
         report_result(queue_id, "failed", {"error": "Missing caller ID reference"})
         return
     
-    # Method: Originate a short call to the echo test extension using the DID as caller ID.
-    # This validates that the trunk accepts the DID as a valid caller ID.
-    # We use the local Asterisk echo test (10000@default) which answers immediately.
+    # Method: Originate a short call to FreePBX's echo test (*43) using the DID as caller ID.
+    # This validates that the trunk/DID can place outbound calls.
+    # We use Local/*43@from-internal which is FreePBX's built-in echo test.
+    # If *43 doesn't exist, fall back to 7777@from-internal (Talking Clock) or just
+    # test AMI connectivity by originating to a safe local extension.
     action_id = f"call-{queue_id}"
     
+    # Use from-internal context which is FreePBX's standard outbound context
+    # *43 = Echo Test (built-in), answers immediately and echoes audio back
     result = ami.originate(
-        channel=f"Local/10000@default",  # Asterisk echo test - answers immediately
-        context="health-check",
-        exten="s",
+        channel=f"Local/*43@from-internal",
+        context="from-internal",
+        exten="*43",
         priority=1,
         variables={
             "CALLER_ID": did_number,
@@ -422,7 +426,7 @@ def process_health_check(ami, call_data):
         log.info(f"Health check {queue_id}: originated test call for DID {did_number}")
         with active_calls_lock:
             active_calls[queue_id] = {
-                "channel": f"Local/10000@default",
+                "channel": f"Local/*43@from-internal",
                 "action_id": action_id,
                 "start_time": time.time(),
                 "phone_number": did_number,

@@ -138,10 +138,14 @@ async function applyThrottle(agentId: string, state: AgentThrottleState): Promis
       const now = Date.now();
       if (!state.notifiedAt || now - state.notifiedAt > NOTIFICATION_COOLDOWN_MS) {
         state.notifiedAt = now;
-        notifyOwner({
-          title: `PBX Agent Auto-Throttled: ${agent.name || agentId}`,
-          content: `Agent "${agent.name || agentId}" has been auto-throttled due to carrier errors.\n\nConcurrent calls reduced: ${currentEffective} → ${newEffective}\nErrors in last 60s: ${state.recentErrors.length}\n\nThe system will automatically ramp back up when errors subside. You can also manually reset the throttle from the FreePBX page.`,
-        }).catch(err => console.warn("[AutoThrottle] Failed to send notification:", err));
+        db.isNotificationEnabled("notify_auto_throttle").then(enabled => {
+          if (enabled) {
+            notifyOwner({
+              title: `PBX Agent Auto-Throttled: ${agent.name || agentId}`,
+              content: `Agent "${agent.name || agentId}" has been auto-throttled due to carrier errors.\n\nConcurrent calls reduced: ${currentEffective} → ${newEffective}\nErrors in last 60s: ${state.recentErrors.length}\n\nThe system will automatically ramp back up when errors subside. You can also manually reset the throttle from the FreePBX page.`,
+            }).catch(err => console.warn("[AutoThrottle] Failed to send notification:", err));
+          }
+        }).catch(() => {});
       }
     }
   } catch (err) {

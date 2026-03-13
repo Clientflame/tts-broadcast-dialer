@@ -2305,3 +2305,39 @@ export async function deleteAppSetting(key: string): Promise<void> {
   if (!db) return;
   await db.delete(appSettings).where(eq(appSettings.key, key));
 }
+
+// ─── Notification Preferences ──────────────────────────────────────────────
+// Stored as app_settings with key prefix "notify_"
+// Values: "1" = enabled, "0" = disabled
+
+export const NOTIFICATION_TYPES = [
+  { key: "notify_did_auto_flag", label: "DID Auto-Flagged", description: "When a DID is auto-flagged due to high failure rate" },
+  { key: "notify_did_auto_disable", label: "DID Auto-Disabled", description: "When a DID is auto-disabled after consecutive health check failures" },
+  { key: "notify_campaign_complete", label: "Campaign Completed", description: "When a campaign finishes dialing all contacts" },
+  { key: "notify_campaign_auto_complete", label: "Campaign Auto-Completed", description: "When a campaign is auto-completed after server restart" },
+  { key: "notify_agent_offline", label: "PBX Agent Offline", description: "When a PBX agent stops sending heartbeats" },
+  { key: "notify_auto_throttle", label: "Auto-Throttle", description: "When an agent is auto-throttled due to carrier errors" },
+] as const;
+
+export async function getNotificationPreferences(): Promise<Record<string, boolean>> {
+  const keys = NOTIFICATION_TYPES.map(t => t.key);
+  const settings = await getAppSettings(keys);
+  const prefs: Record<string, boolean> = {};
+  for (const type of NOTIFICATION_TYPES) {
+    const setting = settings.find(s => s.key === type.key);
+    // Default: all notifications disabled until user explicitly enables them
+    prefs[type.key] = setting?.value === "1";
+  }
+  return prefs;
+}
+
+export async function isNotificationEnabled(key: string): Promise<boolean> {
+  const value = await getAppSetting(key);
+  return value === "1";
+}
+
+export async function setNotificationPreference(key: string, enabled: boolean, updatedBy?: number): Promise<void> {
+  const type = NOTIFICATION_TYPES.find(t => t.key === key);
+  if (!type) throw new Error(`Unknown notification type: ${key}`);
+  await upsertAppSetting(key, enabled ? "1" : "0", type.description, 0, updatedBy);
+}

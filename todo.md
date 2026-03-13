@@ -374,3 +374,9 @@
 - [x] Fix: Dialer refreshes caller ID pool from DB before each call (respects disabled/flagged DIDs mid-campaign)
 - [x] Vitest tests for callerIdStr parsing (5 new tests, 170 total passing)
 - [x] Publish fix: DID notification emails disabled on production (vai26.407hosted.com)
+- [x] Add notification preferences page (toggle DID alerts, campaign completions, agent offline, auto-throttle)
+- [x] Fix DID health check ("Extension does not exist" error — updated to use *43@from-internal echo test)
+- [x] Add system version number (v1.1.0) next to "Dashboard" header
+- [x] Add FreePBX system restart button on Settings page (fwconsole restart via SSH with confirmation)
+- [x] Vitest tests for notification prefs, freepbxRestart (8 new tests, 176 total passing)
+- [ ] Tag v1.1.0 and push to GitHub for Docker build

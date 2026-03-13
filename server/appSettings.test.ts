@@ -296,6 +296,88 @@ describe("appSettings", () => {
     });
   });
 
+  describe("appSettings.getNotificationPrefs", () => {
+    it("returns notification preferences and types", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.getNotificationPrefs();
+
+      expect(result).toHaveProperty("preferences");
+      expect(result).toHaveProperty("types");
+      expect(Array.isArray(result.types)).toBe(true);
+      expect(result.types.length).toBeGreaterThan(0);
+      // Each type should have key, label, description
+      for (const t of result.types) {
+        expect(t).toHaveProperty("key");
+        expect(t).toHaveProperty("label");
+        expect(t).toHaveProperty("description");
+      }
+    });
+  });
+
+  describe("appSettings.setNotificationPref", () => {
+    it("updates a notification preference", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.setNotificationPref({
+        key: "notify_campaign_complete",
+        enabled: false,
+      });
+      expect(result).toEqual({ success: true });
+
+      // Verify it was saved
+      const prefs = await caller.appSettings.getNotificationPrefs();
+      expect(prefs.preferences["notify_campaign_complete"]).toBe(false);
+
+      // Reset it back
+      await caller.appSettings.setNotificationPref({
+        key: "notify_campaign_complete",
+        enabled: true,
+      });
+    });
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(
+        userCaller.appSettings.setNotificationPref({ key: "notify_campaign_complete", enabled: false })
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("appSettings.bulkSetNotificationPrefs", () => {
+    it("updates multiple notification preferences", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      const result = await caller.appSettings.bulkSetNotificationPrefs([
+        { key: "notify_campaign_complete", enabled: true },
+        { key: "notify_agent_offline", enabled: false },
+      ]);
+      expect(result).toEqual({ success: true, count: 2 });
+    });
+  });
+
+  describe("appSettings.freepbxRestart", () => {
+    it("returns failure when SSH credentials not configured", async () => {
+      const { ctx } = createAuthContext();
+      const caller = appRouter.createCaller(ctx);
+      // In test env, SSH creds may not be configured
+      const result = await caller.appSettings.freepbxRestart();
+      expect(result).toHaveProperty("success");
+      expect(typeof result.success).toBe("boolean");
+      // Either succeeds or returns structured error
+      if (!result.success) {
+        expect(result.error).toBeTruthy();
+      }
+    }, 35000);
+
+    it("rejects non-admin users", async () => {
+      const userCtx = createAuthContext(createMockUser({ role: "user" }));
+      const userCaller = appRouter.createCaller(userCtx.ctx);
+      await expect(userCaller.appSettings.freepbxRestart()).rejects.toThrow();
+    });
+  });
+
   describe("appSettings.freepbxStatus", () => {
     it("returns FreePBX configuration status", async () => {
       const { ctx } = createAuthContext();

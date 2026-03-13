@@ -62,15 +62,14 @@ async function runScheduledChecks() {
         }
 
         // Queue health checks for each active caller ID
-        // Health check strategy: dial a test number USING the DID as caller ID
-        // to validate the DID can place outbound calls through the trunk.
-        const HEALTH_CHECK_TEST_NUMBER = "0000000000"; // PBX agent handles actual test logic
+        // Health check strategy: PBX agent originates a call to FreePBX's echo test (*43@from-internal)
+        // using the DID as caller ID. If the call answers, the DID is healthy.
         let queued = 0;
         for (const cid of activeIds) {
           await db.enqueueCall({
             campaignId: 0,
-            phoneNumber: HEALTH_CHECK_TEST_NUMBER,
-            channel: `PJSIP/${HEALTH_CHECK_TEST_NUMBER}@vitel-outbound`,
+            phoneNumber: "*43",
+            channel: "Local/*43@from-internal",
             callerIdStr: cid.phoneNumber,
             audioUrl: "",
             audioName: "health-check",

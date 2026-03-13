@@ -15,6 +15,7 @@ import {
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
   Settings,
 } from "lucide-react";
+import { APP_VERSION } from "@shared/const";
 
 function formatPhone(phone: string) {
   const d = phone.replace(/\D/g, "");
@@ -478,7 +479,7 @@ export default function Home() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span></h1>
             <p className="text-muted-foreground mt-1 text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

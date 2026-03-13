@@ -9,8 +9,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Settings as SettingsIcon, Key, Eye, EyeOff, CheckCircle2, XCircle,
   Loader2, ExternalLink, Save, Server, FlaskConical, ShieldCheck, ShieldAlert,
-  PlugZap, Unplug, Wifi, Terminal,
+  PlugZap, Unplug, Wifi, Terminal, RotateCcw, AlertTriangle, Bell, BellOff,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -71,6 +72,7 @@ export default function Settings() {
           <>
             <TTSApiKeysSection />
             <FreePBXSettingsSection />
+            <NotificationPreferencesSection />
           </>
         ) : (
           <Card>
@@ -303,6 +305,7 @@ function FreePBXSettingsSection() {
   const reconnect = trpc.appSettings.freepbxReconnect.useMutation();
   const testAmi = trpc.appSettings.freepbxTestConnection.useMutation();
   const testSsh = trpc.appSettings.freepbxTestSsh.useMutation();
+  const restartFreepbx = trpc.appSettings.freepbxRestart.useMutation();
   const utils = trpc.useUtils();
 
   const [values, setValues] = useState<Record<string, string>>({});
@@ -311,6 +314,8 @@ function FreePBXSettingsSection() {
   const [amiTestResult, setAmiTestResult] = useState<{ success: boolean; error?: string; latencyMs?: number } | null>(null);
   const [sshTestResult, setSshTestResult] = useState<{ success: boolean; error?: string; latencyMs?: number } | null>(null);
   const [reconnectResult, setReconnectResult] = useState<{ success: boolean; host?: string; error?: string } | null>(null);
+  const [restartResult, setRestartResult] = useState<{ success: boolean; output?: string; error?: string } | null>(null);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
 
   useEffect(() => {
     if (settingsList.data && freepbxStatus.data) {
@@ -439,6 +444,23 @@ function FreePBXSettingsSection() {
     }
   };
 
+  const handleRestartFreePBX = async () => {
+    setShowRestartConfirm(false);
+    setRestartResult(null);
+    try {
+      const result = await restartFreepbx.mutateAsync();
+      setRestartResult(result);
+      if (result.success) {
+        toast.success("FreePBX services restarted successfully");
+      } else {
+        toast.error(`FreePBX restart failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      setRestartResult({ success: false, error: err.message });
+      toast.error(err.message || "FreePBX restart failed");
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -529,10 +551,25 @@ function FreePBXSettingsSection() {
               </span>
             </div>
           )}
+          {restartResult && (
+            <div className={`flex items-center gap-2 text-sm p-3 rounded-lg ${restartResult.success ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-500"}`}>
+              {restartResult.success ? <RotateCcw className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              <div className="flex-1">
+                <span>
+                  {restartResult.success
+                    ? "FreePBX services restarted successfully"
+                    : `FreePBX restart failed: ${restartResult.error}`}
+                </span>
+                {restartResult.output && (
+                  <pre className="mt-2 text-xs bg-black/10 dark:bg-white/5 p-2 rounded max-h-32 overflow-auto whitespace-pre-wrap">{restartResult.output}</pre>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"
@@ -576,19 +613,139 @@ function FreePBXSettingsSection() {
               Reconnect
             </Button>
           </div>
-          <Button
-            onClick={handleSave}
-            disabled={!isDirty || saveAndReconnect.isPending}
-            className="gap-2"
-          >
-            {saveAndReconnect.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+          <div className="flex gap-2">
+            {showRestartConfirm ? (
+              <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span className="text-sm text-amber-600 dark:text-amber-400">Restart FreePBX services?</span>
+                <Button size="sm" variant="destructive" onClick={handleRestartFreePBX} disabled={restartFreepbx.isPending} className="gap-1.5 h-7">
+                  {restartFreepbx.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
+                  Confirm
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowRestartConfirm(false)} className="h-7">
+                  Cancel
+                </Button>
+              </div>
             ) : (
-              <Save className="h-4 w-4" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowRestartConfirm(true)}
+                disabled={restartFreepbx.isPending}
+                className="gap-1.5 text-amber-600 border-amber-500/30 hover:bg-amber-500/10"
+              >
+                {restartFreepbx.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-3.5 w-3.5" />
+                )}
+                Restart FreePBX
+              </Button>
             )}
-            Save & Reconnect
-          </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!isDirty || saveAndReconnect.isPending}
+              className="gap-2"
+            >
+              {saveAndReconnect.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save & Reconnect
+            </Button>
+          </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NotificationPreferencesSection() {
+  const prefsQuery = trpc.appSettings.getNotificationPrefs.useQuery();
+  const setPref = trpc.appSettings.setNotificationPref.useMutation();
+  const utils = trpc.useUtils();
+
+  const [localPrefs, setLocalPrefs] = useState<Record<string, boolean>>({});
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (prefsQuery.data && !initialized) {
+      const prefs: Record<string, boolean> = {};
+      // preferences is Record<string, boolean> from backend
+      for (const type of prefsQuery.data.types) {
+        prefs[type.key] = prefsQuery.data.preferences[type.key] ?? false;
+      }
+      setLocalPrefs(prefs);
+      setInitialized(true);
+    }
+  }, [prefsQuery.data, initialized]);
+
+  const handleToggle = async (key: string, enabled: boolean) => {
+    setLocalPrefs(prev => ({ ...prev, [key]: enabled }));
+    try {
+      await setPref.mutateAsync({ key, enabled });
+      await utils.appSettings.getNotificationPrefs.invalidate();
+      toast.success(`Notification ${enabled ? "enabled" : "disabled"}`);
+    } catch (err: any) {
+      // Revert on error
+      setLocalPrefs(prev => ({ ...prev, [key]: !enabled }));
+      toast.error(err.message || "Failed to update preference");
+    }
+  };
+
+  if (prefsQuery.isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const types = prefsQuery.data?.types || [];
+  const enabledCount = Object.values(localPrefs).filter(Boolean).length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bell className="h-5 w-5" />
+          Notification Preferences
+        </CardTitle>
+        <CardDescription>
+          Control which notifications you receive. {enabledCount} of {types.length} notifications enabled.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        {types.map(type => {
+          const enabled = localPrefs[type.key] ?? false;
+          return (
+            <div
+              key={type.key}
+              className="flex items-center justify-between py-3 px-3 rounded-lg hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className={`p-1.5 rounded-md ${enabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  {enabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{type.label}</p>
+                  <p className="text-xs text-muted-foreground truncate">{type.description}</p>
+                </div>
+              </div>
+              <Switch
+                checked={enabled}
+                onCheckedChange={(checked) => handleToggle(type.key, checked)}
+                disabled={setPref.isPending}
+              />
+            </div>
+          );
+        })}
+        {types.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-4">No notification types configured.</p>
+        )}
       </CardContent>
     </Card>
   );

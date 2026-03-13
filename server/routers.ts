@@ -1828,6 +1828,93 @@ Return ONLY the message text, nothing else.`;
       };
     }),
 
+    /** Get notification preferences */
+    getNotificationPrefs: protectedProcedure.query(async () => {
+      const prefs = await db.getNotificationPreferences();
+      return { preferences: prefs, types: db.NOTIFICATION_TYPES };
+    }),
+
+    /** Update a notification preference (admin only) */
+    setNotificationPref: adminProcedure.input(z.object({
+      key: z.string().min(1),
+      enabled: z.boolean(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.setNotificationPreference(input.key, input.enabled, ctx.user.id);
+      return { success: true };
+    }),
+
+    /** Bulk update notification preferences (admin only) */
+    bulkSetNotificationPrefs: adminProcedure.input(z.array(z.object({
+      key: z.string().min(1),
+      enabled: z.boolean(),
+    }))).mutation(async ({ ctx, input }) => {
+      for (const pref of input) {
+        await db.setNotificationPreference(pref.key, pref.enabled, ctx.user.id);
+      }
+      return { success: true, count: input.length };
+    }),
+
+    /** Restart FreePBX via SSH (admin only) */
+    freepbxRestart: adminProcedure.mutation(async () => {
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+
+      if (!host || !sshUser || !sshPassword) {
+        return { success: false, error: "SSH credentials not configured" };
+      }
+
+      const { Client: SSHClient } = await import("ssh2");
+      return new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({ success: false, error: "Connection timeout (30s)" });
+        }, 30000);
+
+        conn.on("ready", () => {
+          // Run fwconsole restart to restart FreePBX services
+          conn.exec("fwconsole restart 2>&1", (err, stream) => {
+            if (err) {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: false, error: err.message });
+              return;
+            }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", (code: number) => {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({
+                success: code === 0 || code === null,
+                output: output.trim().slice(0, 2000),
+                error: code !== 0 && code !== null ? `Exit code: ${code}` : undefined,
+              });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          let errorMsg = err.message;
+          if (errorMsg.includes("Authentication")) errorMsg = "Authentication failed — check SSH credentials";
+          else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "Connection refused — SSH not running";
+          else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "Connection timed out — check host";
+          resolve({ success: false, error: errorMsg });
+        });
+
+        conn.connect({
+          host,
+          port: 22,
+          username: sshUser,
+          password: sshPassword,
+          readyTimeout: 15000,
+        });
+      });
+    }),
+
     /** Get FreePBX connection settings status */
     freepbxStatus: protectedProcedure.query(async () => {
       const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
