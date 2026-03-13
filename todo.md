@@ -447,5 +447,7 @@
 - [x] Fix: Dialer recovery auto-resumes campaigns with pending queue items (resumeCampaignAfterRestart)
 - [x] Fix: Campaign 30012 successfully resumed after restart
 - [x] Add test call widget on Dashboard to quickly test the system (enter phone number, select caller ID, dial)
-- [ ] Tag v1.1.6 and push to GitHub for Docker build
-- [ ] Add "Force Resume" button on Campaigns page for manually resuming stuck campaigns
+- [x] Tag v1.1.6 and push to GitHub for Docker build
+- [x] Add "Force Resume" button on Campaigns page for manually resuming stuck campaigns
+- [x] forceResume backend endpoint (handles running/paused campaigns not active in memory)
+- [x] Force Resume button with Zap icon on Campaigns page (orange, with confirmation dialog)

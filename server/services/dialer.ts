@@ -596,7 +596,7 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
  * Unlike startCampaign(), this doesn't re-filter contacts or create new call_logs —
  * it just restores the dialer loop so existing pending call_logs/queue items get processed.
  */
-async function resumeCampaignAfterRestart(campaignId: number, userId: number): Promise<void> {
+export async function resumeCampaignAfterRestart(campaignId: number, userId: number): Promise<void> {
   const campaign = await db.getCampaign(campaignId, userId);
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status !== "running") throw new Error(`Campaign status is '${campaign.status}', expected 'running'`);

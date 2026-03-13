@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -751,6 +751,11 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const forceResume = trpc.campaigns.forceResume.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); utils.dashboard.stats.invalidate(); toast.success("Campaign force-resumed — dialer loop restarted"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const bulkDeleteCampaigns = trpc.campaigns.bulkDelete.useMutation({
     onSuccess: (r) => {
       utils.campaigns.list.invalidate();
@@ -949,6 +954,15 @@ export default function Campaigns() {
               {c.status === "cancelled" && (
                 <Button variant="outline" onClick={() => reactivateCampaign.mutate({ id: c.id })} disabled={reactivateCampaign.isPending}>
                   <RotateCcw className="h-4 w-4 mr-2" />{reactivateCampaign.isPending ? "Reactivating..." : "Reactivate"}
+                </Button>
+              )}
+              {(c.status === "running" || c.status === "paused") && (
+                <Button variant="outline" size="sm" className="text-orange-600 border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/30" onClick={() => {
+                  if (confirm("Force resume this campaign?\n\nThis will restart the dialer loop for this campaign. Use this if the campaign appears stuck (showing 'running' or 'paused' but not actually dialing).\n\nIf the campaign is already actively dialing, this will show an error.")) {
+                    forceResume.mutate({ id: c.id });
+                  }
+                }} disabled={forceResume.isPending}>
+                  <Zap className="h-4 w-4 mr-1" />{forceResume.isPending ? "Resuming..." : "Force Resume"}
                 </Button>
               )}
               {(c.status === "draft" || c.status === "completed" || c.status === "cancelled") && (

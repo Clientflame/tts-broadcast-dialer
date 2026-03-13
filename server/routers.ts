@@ -8,7 +8,7 @@ import * as db from "./db";
 import { generateTTS, TTS_VOICES, generateVoiceSample, GOOGLE_TTS_VOICES, generateGoogleTTS, generateGoogleVoiceSample, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./services/tts";
 // AMI is now handled by the PBX agent on the FreePBX server
 // import { getAMIStatus, getAMIClient } from "./services/ami";
-import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats } from "./services/dialer";
+import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats, resumeCampaignAfterRestart } from "./services/dialer";
 import { invokeLLM } from "./_core/llm";
 import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
@@ -581,6 +581,26 @@ export const appRouter = router({
       if (campaign.status !== "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Only cancelled campaigns can be reactivated" });
       await db.updateCampaign(input.id, ctx.user.id, { status: "draft" });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.reactivate", resource: "campaign", resourceId: input.id });
+      return { success: true };
+    }),
+    forceResume: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+      // Allow force resume for campaigns that are "running" in DB but not active in memory (stuck state)
+      if (campaign.status !== "running" && campaign.status !== "paused") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only running or paused campaigns can be force-resumed" });
+      }
+      // If already active in memory, nothing to do
+      if (isCampaignActive(input.id)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Campaign is already actively running" });
+      }
+      // Set to running if paused
+      if (campaign.status === "paused") {
+        await db.updateCampaign(input.id, ctx.user.id, { status: "running" });
+      }
+      // Resume the dialer loop
+      await resumeCampaignAfterRestart(input.id, ctx.user.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.forceResume", resource: "campaign", resourceId: input.id });
       return { success: true };
     }),
     stats: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
