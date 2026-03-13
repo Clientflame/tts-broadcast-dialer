@@ -436,3 +436,4 @@
 - [x] GitHub Actions workflow uses fetch-depth: 0 for full git history
 - [x] Dockerfile installs git in builder stage for version detection
 - [x] Fallback chain: git describe → package.json version → "dev"
+- [x] Fix: Manus deployment shows v1.0.0 because no git history — update package.json version to 1.1.5 as fallback
