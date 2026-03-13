@@ -429,3 +429,10 @@
 - [x] 18 new vitest tests for email verification and password strength (all 213 tests passing)
 - [x] Fixed 2 existing tests that used weak passwords (standalone-auth.test.ts)
 - [x] Tag v1.1.5 and push to GitHub for Docker build
+- [x] Force-update v1.1.5 tag on GitHub with version bump commit
+- [x] Auto-version from git tags at build time (remove hardcoded APP_VERSION)
+- [x] Vite define injects __APP_VERSION__ from git describe at build time
+- [x] scripts/build-server.mjs injects version into esbuild server bundle
+- [x] GitHub Actions workflow uses fetch-depth: 0 for full git history
+- [x] Dockerfile installs git in builder stage for version detection
+- [x] Fallback chain: git describe → package.json version → "dev"

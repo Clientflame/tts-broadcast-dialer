@@ -1,10 +1,29 @@
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
+
+// Auto-detect version from git tags (falls back to package.json)
+function getAppVersion(): string {
+  try {
+    const gitVersion = execSync("git describe --tags --always", { encoding: "utf-8" }).trim();
+    // Strip leading 'v' if present (e.g., "v1.1.5" → "1.1.5")
+    return gitVersion.startsWith("v") ? gitVersion.slice(1) : gitVersion;
+  } catch {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "package.json"), "utf-8"));
+      return pkg.version || "0.0.0";
+    } catch {
+      return "0.0.0";
+    }
+  }
+}
+
+const APP_VERSION = getAppVersion();
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -154,6 +173,9 @@ const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(
 
 export default defineConfig({
   plugins,
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

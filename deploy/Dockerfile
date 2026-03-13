@@ -8,6 +8,7 @@
 # --- Stage 1: Build ---
 FROM node:22-slim AS builder
 
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 WORKDIR /app
@@ -22,7 +23,13 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Initialize git for version detection (git describe reads tags)
+# The .git directory is copied from the build context
+# If no .git, the build script falls back to package.json version
+RUN git config --global --add safe.directory /app 2>/dev/null || true
+
 # Build frontend (Vite → dist/public) + backend (esbuild → dist/index.js)
+# Version is auto-detected from git tags via scripts/build-server.mjs
 RUN pnpm build
 
 # --- Stage 2: Production Runtime ---
