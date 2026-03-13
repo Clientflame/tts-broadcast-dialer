@@ -428,3 +428,4 @@
 - [x] Password strength indicator added to Setup, Create User, Reset Password, Admin Reset Password forms
 - [x] 18 new vitest tests for email verification and password strength (all 213 tests passing)
 - [x] Fixed 2 existing tests that used weak passwords (standalone-auth.test.ts)
+- [x] Tag v1.1.5 and push to GitHub for Docker build
