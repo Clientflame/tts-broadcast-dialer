@@ -151,7 +151,7 @@ fi
 # ============================================================
 # Step 1: Branding
 # ============================================================
-print_header "1/6  Your Brand"
+print_header "1/5  Your Brand"
 
 prompt CLIENT_NAME "Company name" "" ""
 prompt APP_TITLE "App title (shown in browser tab & sidebar)" "AI TTS Broadcast Dialer" ""
@@ -190,7 +190,7 @@ echo -e "  ${GREEN}✓${NC} Brand: ${BOLD}${APP_TITLE}${NC} — ${PRIMARY_COLOR}
 # ============================================================
 # Step 2: FreePBX Connection
 # ============================================================
-print_header "2/6  FreePBX Connection"
+print_header "2/5  FreePBX Connection"
 
 echo -e "  ${DIM}Enter the connection details for your FreePBX/Asterisk server.${NC}"
 echo -e "  ${DIM}You can change these later by editing ${DEPLOY_DIR}/.env${NC}"
@@ -214,35 +214,15 @@ else
   echo -e "  ${GREEN}✓${NC} FreePBX: ${BOLD}${PBX_HOST}${NC} (AMI: ${PBX_AMI_USER}@${PBX_AMI_PORT})"
 fi
 
-# ============================================================
-# Step 3: TTS API Keys
-# ============================================================
-print_header "3/6  TTS Voice Provider"
-
-echo -e "  ${DIM}You need at least one API key for text-to-speech.${NC}"
-echo -e "  ${DIM}You can add both — the app lets you choose per campaign.${NC}"
-echo ""
-echo -e "  ${BOLD}OpenAI${NC} — Higher quality voices, ~\$15/1M characters"
-echo -e "    Get a key: ${CYAN}https://platform.openai.com/api-keys${NC}"
-echo ""
-echo -e "  ${BOLD}Google TTS${NC} — More voice options, ~\$4/1M characters"
-echo -e "    Get a key: ${CYAN}https://console.cloud.google.com/apis/credentials${NC}"
-echo ""
-
-prompt OPENAI_KEY "OpenAI API Key (starts with sk-)" "" "secret"
-prompt GOOGLE_KEY "Google TTS API Key" "" "secret"
-
-if [ -z "$OPENAI_KEY" ] && [ -z "$GOOGLE_KEY" ]; then
-  echo -e "  ${YELLOW}⚠ No TTS key provided. You'll need to add one later for TTS to work.${NC}"
-else
-  [ -n "$OPENAI_KEY" ] && echo -e "  ${GREEN}✓${NC} OpenAI key configured"
-  [ -n "$GOOGLE_KEY" ] && echo -e "  ${GREEN}✓${NC} Google TTS key configured"
-fi
+# TTS API keys are no longer collected during setup.
+# Users configure them in the admin Settings page after installation.
+OPENAI_KEY=""
+GOOGLE_KEY=""
 
 # ============================================================
-# Step 4: Server Settings
+# Step 3: Server Settings
 # ============================================================
-print_header "4/6  Server Settings"
+print_header "3/5  Server Settings"
 
 prompt APP_PORT "Web app port" "3000" ""
 
@@ -276,7 +256,7 @@ JWT_SECRET=$(openssl rand -hex 32)
 # ============================================================
 # Step 5: Domain & SSL
 # ============================================================
-print_header "5/6  Domain & SSL (Optional)"
+print_header "4/5  Domain & SSL (Optional)"
 
 ENABLE_SSL="false"
 
@@ -350,7 +330,7 @@ fi
 # ============================================================
 # Step 6: Docker Image
 # ============================================================
-print_header "6/6  Docker Image"
+print_header "5/5  Docker Image"
 
 prompt DOCKER_IMAGE "Docker image" "$DEFAULT_IMAGE" ""
 
@@ -417,8 +397,7 @@ else
 fi
 echo ""
 echo -e "  ${BOLD}TTS${NC}"
-[ -n "$OPENAI_KEY" ] && echo -e "    OpenAI:     ✓ configured" || echo -e "    OpenAI:     ${DIM}not set${NC}"
-[ -n "$GOOGLE_KEY" ] && echo -e "    Google:     ✓ configured" || echo -e "    Google:     ${DIM}not set${NC}"
+echo -e "    ${DIM}Configure API keys in admin Settings page after install${NC}"
 echo ""
 echo -e "  ${BOLD}Server${NC}"
 echo -e "    Port:       ${APP_PORT}"
@@ -905,6 +884,9 @@ fi
 echo ""
 echo -e "  ${BOLD}First time?${NC} Create your admin account on the setup page,"
 echo -e "  then the onboarding wizard will guide you through the rest."
+echo ""
+echo -e "  ${YELLOW}Important:${NC} Go to ${BOLD}Settings${NC} (gear icon in sidebar) to add your"
+echo -e "  OpenAI and/or Google TTS API keys before creating campaigns."
 echo ""
 echo -e "  ${BOLD}Management:${NC}"
 echo -e "    cd ${DEPLOY_DIR}"

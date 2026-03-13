@@ -344,3 +344,8 @@
 - [x] Fix setup-client.sh: added python3 fallback for port detection
 - [x] Fix setup-client.sh: get_port_process returns 'unknown process' instead of empty string
 - [x] Fix standalone Docker deployment: Invalid URL crash when VITE_OAUTH_PORTAL_URL is empty (getLoginUrl returns /login when OAuth not configured)
+- [x] Remove OpenAI and Google TTS API key prompts from setup-client.sh installer
+- [x] Add admin Settings page for entering TTS API keys (OpenAI, Google) after installation
+- [x] Backend: settings CRUD endpoints to store/retrieve TTS API keys in database
+- [x] Update TTS services to read API keys from database with env var fallback
+- [x] Vitest tests for appSettings CRUD (8 tests, 150 total passing)

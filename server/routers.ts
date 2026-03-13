@@ -1582,6 +1582,65 @@ Return ONLY the message text, nothing else.`;
       }),
   }),
 
+  // ─── App Settings (TTS API keys, etc.) ─────────────────────────────────────
+  appSettings: router({
+    /** Get all settings (admin only). Secret values are masked for non-admins. */
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const settings = await db.getAppSettings();
+      // Mask secret values unless admin
+      return settings.map(s => ({
+        ...s,
+        value: s.isSecret && ctx.user.role !== "admin" ? (s.value ? "••••••••" : null) : s.value,
+      }));
+    }),
+
+    /** Get a single setting by key */
+    get: protectedProcedure.input(z.object({ key: z.string() })).query(async ({ input }) => {
+      const value = await db.getAppSetting(input.key);
+      return { key: input.key, value };
+    }),
+
+    /** Get TTS configuration status (which providers have keys) */
+    ttsStatus: protectedProcedure.query(async () => {
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+      return {
+        openaiConfigured: !!openaiKey,
+        googleConfigured: !!googleKey,
+      };
+    }),
+
+    /** Update a setting (admin only) */
+    update: adminProcedure.input(z.object({
+      key: z.string().min(1).max(100),
+      value: z.string().nullable(),
+      description: z.string().optional(),
+      isSecret: z.number().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting(input.key, input.value, input.description, input.isSecret, ctx.user.id);
+      return { success: true };
+    }),
+
+    /** Bulk update settings (admin only) */
+    bulkUpdate: adminProcedure.input(z.array(z.object({
+      key: z.string().min(1).max(100),
+      value: z.string().nullable(),
+      description: z.string().optional(),
+      isSecret: z.number().optional(),
+    }))).mutation(async ({ ctx, input }) => {
+      for (const setting of input) {
+        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret, ctx.user.id);
+      }
+      return { success: true, count: input.length };
+    }),
+
+    /** Delete a setting (admin only) */
+    delete: adminProcedure.input(z.object({ key: z.string() })).mutation(async ({ input }) => {
+      await db.deleteAppSetting(input.key);
+      return { success: true };
+    }),
+  }),
+
   onboarding: router({
     /** Get onboarding status — checks which setup steps are completed */
     status: protectedProcedure.query(async ({ ctx }) => {

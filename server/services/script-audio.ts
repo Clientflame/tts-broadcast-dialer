@@ -18,6 +18,8 @@ import {
   renderMessageTemplate,
   type TTSVoice,
   type GoogleTTSVoice,
+  getOpenAIApiKey,
+  getGoogleTTSApiKey,
 } from "./tts";
 
 export interface ContactData {
@@ -100,8 +102,7 @@ async function generateTTSSegment(params: {
   cacheKey: string;
 }): Promise<{ url: string }> {
   if (params.provider === "google") {
-    const apiKey = process.env.GOOGLE_TTS_API_KEY;
-    if (!apiKey) throw new Error("Google TTS API key not configured");
+    const apiKey = await getGoogleTTSApiKey();
 
     const response = await fetch(
       `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
@@ -127,8 +128,7 @@ async function generateTTSSegment(params: {
     return { url };
   } else {
     // OpenAI TTS
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error("OpenAI API key not configured");
+    const apiKey = await getOpenAIApiKey();
 
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",

@@ -19,6 +19,7 @@ import {
   callScripts, InsertCallScript,
   healthCheckSchedule, InsertHealthCheckSchedule,
   throttleHistory, InsertThrottleHistory,
+  appSettings, InsertAppSetting,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2247,4 +2248,51 @@ export async function retryFailedContacts(campaignId: number, userId: number): P
     .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
 
   return { retriedCount: retriablePhones.length, deletedLogs: Number((logResult as any)[0]?.affectedRows ?? retriablePhones.length) };
+}
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+export async function getAppSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  return rows[0]?.value ?? null;
+}
+
+export async function getAppSettings(keys?: string[]): Promise<Array<{ key: string; value: string | null; description: string | null; isSecret: number; updatedAt: Date }>> {
+  const db = await getDb();
+  if (!db) return [];
+  if (keys && keys.length > 0) {
+    return db.select({
+      key: appSettings.key,
+      value: appSettings.value,
+      description: appSettings.description,
+      isSecret: appSettings.isSecret,
+      updatedAt: appSettings.updatedAt,
+    }).from(appSettings).where(inArray(appSettings.key, keys));
+  }
+  return db.select({
+    key: appSettings.key,
+    value: appSettings.value,
+    description: appSettings.description,
+    isSecret: appSettings.isSecret,
+    updatedAt: appSettings.updatedAt,
+  }).from(appSettings);
+}
+
+export async function upsertAppSetting(key: string, value: string | null, description?: string, isSecret?: number, updatedBy?: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  if (existing.length > 0) {
+    await db.update(appSettings).set({ value, ...(description !== undefined && { description }), ...(updatedBy !== undefined && { updatedBy }) }).where(eq(appSettings.key, key));
+  } else {
+    await db.insert(appSettings).values({ key, value, description, isSecret: isSecret ?? 0, updatedBy });
+  }
+}
+
+export async function deleteAppSetting(key: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(appSettings).where(eq(appSettings.key, key));
 }

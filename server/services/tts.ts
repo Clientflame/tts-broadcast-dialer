@@ -1,8 +1,24 @@
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import { Client as SSHClient } from "ssh2";
+import { getAppSetting } from "../db";
 
 export type TTSProvider = "openai" | "google";
+
+// Resolve TTS API keys: database setting takes priority, then env var fallback
+export async function getOpenAIApiKey(): Promise<string> {
+  const dbKey = await getAppSetting("openai_api_key");
+  const key = dbKey || process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OpenAI API key not configured. Go to Settings to add your API key.");
+  return key;
+}
+
+export async function getGoogleTTSApiKey(): Promise<string> {
+  const dbKey = await getAppSetting("google_tts_api_key");
+  const key = dbKey || process.env.GOOGLE_TTS_API_KEY;
+  if (!key) throw new Error("Google TTS API key not configured. Go to Settings to add your API key.");
+  return key;
+}
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
 export type GoogleTTSVoice = "en-US-Journey-D" | "en-US-Journey-F" | "en-US-Journey-O" | "en-US-Studio-M" | "en-US-Studio-O" | "en-US-Studio-Q" | "en-US-Neural2-A" | "en-US-Neural2-C" | "en-US-Neural2-D" | "en-US-Neural2-F" | "en-US-Neural2-H" | "en-US-Neural2-I" | "en-US-Neural2-J" | "en-US-Wavenet-A" | "en-US-Wavenet-B" | "en-US-Wavenet-C" | "en-US-Wavenet-D" | "en-US-Wavenet-E" | "en-US-Wavenet-F";
 
@@ -48,8 +64,7 @@ export async function generateTTS(params: {
   name: string;
   speed?: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key not configured");
+  const apiKey = await getOpenAIApiKey();
 
   const speed = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
 
@@ -87,8 +102,7 @@ export async function generateTTS(params: {
 
 // Generate a natural-sounding voice sample for preview using HD model
 export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0): Promise<{ url: string; key: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key not configured");
+  const apiKey = await getOpenAIApiKey();
 
   const sampleText = VOICE_SAMPLE_SCRIPTS[voice];
   const clampedSpeed = Math.max(0.25, Math.min(4.0, speed));
@@ -144,8 +158,7 @@ export async function generatePersonalizedTTS(params: {
   campaignId: number;
   contactId: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI API key not configured");
+  const apiKey = await getOpenAIApiKey();
 
   // Build the variables map
   const variables: Record<string, string> = {
@@ -234,8 +247,7 @@ export async function generateGoogleTTS(params: {
   name: string;
   speed?: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
-  const apiKey = process.env.GOOGLE_TTS_API_KEY;
-  if (!apiKey) throw new Error("Google TTS API key not configured");
+  const apiKey = await getGoogleTTSApiKey();
 
   const speakingRate = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
 
@@ -267,8 +279,7 @@ export async function generateGoogleTTS(params: {
 
 // Generate Google TTS voice sample for preview
 export async function generateGoogleVoiceSample(voice: GoogleTTSVoice, speed: number = 1.0): Promise<{ url: string; key: string }> {
-  const apiKey = process.env.GOOGLE_TTS_API_KEY;
-  if (!apiKey) throw new Error("Google TTS API key not configured");
+  const apiKey = await getGoogleTTSApiKey();
 
   const sampleText = "Hi there. I'm reaching out today because we have an important update regarding your account. We'd love to walk you through the details and answer any questions you might have. Please give us a call back at your earliest convenience.";
   const speakingRate = Math.max(0.25, Math.min(4.0, speed));
@@ -316,8 +327,7 @@ export async function generateGooglePersonalizedTTS(params: {
   campaignId: number;
   contactId: number;
 }): Promise<{ s3Url: string; s3Key: string; fileSize: number; renderedText: string }> {
-  const apiKey = process.env.GOOGLE_TTS_API_KEY;
-  if (!apiKey) throw new Error("Google TTS API key not configured");
+  const apiKey = await getGoogleTTSApiKey();
 
   const variables: Record<string, string> = {
     first_name: params.contactData.firstName || "Valued Customer",

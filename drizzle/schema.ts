@@ -458,3 +458,18 @@ export const throttleHistory = mysqlTable("throttle_history", {
 });
 export type ThrottleHistory = typeof throttleHistory.$inferSelect;
 export type InsertThrottleHistory = typeof throttleHistory.$inferInsert;
+
+// ─── App Settings (key-value store for admin-configurable settings) ──────────
+export const appSettings = mysqlTable("app_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value"),
+  description: varchar("description", { length: 500 }),
+  isSecret: int("isSecret").default(0).notNull(), // 1 = mask value in API responses
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AppSetting = typeof appSettings.$inferSelect;
+export type InsertAppSetting = typeof appSettings.$inferInsert;

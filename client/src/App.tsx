@@ -24,6 +24,7 @@ import Setup from "./pages/Setup";
 import Scripts from "./pages/Scripts";
 import DidAnalytics from "./pages/DidAnalytics";
 import Onboarding from "./pages/Onboarding";
+import Settings from "./pages/Settings";
 
 function Router() {
   return (
@@ -48,6 +49,7 @@ function Router() {
       <Route path={"/login"} component={Login} />
       <Route path={"/setup"} component={Setup} />
       <Route path={"/onboarding"} component={Onboarding} />
+      <Route path={"/settings"} component={Settings} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
