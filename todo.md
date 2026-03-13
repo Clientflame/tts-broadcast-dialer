@@ -390,4 +390,10 @@
 - [x] Add audit log entries for FreePBX restart and reconnect actions
 - [x] Add audit log entries for settings delete and bulk update
 - [x] Vitest tests for audit logging on settings changes (5 new tests, 186 total passing)
-- [ ] Tag v1.1.2 and push to GitHub for Docker build
+- [x] Tag v1.1.2 and push to GitHub for Docker build
+- [x] Fix: Unable to login with email/password on Docker deployment (demo.407hosted.com)
+- [x] Create admin user on demo.407hosted.com
+- [x] Bug: Login succeeds but redirects back to login page on Docker deployment (session cookie not persisting)
+  - Root cause: verifySession() required non-empty appId, but standalone auth sets appId=""
+  - Fix: Made appId optional in session validation (sdk.ts)
+- [x] Create admin user on demo.407hosted.com (already existed from setup wizard)
