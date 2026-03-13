@@ -451,3 +451,9 @@
 - [x] Add "Force Resume" button on Campaigns page for manually resuming stuck campaigns
 - [x] forceResume backend endpoint (handles running/paused campaigns not active in memory)
 - [x] Force Resume button with Zap icon on Campaigns page (orange, with confirmation dialog)
+- [x] Bug: Test Call widget not making calls — failed
+- [x] Root cause: health-check calls flooding queue at same priority as real calls, agent processes health checks one-by-one forever
+- [x] Fix: Set health-check call priority to 10 (lowest) so real calls always go first
+- [x] Fix: Set Quick Test call priority to 0 (highest) for immediate processing
+- [x] Fix: Add flood guard - check pending health-check count before queuing more (max 50)
+- [x] Fix: Clean up 426 stale health-check calls from queue (done via SQL)

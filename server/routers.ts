@@ -780,6 +780,11 @@ export const appRouter = router({
       if (callerIdsToCheck.length === 0) {
         return { queued: 0, message: "No caller IDs need checking right now" };
       }
+      // Flood guard: prevent health check queue from growing too large
+      const pendingHealthChecks = await db.getPendingHealthCheckCount();
+      if (pendingHealthChecks >= 50) {
+        return { queued: 0, message: `${pendingHealthChecks} health checks already pending. Wait for them to complete before queuing more.` };
+      }
       // Health check strategy: dial a known test number USING the DID as caller ID.
       // This validates the DID can successfully place outbound calls through the trunk.
       // We use Asterisk's built-in echo test (extension 10000) or a short ring to a
@@ -802,7 +807,7 @@ export const appRouter = router({
             CALLER_ID: cid.phoneNumber,
             healthCheckDID: cid.phoneNumber,
           },
-          priority: 1,
+          priority: 10, // Lowest priority — real calls always go first
           userId: ctx.user.id,
         });
         queued++;
@@ -1100,7 +1105,7 @@ Return ONLY the message text, nothing else.`;
           ...(callerIdStr ? { CALLER_ID: callerIdStr } : {}),
         },
         status: "pending",
-        priority: 1, // Quick test = highest priority
+        priority: 0, // Quick test = absolute highest priority (above campaign calls)
       });
 
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });

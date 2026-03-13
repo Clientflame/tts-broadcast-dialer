@@ -1,0 +1,34 @@
+{
+  "query": "\n-- First, let's see the full picture\nSELECT phoneNumber, status, priority, COUNT(*) as cnt \nFROM call_queue \nWHERE phoneNumber IN ('0000000000', '*43') \nGROUP BY phoneNumber, status, priority \nORDER BY phoneNumber, status;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute \n-- First, let's see the full picture\nSELECT phoneNumber, status, priority, COUNT(*) as cnt \nFROM call_queue \nWHERE phoneNumber IN ('0000000000', '*43') \nGROUP BY phoneNumber, status, priority \nORDER BY phoneNumber, status;\n",
+  "rows": [
+    {
+      "phoneNumber": "*43",
+      "status": "pending",
+      "priority": "1",
+      "cnt": "126"
+    },
+    {
+      "phoneNumber": "0000000000",
+      "status": "completed",
+      "priority": "1",
+      "cnt": "139"
+    },
+    {
+      "phoneNumber": "0000000000",
+      "status": "failed",
+      "priority": "1",
+      "cnt": "739"
+    },
+    {
+      "phoneNumber": "0000000000",
+      "status": "pending",
+      "priority": "1",
+      "cnt": "286"
+    }
+  ],
+  "messages": [],
+  "stdout": "phoneNumber\tstatus\tpriority\tcnt\n*43\tpending\t1\t126\n0000000000\tcompleted\t1\t139\n0000000000\tfailed\t1\t739\n0000000000\tpending\t1\t286\n",
+  "stderr": "",
+  "execution_time_ms": 49
+}

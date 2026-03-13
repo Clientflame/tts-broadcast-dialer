@@ -1,0 +1,9 @@
+{
+  "query": "\n-- Delete all pending health-check calls (0000000000 and *43)\nDELETE FROM call_queue WHERE phoneNumber IN ('0000000000', '*43') AND status = 'pending';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute \n-- Delete all pending health-check calls (0000000000 and *43)\nDELETE FROM call_queue WHERE phoneNumber IN ('0000000000', '*43') AND status = 'pending';\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 62
+}

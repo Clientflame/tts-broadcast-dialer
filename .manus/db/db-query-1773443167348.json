@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT phoneNumber, status, priority, COUNT(*) as cnt \nFROM call_queue \nWHERE status = 'pending'\nGROUP BY phoneNumber, status, priority \nORDER BY priority, phoneNumber;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute \nSELECT phoneNumber, status, priority, COUNT(*) as cnt \nFROM call_queue \nWHERE status = 'pending'\nGROUP BY phoneNumber, status, priority \nORDER BY priority, phoneNumber;\n",
+  "rows": [
+    {
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "priority": "1",
+      "cnt": "4"
+    },
+    {
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "priority": "5",
+      "cnt": "4"
+    }
+  ],
+  "messages": [],
+  "stdout": "phoneNumber\tstatus\tpriority\tcnt\n4074551177\tpending\t1\t4\n4074551177\tpending\t5\t4\n",
+  "stderr": "",
+  "execution_time_ms": 48
+}

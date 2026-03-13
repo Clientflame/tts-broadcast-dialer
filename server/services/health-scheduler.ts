@@ -50,6 +50,13 @@ async function runScheduledChecks() {
     const dueSchedules = await db.getDueHealthCheckSchedules();
     for (const schedule of dueSchedules) {
       try {
+        // Flood guard: skip if there are already too many pending health-check calls
+        const pendingHealthChecks = await db.getPendingHealthCheckCount();
+        if (pendingHealthChecks >= 50) {
+          console.log(`[HealthScheduler] Skipping user ${schedule.userId}: ${pendingHealthChecks} health checks already pending (max 50)`);
+          continue;
+        }
+
         // Get all active (non-disabled) caller IDs for this user
         const callerIds = await db.getCallerIds(schedule.userId);
         const activeIds = callerIds.filter(c => c.isActive);
@@ -79,7 +86,7 @@ async function runScheduledChecks() {
               CALLER_ID: cid.phoneNumber,
               healthCheckDID: cid.phoneNumber,
             },
-            priority: 1,
+            priority: 10, // Lowest priority — real calls always go first
             userId: schedule.userId,
           });
           queued++;

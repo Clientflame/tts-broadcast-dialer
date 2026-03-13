@@ -1847,6 +1847,23 @@ export async function getPendingCallQueueCount(): Promise<number> {
   return result[0]?.cnt ?? 0;
 }
 
+export async function getPendingHealthCheckCount(): Promise<number> {
+  const dbInst = await getDb();
+  if (!dbInst) return 0;
+  const { callQueue } = await import("../drizzle/schema");
+  const { eq, and, count: countFn, or } = await import("drizzle-orm");
+  const result = await dbInst.select({ cnt: countFn() })
+    .from(callQueue)
+    .where(and(
+      eq(callQueue.status, "pending"),
+      or(
+        eq(callQueue.audioName, "health-check"),
+        eq(callQueue.context, "health-check")
+      )
+    ));
+  return result[0]?.cnt ?? 0;
+}
+
 // ─── Agent Metrics ──────────────────────────────────────────────────────────
 
 export async function getAgentMetrics(userId: number) {

@@ -1,0 +1,130 @@
+{
+  "query": "SELECT id, phoneNumber, status, result, claimedBy, campaignId, audioName, callerIdStr, createdAt, claimedAt FROM call_queue WHERE audioName LIKE '%quick%' OR audioName LIKE '%test%' OR priority = 1 ORDER BY createdAt DESC LIMIT 10",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, status, result, claimedBy, campaignId, audioName, callerIdStr, createdAt, claimedAt FROM call_queue WHERE audioName LIKE '%quick%' OR audioName LIKE '%test%' OR priority = 1 ORDER BY createdAt DESC LIMIT 10",
+  "rows": [
+    {
+      "id": "30158",
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "quicktest_30002",
+      "callerIdStr": "8339254113",
+      "createdAt": "2026-03-13 22:53:06",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30157",
+      "phoneNumber": "0000000000",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "health-check",
+      "callerIdStr": "9502115556",
+      "createdAt": "2026-03-13 22:48:35",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30156",
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "quicktest_30002",
+      "callerIdStr": "8339254116",
+      "createdAt": "2026-03-13 22:46:37",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30155",
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "quicktest_30002",
+      "callerIdStr": "NULL",
+      "createdAt": "2026-03-13 22:46:21",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30154",
+      "phoneNumber": "4074551177",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "quicktest_30002",
+      "callerIdStr": "NULL",
+      "createdAt": "2026-03-13 22:45:53",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30153",
+      "phoneNumber": "0000000000",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "health-check",
+      "callerIdStr": "9501686833",
+      "createdAt": "2026-03-13 22:41:26",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30148",
+      "phoneNumber": "0000000000",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "health-check",
+      "callerIdStr": "9500555290",
+      "createdAt": "2026-03-13 22:22:35",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30141",
+      "phoneNumber": "0000000000",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "NULL",
+      "audioName": "health-check",
+      "callerIdStr": "9509312604",
+      "createdAt": "2026-03-13 22:01:52",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30131",
+      "phoneNumber": "*43",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "callerIdStr": "9503616279",
+      "createdAt": "2026-03-13 21:36:13",
+      "claimedAt": "NULL"
+    },
+    {
+      "id": "30130",
+      "phoneNumber": "*43",
+      "status": "pending",
+      "result": "NULL",
+      "claimedBy": "NULL",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "callerIdStr": "9503994286",
+      "createdAt": "2026-03-13 21:36:13",
+      "claimedAt": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tstatus\tresult\tclaimedBy\tcampaignId\taudioName\tcallerIdStr\tcreatedAt\tclaimedAt\n30158\t4074551177\tpending\tNULL\tNULL\tNULL\tquicktest_30002\t8339254113\t2026-03-13 22:53:06\tNULL\n30157\t0000000000\tpending\tNULL\tNULL\tNULL\thealth-check\t9502115556\t2026-03-13 22:48:35\tNULL\n30156\t4074551177\tpending\tNULL\tNULL\tNULL\tquicktest_30002\t8339254116\t2026-03-13 22:46:37\tNULL\n30155\t4074551177\tpending\tNULL\tNULL\tNULL\tquicktest_30002\tNULL\t2026-03-13 22:46:21\tNULL\n30154\t4074551177\tpending\tNULL\tNULL\tNULL\tquicktest_30002\tNULL\t2026-03-13 22:45:53\tNULL\n30153\t0000000000\tpending\tNULL\tNULL\tNULL\thealth-check\t9501686833\t2026-03-13 22:41:26\tNULL\n30148\t0000000000\tpending\tNULL\tNULL\tNULL\thealth-check\t9500555290\t2026-03-13 22:22:35\tNULL\n30141\t0000000000\tpending\tNULL\tNULL\tNULL\thealth-check\t9509312604\t2026-03-13 22:01:52\tNULL\n30131\t*43\tpending\tNULL\tNULL\t0\thealth-check\t9503616279\t2026-03-13 21:36:13\tNULL\n30130\t*43\tpending\tNULL\tNULL\t0\thealth-check\t9503994286\t2026-03-13 21:36:13\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}
