@@ -484,3 +484,7 @@
 - [x] Safety factor: auto-reduce overdial when approaching TCPA 3% abandon rate limit
 - [x] Campaign setting: predictive mode with agent count and max abandon rate
 - [x] UI: predictive dialer controls in campaign form (agent count, max abandon rate)
+- [x] Bug: Test calls not working again — agent stuck with stale activeCalls=1
+- [x] Fix: Server-side cross-check of activeCalls vs actual claimed calls in DB
+- [x] Fix: Reduced stale call threshold from 5min to 2min in PBX agent
+- [x] Fix: Manually added 7 missing campaign columns to production DB

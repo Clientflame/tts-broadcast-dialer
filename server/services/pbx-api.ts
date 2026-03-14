@@ -43,7 +43,17 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     const effectiveLimit = Math.min(agentMax, campaignMax);
 
     // Load balancing: calculate this agent's fair share based on capacity
-    const activeCalls = req.body.activeCalls || 0;
+    // Cross-check agent-reported activeCalls against actual claimed calls in DB
+    // This prevents desync where agent reports stale active calls that no longer exist
+    let activeCalls = req.body.activeCalls || 0;
+    try {
+      const actualClaimed = await db.getClaimedCallCountByAgent(agent.agentId);
+      if (activeCalls > 0 && actualClaimed === 0) {
+        // Agent thinks it has active calls but DB shows none — trust the DB
+        console.log(`[PBX-API] Agent ${agent.name} reports ${activeCalls} active but DB shows ${actualClaimed} claimed — using DB count`);
+        activeCalls = actualClaimed;
+      }
+    } catch (_) { /* fallback to agent-reported count */ }
     const availableSlots = Math.max(0, effectiveLimit - activeCalls);
 
     // Get all online agents to calculate proportional share

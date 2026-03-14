@@ -861,9 +861,9 @@ def main():
                     # Remove from active calls
                     del active_calls[qid]
 
-        # Check for stale active calls (no event received in 5 minutes)
+        # Check for stale active calls (no event received in 2 minutes)
         with active_calls_lock:
-            stale_threshold = time.time() - 300
+            stale_threshold = time.time() - 120
             for qid, info in list(active_calls.items()):
                 if info["start_time"] < stale_threshold:
                     is_hc = info.get("is_health_check", False)

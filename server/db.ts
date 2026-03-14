@@ -1582,6 +1582,16 @@ export async function releaseStaleClaimedCalls(staleThresholdMs: number = 120000
     .where(and(eq(callQueue.status, "claimed"), lt(callQueue.claimedAt, cutoff)));
 }
 
+// Get count of currently claimed calls for a specific agent
+export async function getClaimedCallCountByAgent(agentId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(callQueue)
+    .where(and(eq(callQueue.status, "claimed"), eq(callQueue.claimedBy, agentId)));
+  return Number(result[0]?.count ?? 0);
+}
+
 // ─── PBX Agents ─────────────────────────────────────────────────────────────
 export async function upsertPbxAgent(data: { agentId: string; apiKey: string; name?: string; ipAddress?: string; maxCalls?: number }) {
   const db = await getDb();
