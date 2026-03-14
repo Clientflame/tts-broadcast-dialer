@@ -3,6 +3,7 @@ import { generateScriptAudio } from "./script-audio";
 import { notifyOwner } from "../_core/notification";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
+import { isContactCallable, getTimezoneForPhone } from "../../shared/area-code-tz";
 import * as db from "../db";
 import type { Campaign, CallLog, ScriptSegment } from "../../drizzle/schema";
 
@@ -188,11 +189,15 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   // Build pacing config
   const pacingConfig: PacingConfig = {
-    mode: ((campaign as any).pacingMode as "fixed" | "adaptive" | "predictive") || "fixed",
+    mode: (campaign.pacingMode as "fixed" | "adaptive" | "predictive") || "fixed",
     fixedConcurrent: campaign.maxConcurrentCalls || 1,
-    targetDropRate: (campaign as any).pacingTargetDropRate ?? 3,
-    minConcurrent: (campaign as any).pacingMinConcurrent ?? 1,
-    maxConcurrent: (campaign as any).pacingMaxConcurrent ?? 10,
+    targetDropRate: campaign.pacingTargetDropRate ?? 3,
+    minConcurrent: campaign.pacingMinConcurrent ?? 1,
+    maxConcurrent: campaign.pacingMaxConcurrent ?? 10,
+    // Predictive dialer settings
+    agentCount: (campaign as any).predictiveAgentCount ?? 1,
+    targetWaitTime: (campaign as any).predictiveTargetWaitTime ?? 5,
+    maxAbandonRate: (campaign as any).predictiveMaxAbandonRate ?? 3,
   };
 
   initPacing(campaignId, pacingConfig);
@@ -328,6 +333,16 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
 
   for (const callLog of callsToDial) {
     try {
+      // Per-contact timezone enforcement: skip contacts outside their local call window
+      if ((active.campaign as any).enforceContactTimezone) {
+        const tzStart = (active.campaign as any).contactTzWindowStart || "08:00";
+        const tzEnd = (active.campaign as any).contactTzWindowEnd || "21:00";
+        if (!isContactCallable(callLog.phoneNumber, tzStart, tzEnd)) {
+          // Move back to pending so it gets retried later when the contact's timezone opens
+          await db.updateCallLog(callLog.id, { status: "pending" });
+          continue;
+        }
+      }
       await enqueueContact(callLog, active, userId);
     } catch (err) {
       console.error(`[Dialer] Failed to enqueue ${callLog.phoneNumber}:`, err);
@@ -384,6 +399,15 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   const variables: Record<string, string> = {
     CALLID: `broadcast-${callLog.campaignId}-${callLog.id}-${Date.now()}`,
   };
+
+  // AMD (Answering Machine Detection) settings
+  if ((active.campaign as any).amdEnabled) {
+    variables.AMD_ENABLED = "true";
+    // If there's a voicemail-specific message, prepare it
+    if ((active.campaign as any).voicemailAudioFileId || (active.campaign as any).voicemailMessageText) {
+      variables.VOICEMAIL_DROP = "true";
+    }
+  }
 
   // Resolve callback number: use DID rotation number if enabled, otherwise static callbackNumber
   const effectiveCallbackNumber = active.useDidCallbackNumber && callerIdNumber
@@ -486,6 +510,54 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   else if (active.audioS3Url && active.audioName) {
     variables.AUDIO_URL = active.audioS3Url;
     variables.AUDIO_NAME = active.audioName;
+  }
+
+  // Prepare voicemail audio if AMD + voicemail drop is enabled
+  if (variables.VOICEMAIL_DROP === "true") {
+    const vmAudioFileId = (active.campaign as any).voicemailAudioFileId;
+    if (vmAudioFileId) {
+      try {
+        const vmAudio = await db.getAudioFile(vmAudioFileId, userId);
+        if (vmAudio?.s3Url) {
+          variables.VOICEMAIL_AUDIO_URL = vmAudio.s3Url;
+          variables.VOICEMAIL_AUDIO_NAME = `vm_${callLog.campaignId}_${vmAudio.id}`;
+        }
+      } catch (err) {
+        console.warn(`[Dialer] Failed to load voicemail audio:`, err);
+      }
+    } else if ((active.campaign as any).voicemailMessageText) {
+      // Generate TTS for voicemail message on-the-fly
+      try {
+        const voice = active.campaign.voice || "alloy";
+        const isGoogleVoice = voice.startsWith("en-US-");
+        const vmTtsParams = {
+          messageTemplate: (active.campaign as any).voicemailMessageText,
+          voice: voice as any,
+          speed: parseFloat(active.campaign.ttsSpeed || "1.0"),
+          contactData: {
+            firstName: callLog.contactName?.split(" ")[0],
+            lastName: callLog.contactName?.split(" ").slice(1).join(" "),
+            phoneNumber: callLog.phoneNumber,
+          },
+          callerIdNumber,
+          callbackNumber: effectiveCallbackNumber || "",
+          campaignId: callLog.campaignId,
+          contactId: callLog.contactId,
+        };
+        const vmResult = isGoogleVoice
+          ? await generateGooglePersonalizedTTS(vmTtsParams as any)
+          : await generatePersonalizedTTS(vmTtsParams as any);
+        variables.VOICEMAIL_AUDIO_URL = vmResult.s3Url;
+        variables.VOICEMAIL_AUDIO_NAME = `vm_personalized_${callLog.campaignId}_${callLog.contactId}`;
+      } catch (err) {
+        console.warn(`[Dialer] Failed to generate voicemail TTS:`, err);
+        // Fall back to main audio for voicemail
+        if (variables.AUDIO_URL) {
+          variables.VOICEMAIL_AUDIO_URL = variables.AUDIO_URL;
+          variables.VOICEMAIL_AUDIO_NAME = variables.AUDIO_NAME || "";
+        }
+      }
+    }
   }
 
   // Enqueue into call_queue for PBX agent to pick up
@@ -639,6 +711,10 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     targetDropRate: (campaign as any).pacingTargetDropRate ?? 3,
     minConcurrent: (campaign as any).pacingMinConcurrent ?? 1,
     maxConcurrent: (campaign as any).pacingMaxConcurrent ?? 10,
+    // Predictive dialer settings
+    agentCount: (campaign as any).predictiveAgentCount ?? 1,
+    targetWaitTime: (campaign as any).predictiveTargetWaitTime ?? 5,
+    maxAbandonRate: (campaign as any).predictiveMaxAbandonRate ?? 3,
   };
 
   initPacing(campaignId, pacingConfig);

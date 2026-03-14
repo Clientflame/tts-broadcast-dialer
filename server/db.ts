@@ -20,6 +20,7 @@ import {
   healthCheckSchedule, InsertHealthCheckSchedule,
   throttleHistory, InsertThrottleHistory,
   appSettings, InsertAppSetting,
+  payments, InsertPayment,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2460,4 +2461,66 @@ export async function getUserByEmail(email: string) {
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result[0];
+}
+
+
+// ─── Payment Functions ───────────────────────────────────────────────────────
+
+export async function createPayment(data: Omit<InsertPayment, "id">): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(payments).values(data);
+  return result[0].insertId;
+}
+
+export async function getPayment(paymentId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(payments).where(eq(payments.id, paymentId)).limit(1);
+  return result[0];
+}
+
+export async function updatePayment(paymentId: number, data: Partial<InsertPayment>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(payments).set(data).where(eq(payments.id, paymentId));
+}
+
+export async function getPaymentsByContact(contactId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(payments).where(eq(payments.contactId, contactId)).orderBy(desc(payments.createdAt));
+}
+
+export async function getPaymentsByCampaign(campaignId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(payments).where(eq(payments.campaignId, campaignId)).orderBy(desc(payments.createdAt));
+}
+
+export async function getCampaignPaymentStats(campaignId: number) {
+  const db = await getDb();
+  if (!db) return { totalPayments: 0, totalAmount: 0, successfulPayments: 0, successfulAmount: 0, pendingPayments: 0, failedPayments: 0 };
+  
+  const rows = await db.select({
+    status: payments.status,
+    cnt: count(),
+    total: sql<number>`COALESCE(SUM(${payments.amount}), 0)`,
+  }).from(payments).where(eq(payments.campaignId, campaignId)).groupBy(payments.status);
+
+  let totalPayments = 0, totalAmount = 0, successfulPayments = 0, successfulAmount = 0, pendingPayments = 0, failedPayments = 0;
+  for (const row of rows) {
+    totalPayments += row.cnt;
+    totalAmount += row.total;
+    if (row.status === "succeeded") { successfulPayments = row.cnt; successfulAmount = row.total; }
+    if (row.status === "pending" || row.status === "processing") pendingPayments += row.cnt;
+    if (row.status === "failed") failedPayments = row.cnt;
+  }
+  return { totalPayments, totalAmount, successfulPayments, successfulAmount, pendingPayments, failedPayments };
+}
+
+export async function getAllPayments(userId: number, limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt)).limit(limit);
 }

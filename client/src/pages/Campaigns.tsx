@@ -92,6 +92,14 @@ type FormState = {
   scriptId: number; callbackNumber: string; useDidCallbackNumber: boolean;
   pacingMode: "fixed" | "adaptive" | "predictive";
   pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
+  // Predictive dialer
+  predictiveAgentCount: number; predictiveMaxAbandonRate: number;
+  // Voicemail drop / AMD
+  amdEnabled: boolean; voicemailAudioId: number; voicemailMessage: string;
+  // IVR Payment
+  ivrPaymentEnabled: boolean; ivrPaymentDigit: string; ivrPaymentAmount: number;
+  // Timezone enforcement
+  tzEnforcementEnabled: boolean; tcpaStartHour: number; tcpaEndHour: number;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -104,6 +112,10 @@ const DEFAULT_FORM: FormState = {
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
   useDidRotation: false, scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
+  predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
+  amdEnabled: false, voicemailAudioId: 0, voicemailMessage: "",
+  ivrPaymentEnabled: false, ivrPaymentDigit: "1", ivrPaymentAmount: 0,
+  tzEnforcementEnabled: true, tcpaStartHour: 8, tcpaEndHour: 21,
 };
 
 function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
@@ -559,11 +571,69 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 <p className="text-xs text-muted-foreground">
                   {form.pacingMode === "adaptive" 
                     ? "Adaptive mode adjusts concurrent calls based on real-time answer and drop rates within a 60-second rolling window."
-                    : "Predictive mode uses historical answer rates and call duration to calculate optimal call volume, overcommitting slightly to maximize throughput."}
+                    : "Predictive mode uses Erlang-C inspired algorithm with overdial ratio calculation, circuit breaker protection, and TCPA abandon rate compliance."}
                 </p>
+                {form.pacingMode === "predictive" && (
+                  <div className="space-y-3 pt-3 border-t border-dashed">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 rounded">Predictive Dialer Settings</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Agent/Line Count</Label>
+                        <Input type="number" min={1} max={50} value={form.predictiveAgentCount}
+                          onChange={e => setForm(p => ({ ...p, predictiveAgentCount: parseInt(e.target.value) || 1 }))} />
+                        <p className="text-xs text-muted-foreground mt-1">Number of available lines/agents</p>
+                      </div>
+                      <div>
+                        <Label>Max Abandon Rate: {form.predictiveMaxAbandonRate}%</Label>
+                        <Input type="range" min={1} max={5} step={0.5} value={form.predictiveMaxAbandonRate}
+                          onChange={e => setForm(p => ({ ...p, predictiveMaxAbandonRate: parseFloat(e.target.value) }))} className="mt-1" />
+                        <div className="flex justify-between text-xs text-muted-foreground"><span>1% (safe)</span><span>TCPA limit: 3%</span><span>5%</span></div>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">The predictive engine calculates an overdial ratio based on answer rate and dynamically adjusts concurrent calls. A circuit breaker activates if 3+ consecutive calls are abandoned, reducing to minimum for 30 seconds.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
+          {/* AMD / Voicemail Drop */}
+          <div className="p-4 rounded-lg border space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base font-semibold">Answering Machine Detection (AMD)</Label>
+                <p className="text-xs text-muted-foreground mt-1">Detect voicemail and automatically leave a pre-recorded message</p>
+              </div>
+              <Switch checked={form.amdEnabled} onCheckedChange={v => setForm(p => ({ ...p, amdEnabled: v }))} />
+            </div>
+            {form.amdEnabled && (
+              <div className="space-y-3 pt-2 border-t">
+                <div>
+                  <Label>Voicemail Message (TTS)</Label>
+                  <textarea
+                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="Hi, this is a message from... Please call us back at..."
+                    value={form.voicemailMessage}
+                    onChange={e => setForm(p => ({ ...p, voicemailMessage: e.target.value }))}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">This message will be converted to speech and played when a voicemail is detected. Leave empty to use the main campaign audio.</p>
+                </div>
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-amber-600">How AMD Works</span>
+                  </div>
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                    <li>When a call is answered, Asterisk's AMD module analyzes the audio</li>
+                    <li>If a <strong>human</strong> is detected, the full campaign message plays normally</li>
+                    <li>If a <strong>machine/voicemail</strong> is detected, the voicemail message is played after the beep</li>
+                    <li>AMD results are tracked in call logs for analytics</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
             <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /></div>
@@ -607,6 +677,51 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               </Button>
             </div>
           )}
+
+          {/* IVR Payment Integration */}
+          <div className="p-4 rounded-lg border space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base font-semibold">IVR Payment Collection</Label>
+                <p className="text-xs text-muted-foreground mt-1">Allow callers to initiate payments during the call via DTMF</p>
+              </div>
+              <Switch checked={form.ivrPaymentEnabled} onCheckedChange={v => setForm(p => ({ ...p, ivrPaymentEnabled: v }))} />
+            </div>
+            {form.ivrPaymentEnabled && (
+              <div className="space-y-3 pt-2 border-t">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Payment Trigger Digit</Label>
+                    <Select value={form.ivrPaymentDigit} onValueChange={v => setForm(p => ({ ...p, ivrPaymentDigit: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["1","2","3","4","5","6","7","8","9","0"].map(d => (
+                          <SelectItem key={d} value={d}>Press {d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Default Amount ($)</Label>
+                    <Input type="number" min={0} step={0.01} value={form.ivrPaymentAmount / 100}
+                      onChange={e => setForm(p => ({ ...p, ivrPaymentAmount: Math.round(parseFloat(e.target.value || "0") * 100) }))} />
+                    <p className="text-xs text-muted-foreground mt-1">0 = use contact's balance</p>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/30 text-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-medium text-green-600">Payment Flow</span>
+                  </div>
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                    <li>Caller presses the trigger digit during the IVR message</li>
+                    <li>System creates a payment record and sends a secure payment link via SMS</li>
+                    <li>Payment completion is tracked and reported in campaign analytics</li>
+                    <li>Requires Stripe integration for actual card processing</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="targeting" className="space-y-4 mt-4">
@@ -634,9 +749,53 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               </div>
             )}
           </div>
-          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm">
-            <div className="flex items-center gap-2 mb-1"><Shield className="h-4 w-4 text-blue-600" /><span className="font-medium text-blue-600">TCPA Compliance</span></div>
-            <p className="text-muted-foreground text-xs">Calls are automatically checked against TCPA time windows (8 AM - 9 PM local time) based on each contact's area code timezone. Contacts outside the allowed window are deferred until the next valid time.</p>
+          {/* Timezone Enforcement */}
+          <div className="p-4 rounded-lg border space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base font-semibold flex items-center gap-2"><Shield className="h-4 w-4 text-blue-600" />TCPA Timezone Enforcement</Label>
+                <p className="text-xs text-muted-foreground mt-1">Automatically enforce per-contact call windows based on area code timezone lookup</p>
+              </div>
+              <Switch checked={form.tzEnforcementEnabled} onCheckedChange={v => setForm(p => ({ ...p, tzEnforcementEnabled: v }))} />
+            </div>
+            {form.tzEnforcementEnabled && (
+              <div className="space-y-3 pt-2 border-t">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Earliest Call Hour (local time)</Label>
+                    <Select value={String(form.tcpaStartHour)} onValueChange={v => setForm(p => ({ ...p, tcpaStartHour: parseInt(v) }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({length: 12}, (_, i) => i + 6).map(h => (
+                          <SelectItem key={h} value={String(h)}>{h === 12 ? "12:00 PM" : h > 12 ? `${h-12}:00 PM` : `${h}:00 AM`}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Latest Call Hour (local time)</Label>
+                    <Select value={String(form.tcpaEndHour)} onValueChange={v => setForm(p => ({ ...p, tcpaEndHour: parseInt(v) }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({length: 10}, (_, i) => i + 17).map(h => (
+                          <SelectItem key={h} value={String(h)}>{h === 12 ? "12:00 PM" : h > 12 ? `${h-12}:00 PM` : `${h}:00 AM`}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-sm">
+                  <div className="flex items-center gap-2 mb-1"><Shield className="h-4 w-4 text-blue-600" /><span className="font-medium text-blue-600">How It Works</span></div>
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                    <li>Each contact's timezone is determined from their phone number area code</li>
+                    <li>Before dialing, the system checks if the current time in the contact's timezone falls within the allowed window</li>
+                    <li>Contacts outside the window are <strong>deferred</strong> (not skipped) and will be called when their local time is within the window</li>
+                    <li>Default: {form.tcpaStartHour > 12 ? `${form.tcpaStartHour-12} PM` : `${form.tcpaStartHour} AM`} - {form.tcpaEndHour > 12 ? `${form.tcpaEndHour-12} PM` : `${form.tcpaEndHour} AM`} in the contact's local timezone</li>
+                    <li>TCPA requires calls between 8 AM and 9 PM local time</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -809,6 +968,17 @@ export default function Campaigns() {
       scriptId: (c as any).scriptId || 0,
       callbackNumber: (c as any).callbackNumber || "",
       useDidCallbackNumber: !!(c as any).useDidCallbackNumber,
+      predictiveAgentCount: (c as any).predictiveAgentCount || 1,
+      predictiveMaxAbandonRate: (c as any).predictiveMaxAbandonRate || 3,
+      amdEnabled: !!(c as any).amdEnabled,
+      voicemailAudioId: (c as any).voicemailAudioId || 0,
+      voicemailMessage: (c as any).voicemailMessage || "",
+      ivrPaymentEnabled: !!(c as any).ivrPaymentEnabled,
+      ivrPaymentDigit: (c as any).ivrPaymentDigit || "1",
+      ivrPaymentAmount: (c as any).ivrPaymentAmount || 0,
+      tzEnforcementEnabled: (c as any).tzEnforcementEnabled !== false,
+      tcpaStartHour: (c as any).tcpaStartHour ?? 8,
+      tcpaEndHour: (c as any).tcpaEndHour ?? 21,
     });
     setEditOpen(true);
   };
@@ -848,6 +1018,21 @@ export default function Campaigns() {
       scriptId: editForm.scriptId || undefined,
       callbackNumber: editForm.callbackNumber || undefined,
       useDidCallbackNumber: editForm.useDidCallbackNumber ? 1 : 0,
+      // Predictive dialer
+      predictiveAgentCount: editForm.pacingMode === "predictive" ? editForm.predictiveAgentCount : undefined,
+      predictiveMaxAbandonRate: editForm.pacingMode === "predictive" ? editForm.predictiveMaxAbandonRate : undefined,
+      // AMD / Voicemail drop
+      amdEnabled: editForm.amdEnabled ? 1 : 0,
+      voicemailMessage: editForm.amdEnabled ? editForm.voicemailMessage || undefined : undefined,
+      voicemailAudioId: editForm.amdEnabled && editForm.voicemailAudioId ? editForm.voicemailAudioId : undefined,
+      // IVR Payment
+      ivrPaymentEnabled: editForm.ivrPaymentEnabled ? 1 : 0,
+      ivrPaymentDigit: editForm.ivrPaymentEnabled ? editForm.ivrPaymentDigit : undefined,
+      ivrPaymentAmount: editForm.ivrPaymentEnabled ? editForm.ivrPaymentAmount : undefined,
+      // Timezone enforcement
+      tzEnforcementEnabled: editForm.tzEnforcementEnabled ? 1 : 0,
+      tcpaStartHour: editForm.tzEnforcementEnabled ? editForm.tcpaStartHour : undefined,
+      tcpaEndHour: editForm.tzEnforcementEnabled ? editForm.tcpaEndHour : undefined,
     });
   };
 
@@ -884,6 +1069,21 @@ export default function Campaigns() {
       scriptId: form.scriptId || undefined,
       callbackNumber: form.callbackNumber || undefined,
       useDidCallbackNumber: form.useDidCallbackNumber ? 1 : 0,
+      // Predictive dialer
+      predictiveAgentCount: form.pacingMode === "predictive" ? form.predictiveAgentCount : undefined,
+      predictiveMaxAbandonRate: form.pacingMode === "predictive" ? form.predictiveMaxAbandonRate : undefined,
+      // AMD / Voicemail drop
+      amdEnabled: form.amdEnabled ? 1 : 0,
+      voicemailMessage: form.amdEnabled ? form.voicemailMessage || undefined : undefined,
+      voicemailAudioId: form.amdEnabled && form.voicemailAudioId ? form.voicemailAudioId : undefined,
+      // IVR Payment
+      ivrPaymentEnabled: form.ivrPaymentEnabled ? 1 : 0,
+      ivrPaymentDigit: form.ivrPaymentEnabled ? form.ivrPaymentDigit : undefined,
+      ivrPaymentAmount: form.ivrPaymentEnabled ? form.ivrPaymentAmount : undefined,
+      // Timezone enforcement
+      tzEnforcementEnabled: form.tzEnforcementEnabled ? 1 : 0,
+      tcpaStartHour: form.tzEnforcementEnabled ? form.tcpaStartHour : undefined,
+      tcpaEndHour: form.tzEnforcementEnabled ? form.tcpaEndHour : undefined,
     });
   };
 

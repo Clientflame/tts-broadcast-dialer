@@ -458,4 +458,29 @@
 - [x] Fix: Add flood guard - check pending health-check count before queuing more (max 50)
 - [x] Fix: Clean up 426 stale health-check calls from queue (done via SQL)
 - [x] Bug: Test Call shows caller ID as 1111111111 — fix: auto-select random active DID when no caller ID chosen
-- [ ] Tag v1.1.8 and push to GitHub for Docker build
+- [x] Tag v1.1.8 and push to GitHub for Docker build
+- [x] Time Zone Enforcement — per-contact timezone from area code, enforce 8am-9pm local time call window
+- [x] Time zone lookup from area code (NANPA mapping)
+- [x] Campaign-level call window settings (start hour, end hour)
+- [x] Dialer engine timezone gate: skip/hold contacts outside their local call window
+- [x] UI: timezone enforcement controls in campaign form
+- [x] Voicemail Drop with AMD (Answering Machine Detection)
+- [x] AMD detection in PBX agent (Asterisk AMD application)
+- [x] Voicemail-specific audio message (limited-content message for compliance)
+- [x] Campaign setting: enable/disable voicemail drop
+- [x] PBX agent: detect AMD result, play voicemail audio or hang up
+- [x] UI: voicemail drop toggle and voicemail audio selector in campaign form
+- [x] IVR Payment Integration
+- [x] IVR payment service with payment record tracking
+- [x] Payment endpoint for PBX agent to initiate payments
+- [x] Campaign setting: enable/disable payment IVR with digit and amount config
+- [x] Payment tracking in database (payments table)
+- [x] UI: payment IVR settings in campaign form
+- [ ] Stripe payment gateway integration (infrastructure ready, needs Stripe setup)
+- [x] Predictive Dialer Mode (Enhanced)
+- [x] Erlang-C inspired overdial ratio calculation based on answer rate and agent availability
+- [x] Dynamic concurrent call adjustment with rolling window stats
+- [x] Circuit breaker: auto-reduce to min concurrent after 3 consecutive drops
+- [x] Safety factor: auto-reduce overdial when approaching TCPA 3% abandon rate limit
+- [x] Campaign setting: predictive mode with agent count and max abandon rate
+- [x] UI: predictive dialer controls in campaign form (agent count, max abandon rate)

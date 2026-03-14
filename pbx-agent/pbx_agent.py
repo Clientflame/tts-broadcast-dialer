@@ -486,11 +486,24 @@ def process_call(ami, call_data):
             report_result(queue_id, "failed", {"error": "Audio preparation failed"})
             return
 
+    # Prepare voicemail audio if AMD + voicemail drop is enabled
+    if variables.get("AMD_ENABLED") == "true" and variables.get("VOICEMAIL_DROP") == "true":
+        vm_url = variables.get("VOICEMAIL_AUDIO_URL")
+        vm_name = variables.get("VOICEMAIL_AUDIO_NAME")
+        if vm_url and vm_name:
+            vm_path = prepare_audio(vm_url, vm_name)
+            if vm_path:
+                variables["VOICEMAIL_AUDIOFILE"] = vm_path
+                log.info(f"Voicemail audio ready: {vm_path}")
+
+    # Use AMD context if AMD is enabled
+    effective_context = "tts-broadcast-amd" if variables.get("AMD_ENABLED") == "true" else context
+
     # Originate the call with ActionID for reliable event matching
     action_id = f"call-{queue_id}"
     result = ami.originate(
         channel=channel,
-        context=context,
+        context=effective_context,
         exten="s",
         priority=1,
         variables=variables,

@@ -4,6 +4,7 @@ import { generatePersonalizedTTS } from "./tts";
 import { recordCallResult, getCurrentConcurrent, getPacingStats, initPacing, cleanupPacing, type PacingConfig } from "./pacing";
 import { notifyOwner } from "../_core/notification";
 import { recordCarrierError, attemptRampUp, isCarrierError, getThrottleStatus } from "./auto-throttle";
+import { createIvrPayment } from "./ivr-payment";
 
 const pbxRouter = Router();
 
@@ -107,21 +108,46 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
       } catch (_) { /* use agent settings on error */ }
     }
 
-    res.json({
-      calls: calls.map(c => ({
+    // Look up campaign-level settings for AMD/payment (cached per campaign)
+    const campaignSettingsCache = new Map<number, any>();
+    const getCampaignSettings = async (campaignId: number | null) => {
+      if (!campaignId) return null;
+      if (campaignSettingsCache.has(campaignId)) return campaignSettingsCache.get(campaignId);
+      try {
+        const c = await db.getCampaignById(campaignId);
+        campaignSettingsCache.set(campaignId, c);
+        return c;
+      } catch { return null; }
+    };
+
+    const callsWithSettings = await Promise.all(calls.map(async (c) => {
+      const campaign = await getCampaignSettings(c.campaignId);
+      return {
         id: c.id,
         phoneNumber: c.phoneNumber,
         channel: c.channel,
         context: c.context,
         callerIdStr: c.callerIdStr,
         audioUrl: c.audioUrl,
-        audioUrls: c.audioUrls || null, // ordered list of audio URLs for multi-segment scripts
+        audioUrls: c.audioUrls || null,
         audioName: c.audioName,
         variables: c.variables || {},
         priority: c.priority,
         campaignId: c.campaignId,
         callLogId: c.callLogId,
-      })),
+        // AMD / Voicemail drop (from campaign settings)
+        amdEnabled: !!(campaign as any)?.amdEnabled,
+        voicemailAudioUrl: (campaign as any)?.voicemailAudioUrl || (c as any).voicemailAudioUrl || null,
+        voicemailMessage: (campaign as any)?.voicemailMessage || null,
+        // IVR Payment (from campaign settings)
+        ivrPaymentEnabled: !!(campaign as any)?.ivrPaymentEnabled,
+        ivrPaymentDigit: (campaign as any)?.ivrPaymentDigit || null,
+        ivrPaymentAmount: (campaign as any)?.ivrPaymentAmount || 0,
+      };
+    }));
+
+    res.json({
+      calls: callsWithSettings,
       cpsLimit: effectiveCps,
       cpsPacingMs: effectivePacingMs,
       maxConcurrent: effectiveLimit,
@@ -181,6 +207,8 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
       if (details?.answeredAt) updateData.answeredAt = details.answeredAt;
       if (details?.asteriskChannel) updateData.asteriskChannel = details.asteriskChannel;
       if (details?.dtmfResponse) updateData.dtmfResponse = details.dtmfResponse;
+      if (details?.amdResult) updateData.amdResult = details.amdResult;
+      if (details?.voicemailDropped) updateData.voicemailDropped = 1;
       if (result === "failed" && details?.error) updateData.errorMessage = details.error;
 
       await db.updateCallLog(queueItem.callLogId, updateData);
@@ -626,5 +654,41 @@ fi
 echo ""`);
   return parts.join("\n");
 }
+
+// ─── IVR Payment Initiation ─────────────────────────────────────────────────
+// PBX agent calls this when a caller presses the payment digit during IVR
+pbxRouter.post("/ivr-payment", async (req: Request, res: Response) => {
+  try {
+    const { queueId, phoneNumber, amount, campaignId, callLogId, contactId } = req.body;
+    if (!queueId || !phoneNumber || !amount) {
+      res.status(400).json({ error: "Missing required fields: queueId, phoneNumber, amount" });
+      return;
+    }
+
+    const queueItem = await db.getCallQueueItem(queueId);
+    if (!queueItem) {
+      res.status(404).json({ error: "Queue item not found" });
+      return;
+    }
+
+    const result = await createIvrPayment({
+      userId: queueItem.userId,
+      campaignId: campaignId || queueItem.campaignId || 0,
+      callLogId: callLogId || queueItem.callLogId || 0,
+      contactId: contactId || 0,
+      phoneNumber,
+      amount: Math.round(amount), // ensure integer cents
+      metadata: {
+        queueId,
+        agentId: (req as any).pbxAgent?.agentId,
+      },
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error("[PBX-API] IVR payment error:", err);
+    res.status(500).json({ error: "Payment processing failed" });
+  }
+});
 
 export { pbxRouter, installerRouter };

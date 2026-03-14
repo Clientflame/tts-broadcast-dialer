@@ -136,6 +136,18 @@ export const campaigns = mysqlTable("campaigns", {
   // IVR options
   ivrEnabled: int("ivrEnabled").default(0).notNull(),
   ivrOptions: json("ivrOptions").$type<Array<{ digit: string; action: string; label: string }>>(),
+  // Voicemail drop (AMD)
+  amdEnabled: int("amdEnabled").default(0).notNull(),
+  voicemailAudioFileId: int("voicemailAudioFileId"),
+  voicemailMessageText: text("voicemailMessageText"),
+  // Time zone enforcement
+  enforceContactTimezone: int("enforceContactTimezone").default(0).notNull(),
+  contactTzWindowStart: varchar("contactTzWindowStart", { length: 5 }).default("08:00"),
+  contactTzWindowEnd: varchar("contactTzWindowEnd", { length: 5 }).default("21:00"),
+  // IVR Payment
+  ivrPaymentEnabled: int("ivrPaymentEnabled").default(0).notNull(),
+  ivrPaymentAmountField: varchar("ivrPaymentAmountField", { length: 100 }),
+  ivrPaymentDigit: varchar("ivrPaymentDigit", { length: 2 }).default("1"),
   // A/B testing
   abTestGroup: varchar("abTestGroup", { length: 50 }),
   abTestVariant: varchar("abTestVariant", { length: 10 }),
@@ -151,6 +163,10 @@ export const campaigns = mysqlTable("campaigns", {
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),
   useDidCallbackNumber: int("useDidCallbackNumber").default(0).notNull(),
+  // Predictive dialer
+  predictiveAgentCount: int("predictiveAgentCount").default(1).notNull(),
+  predictiveTargetWaitTime: int("predictiveTargetWaitTime").default(5).notNull(), // seconds
+  predictiveMaxAbandonRate: int("predictiveMaxAbandonRate").default(3).notNull(), // percentage
   // Call pacing
   pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
   pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
@@ -212,6 +228,8 @@ export const callLogs = mysqlTable("call_logs", {
   dtmfResponse: varchar("dtmfResponse", { length: 10 }),
   ivrAction: varchar("ivrAction", { length: 50 }),
   callerIdUsed: varchar("callerIdUsed", { length: 20 }),
+  amdResult: varchar("amdResult", { length: 20 }), // HUMAN, MACHINE, NOTSURE, HANGUP
+  voicemailDropped: int("voicemailDropped").default(0),
   startedAt: bigint("startedAt", { mode: "number" }),
   answeredAt: bigint("answeredAt", { mode: "number" }),
   endedAt: bigint("endedAt", { mode: "number" }),
@@ -475,3 +493,27 @@ export const appSettings = mysqlTable("app_settings", {
 
 export type AppSetting = typeof appSettings.$inferSelect;
 export type InsertAppSetting = typeof appSettings.$inferInsert;
+
+// ─── Payments (IVR Payment Integration) ─────────────────────────────────────
+export const payments = mysqlTable("payments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  campaignId: int("campaignId"),
+  callLogId: int("callLogId"),
+  contactId: int("contactId"),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  amount: int("amount").notNull(), // amount in cents
+  currency: varchar("currency", { length: 10 }).default("usd").notNull(),
+  status: mysqlEnum("status", ["pending", "processing", "succeeded", "failed", "refunded"]).default("pending").notNull(),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // card, ach
+  last4: varchar("last4", { length: 4 }),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata").$type<Record<string, any>>(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = typeof payments.$inferInsert;

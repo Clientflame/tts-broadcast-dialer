@@ -473,6 +473,21 @@ export const appRouter = router({
       scriptId: z.number().optional(),
       callbackNumber: z.string().max(20).optional(),
       useDidCallbackNumber: z.number().min(0).max(1).optional(),
+      // Predictive dialer
+      predictiveAgentCount: z.number().min(1).max(50).optional(),
+      predictiveMaxAbandonRate: z.number().min(1).max(10).optional(),
+      // AMD / Voicemail drop
+      amdEnabled: z.number().min(0).max(1).optional(),
+      voicemailAudioId: z.number().optional(),
+      voicemailMessage: z.string().max(2000).optional(),
+      // IVR Payment
+      ivrPaymentEnabled: z.number().min(0).max(1).optional(),
+      ivrPaymentDigit: z.string().max(1).optional(),
+      ivrPaymentAmount: z.number().min(0).optional(),
+      // Timezone enforcement
+      tzEnforcementEnabled: z.number().min(0).max(1).optional(),
+      tcpaStartHour: z.number().min(0).max(23).optional(),
+      tcpaEndHour: z.number().min(0).max(23).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -514,6 +529,21 @@ export const appRouter = router({
       scriptId: z.number().optional(),
       callbackNumber: z.string().max(20).optional(),
       useDidCallbackNumber: z.number().min(0).max(1).optional(),
+      // Predictive dialer
+      predictiveAgentCount: z.number().min(1).max(50).optional(),
+      predictiveMaxAbandonRate: z.number().min(1).max(10).optional(),
+      // AMD / Voicemail drop
+      amdEnabled: z.number().min(0).max(1).optional(),
+      voicemailAudioId: z.number().optional(),
+      voicemailMessage: z.string().max(2000).optional(),
+      // IVR Payment
+      ivrPaymentEnabled: z.number().min(0).max(1).optional(),
+      ivrPaymentDigit: z.string().max(1).optional(),
+      ivrPaymentAmount: z.number().min(0).optional(),
+      // Timezone enforcement
+      tzEnforcementEnabled: z.number().min(0).max(1).optional(),
+      tcpaStartHour: z.number().min(0).max(23).optional(),
+      tcpaEndHour: z.number().min(0).max(23).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id, ctx.user.id);

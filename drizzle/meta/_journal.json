@@ -169,6 +169,13 @@
       "when": 1773407272292,
       "tag": "0023_wealthy_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1773484414338,
+      "tag": "0024_big_cyclops",
+      "breakpoints": true
     }
   ]
 }
