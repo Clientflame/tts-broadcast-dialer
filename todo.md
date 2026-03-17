@@ -488,3 +488,27 @@
 - [x] Fix: Server-side cross-check of activeCalls vs actual claimed calls in DB
 - [x] Fix: Reduced stale call threshold from 5min to 2min in PBX agent
 - [x] Fix: Manually added 7 missing campaign columns to production DB
+- [ ] Deploy v1.2.1 to FreePBX Docker container and restart PBX agent
+- [x] Full Predictive Dialer with Live Agents
+- [x] Schema: live_agents table (SIP extension, name, status, skills, current call)
+- [x] Schema: agent_sessions table (login/logout, break time, talk time tracking)
+- [x] Schema: agent_call_log table (agent-specific call disposition and wrap-up)
+- [x] Schema: campaignAgentAssignments table (many-to-many agent-campaign)
+- [x] Live Agent Tracking Service — monitor FreePBX AMI for agent SIP extension state
+- [x] Agent state machine: available → ringing → on_call → wrap_up → available
+- [x] Call routing: connect answered calls to available live agents via AMI transfer
+- [x] Enhanced Predictive Dialer Engine — Erlang-C with real live agent availability
+- [x] Power Dialer Mode — fixed ratio ahead-dial (e.g., 1.2x agents), simpler than predictive
+- [x] Predictive Dialer Dashboard — real-time stats page
+- [x] Dashboard: live overdial ratio gauge
+- [x] Dashboard: abandon rate gauge with TCPA 3% threshold line
+- [x] Dashboard: agent utilization chart (idle vs talk vs wrap-up)
+- [x] Dashboard: calls per second / calls per minute live counter
+- [x] Dashboard: live agent status grid (who is available, on call, wrapping up)
+- [x] Dashboard: rolling answer rate and connect rate charts
+- [x] Live Agent Management Page — add/edit/remove agents, assign to campaigns
+- [x] Agent login/logout and break management
+- [x] tRPC procedures for all live agent and predictive stats operations
+- [x] PBX agent: transfer_to_agent function for live agent call routing
+- [x] PBX agent: routing_mode and amd_enabled handling
+- [x] 271 tests passing (17 test files)

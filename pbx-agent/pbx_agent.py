@@ -474,7 +474,12 @@ def process_call(ami, call_data):
         process_health_check(ami, call_data)
         return
 
-    log.info(f"Processing call {queue_id} to {phone_number}")
+    # Live agent routing mode
+    routing_mode = call_data.get("routingMode", "tts_only")
+    amd_enabled = call_data.get("amdEnabled", False)
+    transfer_extension = call_data.get("transferExtension")
+
+    log.info(f"Processing call {queue_id} to {phone_number} (routing={routing_mode}, amd={amd_enabled})")
 
     # Prepare audio on the PBX
     if audio_url and audio_name:
@@ -523,11 +528,30 @@ def process_call(ami, call_data):
                 "phone_number": phone_number,
                 "campaign_id": call_data.get("campaignId"),
                 "actual_channel": None,  # Will be set from OriginateResponse
+                "routing_mode": routing_mode,
+                "transfer_extension": transfer_extension,
             }
     else:
         error_msg = result.get("Message", "Unknown AMI error") if result else "No AMI response"
         log.error(f"Call {queue_id} originate failed: {error_msg}")
         report_result(queue_id, "failed", {"error": error_msg})
+
+
+def transfer_to_agent(ami, channel, extension, queue_id):
+    """Transfer an answered call to a live agent SIP extension."""
+    try:
+        log.info(f"Transferring call {queue_id} on {channel} to agent ext {extension}")
+        ami.send_action({
+            "Action": "Redirect",
+            "Channel": channel,
+            "Context": "from-internal",
+            "Exten": str(extension),
+            "Priority": "1",
+        })
+        return True
+    except Exception as e:
+        log.error(f"Failed to transfer call {queue_id} to {extension}: {e}")
+        return False
 
 
 def report_result(queue_id, result, details=None):

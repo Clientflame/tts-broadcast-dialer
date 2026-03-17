@@ -176,6 +176,20 @@
       "when": 1773484414338,
       "tag": "0024_big_cyclops",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1773711275865,
+      "tag": "0025_deep_luke_cage",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1773711418788,
+      "tag": "0026_fluffy_lockheed",
+      "breakpoints": true
     }
   ]
 }

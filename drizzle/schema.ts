@@ -133,6 +133,11 @@ export const campaigns = mysqlTable("campaigns", {
   voice: varchar("voice", { length: 50 }).default("alloy"),
   callerIdNumber: varchar("callerIdNumber", { length: 20 }),
   callerIdName: varchar("callerIdName", { length: 100 }),
+  // Call routing mode
+  routingMode: mysqlEnum("routingMode", ["broadcast", "live_agent", "hybrid"]).default("broadcast").notNull(),
+  // Power dialer settings
+  powerDialRatio: varchar("powerDialRatio", { length: 10 }).default("1.2"), // e.g., 1.2 = 20% overdial
+  wrapUpTimeSecs: int("wrapUpTimeSecs").default(30).notNull(), // seconds for agent wrap-up
   // IVR options
   ivrEnabled: int("ivrEnabled").default(0).notNull(),
   ivrOptions: json("ivrOptions").$type<Array<{ digit: string; action: string; label: string }>>(),
@@ -517,3 +522,107 @@ export const payments = mysqlTable("payments", {
 
 export type Payment = typeof payments.$inferSelect;
 export type InsertPayment = typeof payments.$inferInsert;
+
+
+// ─── Live Agents (SIP Extensions for Predictive Dialer) ─────────────────────
+export const liveAgents = mysqlTable("live_agents", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  sipExtension: varchar("sipExtension", { length: 20 }).notNull(),
+  sipPassword: varchar("sipPassword", { length: 255 }),
+  email: varchar("email", { length: 320 }),
+  status: mysqlEnum("status", [
+    "offline",
+    "available",
+    "ringing",
+    "on_call",
+    "wrap_up",
+    "on_break",
+    "reserved",
+  ]).default("offline").notNull(),
+  currentCallId: int("currentCallId"),
+  currentCampaignId: int("currentCampaignId"),
+  statusChangedAt: bigint("statusChangedAt", { mode: "number" }),
+  skills: json("skills").$type<string[]>(),
+  priority: int("priority").default(5).notNull(),
+  maxConcurrentCalls: int("maxConcurrentCalls").default(1).notNull(),
+  totalCallsHandled: int("totalCallsHandled").default(0).notNull(),
+  totalTalkTime: int("totalTalkTime").default(0).notNull(),
+  totalWrapTime: int("totalWrapTime").default(0).notNull(),
+  avgHandleTime: int("avgHandleTime").default(0).notNull(),
+  lastLoginAt: bigint("lastLoginAt", { mode: "number" }),
+  lastLogoutAt: bigint("lastLogoutAt", { mode: "number" }),
+  isActive: int("isActive").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LiveAgent = typeof liveAgents.$inferSelect;
+export type InsertLiveAgent = typeof liveAgents.$inferInsert;
+
+// ─── Agent Sessions (Login/Logout/Break Tracking) ────────────────────────────
+export const agentSessions = mysqlTable("agent_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  userId: int("userId").notNull(),
+  sessionType: mysqlEnum("sessionType", ["login", "logout", "break_start", "break_end", "status_change"]).notNull(),
+  previousStatus: varchar("previousStatus", { length: 20 }),
+  newStatus: varchar("newStatus", { length: 20 }),
+  campaignId: int("campaignId"),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  durationSecs: int("durationSecs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type InsertAgentSession = typeof agentSessions.$inferInsert;
+
+// ─── Agent Call Log (Per-Agent Disposition & Wrap-Up) ────────────────────────
+export const agentCallLog = mysqlTable("agent_call_log", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: int("agentId").notNull(),
+  userId: int("userId").notNull(),
+  campaignId: int("campaignId"),
+  callQueueId: int("callQueueId"),
+  callLogId: int("callLogId"),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  contactName: varchar("contactName", { length: 200 }),
+  connectedAt: bigint("connectedAt", { mode: "number" }),
+  disconnectedAt: bigint("disconnectedAt", { mode: "number" }),
+  talkDuration: int("talkDuration"),
+  holdDuration: int("holdDuration"),
+  wrapUpDuration: int("wrapUpDuration"),
+  disposition: mysqlEnum("disposition", [
+    "connected",
+    "promise_to_pay",
+    "payment_made",
+    "callback_requested",
+    "wrong_number",
+    "deceased",
+    "disputed",
+    "refused_to_pay",
+    "no_contact",
+    "left_message",
+    "other",
+  ]).default("connected"),
+  wrapUpNotes: text("wrapUpNotes"),
+  wrapUpCode: varchar("wrapUpCode", { length: 50 }),
+  wasTransferred: int("wasTransferred").default(0),
+  transferredTo: varchar("transferredTo", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AgentCallLogEntry = typeof agentCallLog.$inferSelect;
+export type InsertAgentCallLogEntry = typeof agentCallLog.$inferInsert;
+
+// ─── Campaign Agent Assignments ──────────────────────────────────────────────
+export const campaignAgentAssignments = mysqlTable("campaign_agent_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  agentId: int("agentId").notNull(),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+});
+
+export type CampaignAgentAssignment = typeof campaignAgentAssignments.$inferSelect;
+export type InsertCampaignAgentAssignment = typeof campaignAgentAssignments.$inferInsert;

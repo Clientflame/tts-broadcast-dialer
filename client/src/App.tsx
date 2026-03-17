@@ -27,6 +27,8 @@ import Onboarding from "./pages/Onboarding";
 import Settings from "./pages/Settings";
 import ResetPassword from "./pages/ResetPassword";
 import VerifyEmail from "./pages/VerifyEmail";
+import PredictiveDialer from "./pages/PredictiveDialer";
+import LiveAgents from "./pages/LiveAgents";
 
 function Router() {
   return (
@@ -52,6 +54,8 @@ function Router() {
       <Route path={"/setup"} component={Setup} />
       <Route path={"/onboarding"} component={Onboarding} />
       <Route path={"/settings"} component={Settings} />
+      <Route path={"/predictive-dialer"} component={PredictiveDialer} />
+      <Route path={"/live-agents"} component={LiveAgents} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />

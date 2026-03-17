@@ -16,7 +16,7 @@
  */
 
 export interface PacingConfig {
-  mode: "fixed" | "adaptive" | "predictive";
+  mode: "fixed" | "adaptive" | "predictive" | "power";
   fixedConcurrent: number;       // Used in fixed mode
   targetDropRate: number;        // Target abandoned/drop rate % (adaptive/predictive)
   minConcurrent: number;         // Floor for dynamic pacing
@@ -25,6 +25,9 @@ export interface PacingConfig {
   agentCount?: number;           // Number of available agents/lines
   targetWaitTime?: number;       // Target agent wait time in seconds
   maxAbandonRate?: number;       // Max abandon rate % (TCPA limit = 3%)
+  // Power dialer specific
+  powerDialRatio?: number;       // Lines per agent (e.g., 1.2 = 1.2 calls per agent)
+  campaignId?: number;           // For live agent count lookup
 }
 
 interface PacingState {
@@ -114,6 +117,14 @@ export function getCurrentConcurrent(campaignId: number, config: PacingConfig): 
     return config.fixedConcurrent;
   }
 
+  // Power dialer: fixed ratio per available agent
+  if (config.mode === "power") {
+    const ratio = config.powerDialRatio || 1.0;
+    const agents = config.agentCount || config.fixedConcurrent;
+    const powerConcurrent = Math.max(1, Math.round(agents * ratio));
+    return Math.min(config.maxConcurrent, Math.max(config.minConcurrent, powerConcurrent));
+  }
+
   const state = pacingStates.get(campaignId);
   if (!state) return config.fixedConcurrent;
 
@@ -138,7 +149,7 @@ export function recordCallResult(
   duration?: number,
   ringTime?: number,
 ): void {
-  if (config.mode === "fixed") return;
+  if (config.mode === "fixed" || config.mode === "power") return;
 
   const state = pacingStates.get(campaignId);
   if (!state) return;
@@ -359,18 +370,21 @@ export function getPacingStats(campaignId: number, config: PacingConfig): {
     reason: string;
   }>;
 } | null {
-  if (config.mode === "fixed") {
+  if (config.mode === "fixed" || config.mode === "power") {
+    const concurrent = config.mode === "power"
+      ? getCurrentConcurrent(campaignId, config)
+      : config.fixedConcurrent;
     return {
-      mode: "fixed",
-      currentConcurrent: config.fixedConcurrent,
+      mode: config.mode,
+      currentConcurrent: concurrent,
       windowCalls: 0,
       windowAnswerRate: 0,
       windowDropRate: 0,
       windowBusyRate: 0,
       avgAnswerRate: 0,
       avgCallDuration: 0,
-      overdialRatio: 1,
-      predictedOptimal: config.fixedConcurrent,
+      overdialRatio: config.mode === "power" ? (config.powerDialRatio || 1.0) : 1,
+      predictedOptimal: concurrent,
       totalAbandonRate: 0,
       circuitBreakerActive: false,
       consecutiveDrops: 0,

@@ -4,6 +4,7 @@ import { notifyOwner } from "../_core/notification";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import { isContactCallable, getTimezoneForPhone } from "../../shared/area-code-tz";
+import { findAvailableAgent, reserveAgent, getAvailableAgentCount } from "./live-agent-tracker";
 import * as db from "../db";
 import type { Campaign, CallLog, ScriptSegment } from "../../drizzle/schema";
 
@@ -272,6 +273,16 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
   const maxConcurrent = getCurrentConcurrent(campaignId, active.pacingConfig);
 
   if (activeCount >= maxConcurrent) return;
+
+  // For live agent routing modes, also check agent availability
+  const routingMode = (campaign as any).routingMode || "broadcast";
+  if (routingMode === "live_agent" || routingMode === "hybrid") {
+    const availableAgents = getAvailableAgentCount(campaignId);
+    if (availableAgents === 0 && routingMode === "live_agent") {
+      // No agents available — don't place calls in pure live_agent mode
+      return;
+    }
+  }
 
   // Get pending calls
   let pendingCalls = await db.getPendingCallLogs(campaignId);
@@ -558,6 +569,26 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
         }
       }
     }
+  }
+
+  // Set routing mode and live agent transfer info
+  const routingMode = (active.campaign as any).routingMode || "broadcast";
+  if (routingMode === "live_agent" || routingMode === "hybrid") {
+    variables.ROUTING_MODE = routingMode;
+    variables.WRAP_UP_TIME = String((active.campaign as any).wrapUpTimeSecs || 30);
+    // Try to find and reserve an agent for this call
+    const agent = findAvailableAgent(callLog.campaignId);
+    if (agent) {
+      reserveAgent(agent.id, callLog.id, callLog.campaignId).catch(console.error);
+      variables.TRANSFER_EXTENSION = agent.sipExtension;
+      variables.AGENT_ID = String(agent.id);
+      variables.AGENT_NAME = agent.name;
+    } else if (routingMode === "live_agent") {
+      // No agent available — skip this call for now
+      await db.updateCallLog(callLog.id, { status: "pending" });
+      return;
+    }
+    // hybrid mode: if no agent, fall through to broadcast TTS
   }
 
   // Enqueue into call_queue for PBX agent to pick up
