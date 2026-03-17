@@ -29,6 +29,8 @@ import ResetPassword from "./pages/ResetPassword";
 import VerifyEmail from "./pages/VerifyEmail";
 import PredictiveDialer from "./pages/PredictiveDialer";
 import LiveAgents from "./pages/LiveAgents";
+import Wallboard from "./pages/Wallboard";
+import Recordings from "./pages/Recordings";
 
 function Router() {
   return (
@@ -56,6 +58,8 @@ function Router() {
       <Route path={"/settings"} component={Settings} />
       <Route path={"/predictive-dialer"} component={PredictiveDialer} />
       <Route path={"/live-agents"} component={LiveAgents} />
+      <Route path={"/wallboard"} component={Wallboard} />
+      <Route path={"/recordings"} component={Recordings} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />

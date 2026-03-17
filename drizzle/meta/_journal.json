@@ -190,6 +190,20 @@
       "when": 1773711418788,
       "tag": "0026_fluffy_lockheed",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "5",
+      "when": 1773716844553,
+      "tag": "0027_careful_miss_america",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "5",
+      "when": 1773716881667,
+      "tag": "0028_solid_sabretooth",
+      "breakpoints": true
     }
   ]
 }

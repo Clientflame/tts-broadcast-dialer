@@ -512,3 +512,22 @@
 - [x] PBX agent: transfer_to_agent function for live agent call routing
 - [x] PBX agent: routing_mode and amd_enabled handling
 - [x] 271 tests passing (17 test files)
+- [x] Real-Time Wallboard for Call Center Managers
+- [x] Full-screen wallboard page optimized for large displays / TV monitors
+- [x] Live agent status grid (name, extension, state, current call duration, campaign)
+- [x] Queue depth gauge (pending calls, claimed calls, calls per minute)
+- [x] Campaign progress bars (dialed vs total, answer rate, completion %)
+- [x] Real-time KPIs: active calls, calls waiting, avg wait time, avg talk time
+- [x] Abandon rate gauge with TCPA 3% threshold visual warning
+- [x] Auto-refresh every 5 seconds with smooth animations
+- [x] Dark theme optimized for wall-mounted displays
+- [x] Call Recording Integration
+- [x] Schema: call_recordings table with full metadata (s3Key, url, duration, fileSize, compliance)
+- [x] PBX agent: start MixMonitor on answered calls, upload on hangup (background thread)
+- [x] Recording upload service: transfer recordings from FreePBX to S3 via base64
+- [x] tRPC procedures: list recordings, get recording, delete recording, stats
+- [x] Call Recordings management page with playback, download, search, and filters
+- [x] Recording playback widget with inline audio player
+- [x] Campaign setting: enable/disable call recording + retention days
+- [x] Recording retention policy with compliance tracking (consent, retainUntil)
+- [x] 303 tests passing (18 test files)

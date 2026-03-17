@@ -17,6 +17,7 @@ import { sdk } from "./_core/sdk";
 import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
 import { validatePassword } from "../shared/passwordValidation";
 import { liveAgentRouter } from "./routers/live-agents";
+import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -2150,6 +2151,8 @@ Return ONLY the message text, nothing else.`;
   }),
 
   liveAgents: liveAgentRouter,
+  recordings: recordingsRouter,
+  wallboard: wallboardRouter,
 
   onboarding: router({
     /** Get onboarding status — checks which setup steps are completed */

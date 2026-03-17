@@ -518,6 +518,9 @@ def process_call(ami, call_data):
         action_id=action_id,
     )
 
+    # Check if recording is enabled for this campaign
+    recording_enabled = call_data.get("recordingEnabled", False)
+
     if result and result.get("Response") != "Error":
         log.info(f"Call {queue_id} originated to {phone_number}")
         with active_calls_lock:
@@ -530,11 +533,78 @@ def process_call(ami, call_data):
                 "actual_channel": None,  # Will be set from OriginateResponse
                 "routing_mode": routing_mode,
                 "transfer_extension": transfer_extension,
+                "recording_enabled": recording_enabled,
+                "recording_file": None,
             }
     else:
         error_msg = result.get("Message", "Unknown AMI error") if result else "No AMI response"
         log.error(f"Call {queue_id} originate failed: {error_msg}")
         report_result(queue_id, "failed", {"error": error_msg})
+
+
+def start_recording(ami, channel, queue_id):
+    """Start MixMonitor recording on an answered call."""
+    try:
+        rec_dir = "/var/spool/asterisk/recording"
+        os.makedirs(rec_dir, exist_ok=True)
+        timestamp = int(time.time())
+        rec_filename = f"call_{queue_id}_{timestamp}.wav"
+        rec_path = f"{rec_dir}/{rec_filename}"
+
+        log.info(f"Starting recording for call {queue_id}: {rec_path}")
+        ami.send_action({
+            "Action": "MixMonitor",
+            "Channel": channel,
+            "File": rec_path,
+            "Options": "r",  # Record both directions
+        })
+
+        with active_calls_lock:
+            if queue_id in active_calls:
+                active_calls[queue_id]["recording_file"] = rec_path
+                active_calls[queue_id]["recording_filename"] = rec_filename
+
+        log.info(f"Recording started for call {queue_id}")
+    except Exception as e:
+        log.error(f"Failed to start recording for call {queue_id}: {e}")
+
+
+def upload_recording(queue_id, rec_path, rec_filename, phone_number, campaign_id):
+    """Upload a recording file to the server after call completion."""
+    try:
+        if not os.path.exists(rec_path):
+            log.warning(f"Recording file not found: {rec_path}")
+            return
+
+        file_size = os.path.getsize(rec_path)
+        if file_size < 1000:  # Less than 1KB = probably empty
+            log.warning(f"Recording file too small ({file_size} bytes), skipping upload")
+            os.remove(rec_path)
+            return
+
+        # Read the file
+        with open(rec_path, "rb") as f:
+            file_data = f.read()
+
+        # Upload via the recording endpoint
+        import base64
+        data = {
+            "queueId": queue_id,
+            "phoneNumber": phone_number,
+            "campaignId": campaign_id,
+            "filename": rec_filename,
+            "fileSize": file_size,
+            "fileData": base64.b64encode(file_data).decode("ascii"),
+        }
+        resp = api_request("recording/upload", method="POST", data=data)
+        if resp:
+            log.info(f"Recording uploaded for call {queue_id} ({file_size} bytes)")
+            # Clean up local file after successful upload
+            os.remove(rec_path)
+        else:
+            log.error(f"Failed to upload recording for call {queue_id}")
+    except Exception as e:
+        log.error(f"Recording upload error for call {queue_id}: {e}")
 
 
 def transfer_to_agent(ami, channel, extension, queue_id):
@@ -648,6 +718,10 @@ def monitor_ami_events(ami):
                                         active_calls[matched_queue_id]["answered"] = True
                                         active_calls[matched_queue_id]["answered_at"] = time.time()
                                         active_calls[matched_queue_id]["actual_channel"] = channel
+
+                                        # Start MixMonitor recording if enabled
+                                        if active_calls[matched_queue_id].get("recording_enabled"):
+                                            start_recording(ami, channel, matched_queue_id)
                         else:
                             # Call failed (no answer, busy, congestion)
                             reason_map = {
@@ -719,6 +793,19 @@ def monitor_ami_events(ami):
                                 "hangupCauseText": cause_txt,
                                 "asteriskChannel": channel,
                             })
+
+                            # Upload recording if one was started
+                            rec_path = call_info.get("recording_file")
+                            rec_filename = call_info.get("recording_filename")
+                            if rec_path and rec_filename:
+                                # Upload in a background thread to not block event processing
+                                threading.Thread(
+                                    target=upload_recording,
+                                    args=(matched_queue_id, rec_path, rec_filename,
+                                          call_info.get("phone_number", ""),
+                                          call_info.get("campaign_id")),
+                                    daemon=True
+                                ).start()
                         else:
                             log.info(f"Call {matched_queue_id} hung up before answer (cause: {cause})")
                             report_result(matched_queue_id, "failed", {

@@ -153,6 +153,11 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         ivrPaymentEnabled: !!(campaign as any)?.ivrPaymentEnabled,
         ivrPaymentDigit: (campaign as any)?.ivrPaymentDigit || null,
         ivrPaymentAmount: (campaign as any)?.ivrPaymentAmount || 0,
+        // Call Recording (from campaign settings)
+        recordingEnabled: !!(campaign as any)?.recordingEnabled,
+        // Routing mode (from campaign settings)
+        routingMode: (campaign as any)?.routingMode || "tts_only",
+        transferExtension: (c as any).transferExtension || null,
       };
     }));
 
@@ -698,6 +703,52 @@ pbxRouter.post("/ivr-payment", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[PBX-API] IVR payment error:", err);
     res.status(500).json({ error: "Payment processing failed" });
+  }
+});
+
+// ─── Recording Upload ──────────────────────────────────────────────────────
+pbxRouter.post("/recording/upload", async (req: Request, res: Response) => {
+  try {
+    const { queueId, phoneNumber, campaignId, filename, fileSize, fileData } = req.body;
+    const agent = (req as any).pbxAgent;
+
+    if (!queueId || !filename || !fileData) {
+      res.status(400).json({ error: "Missing required fields: queueId, filename, fileData" });
+      return;
+    }
+
+    // Decode base64 file data
+    const fileBuffer = Buffer.from(fileData, "base64");
+
+    // Upload to S3
+    const { storagePut } = await import("../storage");
+    const fileKey = `recordings/call_${queueId}_${Date.now()}.wav`;
+    const { url } = await storagePut(fileKey, fileBuffer, "audio/wav");
+
+    // Save recording metadata to database
+    const { getDb } = await import("../db");
+    const database = await getDb();
+    const { callRecordings } = await import("../../drizzle/schema");
+    await database!.insert(callRecordings).values({
+      userId: agent.userId || 0,
+      campaignId: campaignId || null,
+      callQueueId: queueId,
+      phoneNumber: phoneNumber || "",
+      fileName: filename,
+      s3Key: fileKey,
+      s3Url: url,
+      mimeType: "audio/wav",
+      fileSize: fileSize || fileBuffer.length,
+      status: "ready",
+      recordingType: "full",
+      recordingStartedAt: Date.now(),
+    });
+
+    console.log(`[PBX-API] Recording saved: ${filename} (${fileBuffer.length} bytes) -> ${url}`);
+    res.json({ success: true, url });
+  } catch (err) {
+    console.error("[PBX-API] Recording upload error:", err);
+    res.status(500).json({ error: "Recording upload failed" });
   }
 });
 

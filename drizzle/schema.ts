@@ -172,6 +172,9 @@ export const campaigns = mysqlTable("campaigns", {
   predictiveAgentCount: int("predictiveAgentCount").default(1).notNull(),
   predictiveTargetWaitTime: int("predictiveTargetWaitTime").default(5).notNull(), // seconds
   predictiveMaxAbandonRate: int("predictiveMaxAbandonRate").default(3).notNull(), // percentage
+  // Call Recording
+  recordingEnabled: int("recordingEnabled").default(0).notNull(),
+  recordingRetentionDays: int("recordingRetentionDays").default(90).notNull(),
   // Call pacing
   pacingMode: mysqlEnum("pacingMode", ["fixed", "adaptive", "predictive"]).default("fixed").notNull(),
   pacingTargetDropRate: int("pacingTargetDropRate").default(3).notNull(),
@@ -626,3 +629,40 @@ export const campaignAgentAssignments = mysqlTable("campaign_agent_assignments",
 
 export type CampaignAgentAssignment = typeof campaignAgentAssignments.$inferSelect;
 export type InsertCampaignAgentAssignment = typeof campaignAgentAssignments.$inferInsert;
+
+// ─── Call Recordings ────────────────────────────────────────────────────────
+export const callRecordings = mysqlTable("call_recordings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  campaignId: int("campaignId"),
+  callLogId: int("callLogId"),
+  callQueueId: int("callQueueId"),
+  agentId: int("agentId"), // live agent who handled the call (null for broadcast)
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  contactName: varchar("contactName", { length: 200 }),
+  // Recording file info
+  s3Key: varchar("s3Key", { length: 512 }).notNull(),
+  s3Url: text("s3Url").notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 50 }).default("audio/wav").notNull(),
+  fileSize: int("fileSize"), // bytes
+  duration: int("duration"), // seconds
+  // Recording metadata
+  recordingType: mysqlEnum("recordingType", ["full", "agent_only", "caller_only", "voicemail"]).default("full").notNull(),
+  asteriskChannel: varchar("asteriskChannel", { length: 255 }),
+  mixMonitorId: varchar("mixMonitorId", { length: 255 }),
+  // Status
+  status: mysqlEnum("status", ["recording", "uploading", "ready", "failed", "deleted"]).default("recording").notNull(),
+  errorMessage: text("errorMessage"),
+  // Compliance
+  consentObtained: int("consentObtained").default(0).notNull(), // 1 = consent recorded
+  retainUntil: bigint("retainUntil", { mode: "number" }), // retention policy date
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  // Timestamps
+  recordingStartedAt: bigint("recordingStartedAt", { mode: "number" }),
+  recordingEndedAt: bigint("recordingEndedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CallRecording = typeof callRecordings.$inferSelect;
+export type InsertCallRecording = typeof callRecordings.$inferInsert;
