@@ -24,7 +24,9 @@ import {
   Coffee,
   PhoneForwarded,
   Gauge,
+  Brain,
 } from "lucide-react";
+import { AgentAssistPanel } from "@/components/AgentAssistPanel";
 
 // ─── Gauge Component ────────────────────────────────────────────────────────
 
@@ -140,6 +142,7 @@ function RadialGauge({
 function AgentCard({ agent }: { agent: any }) {
   const [supervisorMode, setSupervisorMode] = useState<string | null>(null);
   const [actionId, setActionId] = useState<number | null>(null);
+  const [showAssist, setShowAssist] = useState(false);
 
   const monitorMutation = trpc.supervisor.monitor.useMutation({
     onSuccess: (data) => { setSupervisorMode("monitor"); setActionId(data.actionId ?? null); toast.success(data.message); },
@@ -251,8 +254,30 @@ function AgentCard({ agent }: { agent: any }) {
               >
                 <PhoneCall className="h-3 w-3 mr-0.5" />Barge
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[10px] flex-1 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+                onClick={() => setShowAssist(true)}
+                title="AI Agent Assist — real-time coaching"
+              >
+                <Brain className="h-3 w-3 mr-0.5" />Assist
+              </Button>
             </div>
           )}
+        </div>
+      )}
+      {/* Agent Assist Panel */}
+      {showAssist && (
+        <div className="fixed right-4 top-20 z-50">
+          <AgentAssistPanel
+            agentId={agent.id}
+            agentName={agent.name}
+            callLogId={agent.currentCallId}
+            campaignId={agent.currentCampaignId}
+            contactName={undefined}
+            onClose={() => setShowAssist(false)}
+          />
         </div>
       )}
     </div>

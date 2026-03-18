@@ -19,6 +19,7 @@ import { validatePassword } from "../shared/passwordValidation";
 import { liveAgentRouter } from "./routers/live-agents";
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
+import { agentAssistRouter } from "./routers/agent-assist";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -2162,6 +2163,7 @@ Return ONLY the message text, nothing else.`;
   wallboard: wallboardRouter,
   voiceAi: voiceAiRouter,
   supervisor: supervisorRouter,
+  agentAssist: agentAssistRouter,
 
   onboarding: router({
     /** Get onboarding status — checks which setup steps are completed */

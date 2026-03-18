@@ -769,3 +769,90 @@ export const supervisorActions = mysqlTable("supervisor_actions", {
 
 export type SupervisorAction = typeof supervisorActions.$inferSelect;
 export type InsertSupervisorAction = typeof supervisorActions.$inferInsert;
+// ─── Agent Assist: Coaching Templates ────────────────────────────────────────
+export const coachingTemplates = mysqlTable("coaching_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: mysqlEnum("category", [
+    "objection_handling",
+    "compliance",
+    "closing",
+    "rapport_building",
+    "payment_negotiation",
+    "de_escalation",
+    "general",
+  ]).default("general").notNull(),
+  triggers: json("triggers").$type<string[]>(),
+  suggestions: json("suggestions").$type<{
+    title: string;
+    body: string;
+    priority: "high" | "medium" | "low";
+  }[]>(),
+  isActive: int("isActive").default(1).notNull(),
+  usageCount: int("usageCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CoachingTemplate = typeof coachingTemplates.$inferSelect;
+export type InsertCoachingTemplate = typeof coachingTemplates.$inferInsert;
+
+// ─── Agent Assist: Sessions ──────────────────────────────────────────────────
+export const assistSessions = mysqlTable("assist_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  agentId: int("agentId").notNull(),
+  callLogId: int("callLogId"),
+  campaignId: int("campaignId"),
+  contactId: int("contactId"),
+  contactName: varchar("contactName", { length: 200 }),
+  contactPhone: varchar("contactPhone", { length: 20 }),
+  status: mysqlEnum("status", ["active", "paused", "ended"]).default("active").notNull(),
+  callStage: mysqlEnum("callStage", [
+    "greeting",
+    "verification",
+    "discovery",
+    "presentation",
+    "objection",
+    "negotiation",
+    "closing",
+    "wrap_up",
+  ]).default("greeting").notNull(),
+  sentimentScore: varchar("sentimentScore", { length: 10 }),
+  sentimentLabel: mysqlEnum("sentimentLabel", ["very_negative", "negative", "neutral", "positive", "very_positive"]).default("neutral"),
+  totalSuggestions: int("totalSuggestions").default(0).notNull(),
+  acceptedSuggestions: int("acceptedSuggestions").default(0).notNull(),
+  dismissedSuggestions: int("dismissedSuggestions").default(0).notNull(),
+  startedAt: bigint("startedAt", { mode: "number" }).notNull(),
+  endedAt: bigint("endedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AssistSession = typeof assistSessions.$inferSelect;
+export type InsertAssistSession = typeof assistSessions.$inferInsert;
+
+// ─── Agent Assist: Suggestions ───────────────────────────────────────────────
+export const assistSuggestions = mysqlTable("assist_suggestions", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: int("sessionId").notNull(),
+  templateId: int("templateId"),
+  type: mysqlEnum("type", [
+    "talk_track",
+    "objection_handle",
+    "compliance_alert",
+    "next_action",
+    "sentiment_alert",
+    "closing_cue",
+    "de_escalation",
+    "info_card",
+  ]).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  body: text("body").notNull(),
+  priority: mysqlEnum("priority", ["critical", "high", "medium", "low"]).default("medium").notNull(),
+  triggerContext: text("triggerContext"),
+  status: mysqlEnum("status", ["pending", "accepted", "dismissed", "expired"]).default("pending").notNull(),
+  respondedAt: bigint("respondedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AssistSuggestion = typeof assistSuggestions.$inferSelect;
+export type InsertAssistSuggestion = typeof assistSuggestions.$inferInsert;

@@ -565,3 +565,15 @@
 - [x] Supervisor: Whisper mode (speak privately to agent)
 - [x] Supervisor: Barge mode (join as 3-way conference)
 - [x] Supervisor: Wallboard integration with one-click supervision controls
+- [x] Agent Assist: Database schema for suggestion sessions, suggestion history, and coaching templates
+- [x] Agent Assist: LLM-powered suggestion engine (analyzes live call context, generates real-time tips)
+- [x] Agent Assist: tRPC procedures for starting/stopping assist sessions, fetching suggestions, managing templates
+- [x] Agent Assist: Real-time Agent Assist Panel UI (floating sidebar with live suggestions during calls)
+- [x] Agent Assist: Objection handling scripts with category-based quick responses
+- [x] Agent Assist: Next-best-action recommendations based on call stage and contact history
+- [x] Agent Assist: Sentiment indicator showing caller mood in real-time
+- [x] Agent Assist: Coaching templates management (supervisors create reusable suggestion sets)
+- [x] Agent Assist: Integration into Wallboard (supervisor can see what suggestions agents are receiving)
+- [x] Agent Assist: Integration into Live Agents page (agent-facing assist panel)
+- [x] Agent Assist: Vitest tests for suggestion engine and procedures
+- [x] Bug: vTiger CRM not connected - disregarded, not part of this application

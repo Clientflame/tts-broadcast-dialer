@@ -25,6 +25,9 @@ import {
   voiceAiConversations, InsertVoiceAiConversation,
   supervisorActions, InsertSupervisorAction,
   liveAgents,
+  coachingTemplates, InsertCoachingTemplate,
+  assistSessions, InsertAssistSession,
+  assistSuggestions, InsertAssistSuggestion,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2653,3 +2656,145 @@ export async function getLiveAgent(agentId: number, userId: number) {
   return row ?? null;
 }
 
+
+// ─── Agent Assist: Coaching Templates ────────────────────────────────────────
+export async function createCoachingTemplate(data: InsertCoachingTemplate) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(coachingTemplates).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getCoachingTemplates(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(coachingTemplates).where(eq(coachingTemplates.userId, userId)).orderBy(desc(coachingTemplates.createdAt));
+}
+
+export async function getCoachingTemplate(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(coachingTemplates).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+  return row;
+}
+
+export async function updateCoachingTemplate(id: number, userId: number, data: Partial<InsertCoachingTemplate>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(coachingTemplates).set(data).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+}
+
+export async function deleteCoachingTemplate(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(coachingTemplates).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+}
+
+export async function getActiveCoachingTemplates(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(coachingTemplates).where(and(eq(coachingTemplates.userId, userId), eq(coachingTemplates.isActive, 1)));
+}
+
+export async function incrementTemplateUsage(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(coachingTemplates).set({ usageCount: sql`${coachingTemplates.usageCount} + 1` }).where(eq(coachingTemplates.id, id));
+}
+
+// ─── Agent Assist: Sessions ──────────────────────────────────────────────────
+export async function createAssistSession(data: InsertAssistSession) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(assistSessions).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getAssistSession(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(assistSessions).where(eq(assistSessions.id, id));
+  return row;
+}
+
+export async function getActiveAssistSession(agentId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(assistSessions).where(and(eq(assistSessions.agentId, agentId), eq(assistSessions.status, "active")));
+  return row;
+}
+
+export async function updateAssistSession(id: number, data: Partial<InsertAssistSession>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(assistSessions).set(data).where(eq(assistSessions.id, id));
+}
+
+export async function endAssistSession(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(assistSessions).set({ status: "ended", endedAt: Date.now() }).where(eq(assistSessions.id, id));
+}
+
+export async function getAssistSessionsByAgent(agentId: number, limit = 20) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assistSessions).where(eq(assistSessions.agentId, agentId)).orderBy(desc(assistSessions.createdAt)).limit(limit);
+}
+
+export async function getAssistStats(userId: number) {
+  const db = await getDb();
+  if (!db) return { totalSessions: 0, activeSessions: 0, totalSuggestions: 0, acceptedSuggestions: 0, avgAcceptRate: 0 };
+  const [stats] = await db.select({
+    totalSessions: count(),
+    activeSessions: sql<number>`SUM(CASE WHEN ${assistSessions.status} = 'active' THEN 1 ELSE 0 END)`,
+    totalSuggestions: sql<number>`SUM(${assistSessions.totalSuggestions})`,
+    acceptedSuggestions: sql<number>`SUM(${assistSessions.acceptedSuggestions})`,
+  }).from(assistSessions).where(eq(assistSessions.userId, userId));
+  const total = Number(stats?.totalSuggestions) || 0;
+  const accepted = Number(stats?.acceptedSuggestions) || 0;
+  return {
+    totalSessions: Number(stats?.totalSessions) || 0,
+    activeSessions: Number(stats?.activeSessions) || 0,
+    totalSuggestions: total,
+    acceptedSuggestions: accepted,
+    avgAcceptRate: total > 0 ? Math.round((accepted / total) * 100) : 0,
+  };
+}
+
+// ─── Agent Assist: Suggestions ───────────────────────────────────────────────
+export async function createAssistSuggestion(data: InsertAssistSuggestion) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(assistSuggestions).values(data);
+  // Increment session counter
+  if (data.sessionId) {
+    await db.update(assistSessions).set({
+      totalSuggestions: sql`${assistSessions.totalSuggestions} + 1`,
+    }).where(eq(assistSessions.id, data.sessionId));
+  }
+  return { id: result[0].insertId };
+}
+
+export async function getSessionSuggestions(sessionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(assistSuggestions).where(eq(assistSuggestions.sessionId, sessionId)).orderBy(desc(assistSuggestions.createdAt));
+}
+
+export async function respondToSuggestion(id: number, sessionId: number, response: "accepted" | "dismissed") {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(assistSuggestions).set({ status: response, respondedAt: Date.now() }).where(eq(assistSuggestions.id, id));
+  // Update session counters
+  const field = response === "accepted" ? assistSessions.acceptedSuggestions : assistSessions.dismissedSuggestions;
+  await db.update(assistSessions).set({
+    [response === "accepted" ? "acceptedSuggestions" : "dismissedSuggestions"]: sql`${field} + 1`,
+  }).where(eq(assistSessions.id, sessionId));
+}
+
+export async function expirePendingSuggestions(sessionId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(assistSuggestions).set({ status: "expired" }).where(and(eq(assistSuggestions.sessionId, sessionId), eq(assistSuggestions.status, "pending")));
+}
