@@ -11,6 +11,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { pbxRouter, installerRouter } from "../services/pbx-api";
+import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -41,6 +42,8 @@ async function startServer() {
   registerOAuthRoutes(app);
   // PBX Agent installer (no auth - uses API key in query param)
   app.use("/api/pbx", installerRouter);
+  // Voice AI Bridge installer (no auth - uses API key in query param)
+  app.use("/api/voice-ai", createVoiceAiInstallerRouter());
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
   // tRPC API

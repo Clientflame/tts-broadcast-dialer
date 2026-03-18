@@ -595,3 +595,4 @@
 - [x] Voice AI Bridge: One-click test call button to verify end-to-end Voice AI flow
 - [x] Voice AI Bridge: Auto-configure Asterisk ARI and dialplan for Voice AI routing
 - [x] Voice AI Bridge: Redeploy/update button for pushing new versions
+- [x] Bug: Voice AI Bridge deploy SSH handshake timeout - replaced SSH deploy with curl-based one-liner installer (same as PBX Agent)

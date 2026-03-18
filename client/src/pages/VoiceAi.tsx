@@ -691,86 +691,21 @@ export default function VoiceAi() {
 // ─── Deploy & Manage Tab Component ──────────────────────────────────────────
 
 function DeployTab() {
-  const [deploying, setDeploying] = useState(false);
-  const [deployLogs, setDeployLogs] = useState<string[]>([]);
-  const [showLogs, setShowLogs] = useState(false);
-  const [bridgeLogs, setBridgeLogs] = useState<string>("");
-  const [showBridgeLogs, setShowBridgeLogs] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [testPhone, setTestPhone] = useState("");
   const [testPromptId, setTestPromptId] = useState<string>("");
 
   const deployStatus = trpc.voiceAi.getDeployStatus.useQuery();
-  const bridgeHealth = trpc.voiceAi.checkBridgeHealth.useMutation();
-  const deployMut = trpc.voiceAi.deploy.useMutation();
-  const redeployMut = trpc.voiceAi.redeploy.useMutation();
-  const getBridgeLogsMut = trpc.voiceAi.getBridgeLogs.useMutation();
+  const installCmd = trpc.voiceAi.getInstallCommand.useQuery({ origin: window.location.origin });
   const testCallMut = trpc.voiceAi.testCall.useMutation();
   const prompts = trpc.voiceAi.listPrompts.useQuery();
 
-  const [healthStatus, setHealthStatus] = useState<{ status: string; message: string; details?: any } | null>(null);
-  const [checkingHealth, setCheckingHealth] = useState(false);
-
-  const handleCheckHealth = async () => {
-    setCheckingHealth(true);
-    try {
-      const result = await bridgeHealth.mutateAsync();
-      setHealthStatus(result);
-    } catch (e: any) {
-      setHealthStatus({ status: "error", message: e.message });
-    } finally {
-      setCheckingHealth(false);
-    }
-  };
-
-  const handleDeploy = async () => {
-    setDeploying(true);
-    setDeployLogs([]);
-    setShowLogs(true);
-    try {
-      const result = await deployMut.mutateAsync({
-        dashboardOrigin: window.location.origin,
-      });
-      setDeployLogs(result.logs);
-      if (result.success) {
-        toast.success("Voice AI Bridge deployed successfully!");
-        handleCheckHealth();
-      } else {
-        toast.error(result.error || "Deployment failed");
-      }
-    } catch (e: any) {
-      toast.error(e.message);
-      setDeployLogs(prev => [...prev, `ERROR: ${e.message}`]);
-    } finally {
-      setDeploying(false);
-    }
-  };
-
-  const handleRedeploy = async () => {
-    setDeploying(true);
-    try {
-      const result = await redeployMut.mutateAsync({
-        dashboardOrigin: window.location.origin,
-      });
-      if (result.success) {
-        toast.success(result.message);
-        handleCheckHealth();
-      } else {
-        toast.error(result.message);
-      }
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setDeploying(false);
-    }
-  };
-
-  const handleViewLogs = async () => {
-    try {
-      const result = await getBridgeLogsMut.mutateAsync({ lines: 100 });
-      setBridgeLogs(result.logs);
-      setShowBridgeLogs(true);
-    } catch (e: any) {
-      toast.error(e.message);
+  const handleCopy = () => {
+    if (installCmd.data?.command) {
+      navigator.clipboard.writeText(installCmd.data.command);
+      setCopied(true);
+      toast.success("Install command copied to clipboard!");
+      setTimeout(() => setCopied(false), 3000);
     }
   };
 
@@ -796,8 +731,6 @@ function DeployTab() {
     ? <CheckCircle2 className="h-4 w-4 text-green-500" />
     : <XCircle className="h-4 w-4 text-red-400" />;
 
-  const healthColor = healthStatus?.status === "running" ? "text-green-500" : healthStatus?.status === "starting" ? "text-amber-500" : "text-red-400";
-
   return (
     <TabsContent value="deploy" className="mt-4 space-y-4">
       {/* Prerequisites Card */}
@@ -809,15 +742,15 @@ function DeployTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
-              {statusIcon(!!deployStatus.data?.sshConfigured)}
+              {statusIcon(!!deployStatus.data?.freepbxConfigured)}
               <div>
-                <p className="text-sm font-medium">FreePBX SSH</p>
+                <p className="text-sm font-medium">FreePBX Host</p>
                 <p className="text-xs text-muted-foreground">
-                  {deployStatus.data?.sshConfigured
-                    ? `Connected to ${deployStatus.data.host}`
-                    : "Not configured — go to Settings"}
+                  {deployStatus.data?.freepbxConfigured
+                    ? `Configured: ${deployStatus.data.host}`
+                    : "Not configured"}
                 </p>
               </div>
             </div>
@@ -828,7 +761,18 @@ function DeployTab() {
                 <p className="text-xs text-muted-foreground">
                   {deployStatus.data?.openaiConfigured
                     ? "API key configured"
-                    : "Not configured — go to Settings"}
+                    : "Not configured"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
+              {statusIcon(!!deployStatus.data?.pbxAgentRegistered)}
+              <div>
+                <p className="text-sm font-medium">PBX Agent</p>
+                <p className="text-xs text-muted-foreground">
+                  {deployStatus.data?.pbxAgentRegistered
+                    ? "Agent registered"
+                    : "No agent — register one first"}
                 </p>
               </div>
             </div>
@@ -836,105 +780,103 @@ function DeployTab() {
         </CardContent>
       </Card>
 
-      {/* Deploy & Status Card */}
+      {/* Install Command Card */}
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Rocket className="h-5 w-5 text-primary" />
-              Voice AI Bridge
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              {healthStatus && (
-                <Badge variant={healthStatus.status === "running" ? "default" : "secondary"} className="gap-1">
-                  <span className={`h-2 w-2 rounded-full ${healthStatus.status === "running" ? "bg-green-400 animate-pulse" : healthStatus.status === "starting" ? "bg-amber-400" : "bg-red-400"}`} />
-                  {healthStatus.status === "running" ? "Running" : healthStatus.status === "starting" ? "Starting" : healthStatus.status === "stopped" ? "Stopped" : "Unknown"}
-                </Badge>
-              )}
-              <Button size="sm" variant="outline" onClick={handleCheckHealth} disabled={checkingHealth}>
-                {checkingHealth ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Check Status
-              </Button>
-            </div>
-          </div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Rocket className="h-5 w-5 text-primary" />
+            Install Voice AI Bridge
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Run this command on your FreePBX server as root. It installs everything automatically — just like the PBX Agent installer.
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Deploy the Voice AI Bridge to your FreePBX server with one click. This installs the Python bridge service,
-            configures Asterisk ARI, sets up the dialplan, and starts the systemd service automatically.
-          </p>
+          {installCmd.data?.command ? (
+            <div className="space-y-3">
+              <div className="relative">
+                <div className="bg-zinc-950 text-green-400 rounded-lg p-4 pr-24 font-mono text-sm overflow-x-auto">
+                  <span className="text-zinc-500 select-none">$ </span>
+                  {installCmd.data.command}
+                </div>
+                <Button
+                  size="sm"
+                  variant={copied ? "default" : "secondary"}
+                  className="absolute top-3 right-3 gap-1.5"
+                  onClick={handleCopy}
+                >
+                  {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={handleDeploy}
-              disabled={deploying || !deployStatus.data?.canDeploy}
-              className="gap-2"
-            >
-              {deploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {deploying ? "Deploying..." : "Deploy to FreePBX"}
-            </Button>
-            <Button variant="outline" onClick={handleRedeploy} disabled={deploying} className="gap-2">
-              <RefreshCw className="h-4 w-4" />
-              Update & Restart
-            </Button>
-            <Button variant="outline" onClick={handleViewLogs} disabled={getBridgeLogsMut.isPending} className="gap-2">
-              <Terminal className="h-4 w-4" />
-              View Logs
-            </Button>
-          </div>
+              <div className="p-3 rounded-lg border bg-muted/30">
+                <h4 className="text-sm font-medium mb-2">Quick Start</h4>
+                <ol className="space-y-1.5 text-xs text-muted-foreground">
+                  <li className="flex gap-2">
+                    <span className="font-mono text-primary font-bold">1.</span>
+                    SSH into your FreePBX server as root
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-mono text-primary font-bold">2.</span>
+                    Paste the command above and press Enter
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-mono text-primary font-bold">3.</span>
+                    Wait for "Installation Complete!" message (~30 seconds)
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-mono text-primary font-bold">4.</span>
+                    Use the Test Call section below to verify it works
+                  </li>
+                </ol>
+              </div>
 
-          {!deployStatus.data?.canDeploy && (
+              <div className="p-3 rounded-lg border border-blue-500/30 bg-blue-500/5 text-xs text-muted-foreground">
+                <p><strong className="text-blue-400">To update later:</strong> Just re-run the same command. It overwrites old files and restarts the service automatically.</p>
+              </div>
+            </div>
+          ) : installCmd.data?.error ? (
             <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm">
-              <p className="font-medium text-amber-600">Cannot deploy yet</p>
-              <p className="text-muted-foreground mt-1">
-                {!deployStatus.data?.sshConfigured && "FreePBX SSH credentials are not configured. "}
-                {!deployStatus.data?.openaiConfigured && "OpenAI API key is not set. "}
-                Go to the Settings page to configure these.
-              </p>
+              <p className="font-medium text-amber-600">Cannot generate install command</p>
+              <p className="text-muted-foreground mt-1">{installCmd.data.error}</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading install command...
             </div>
           )}
+        </CardContent>
+      </Card>
 
-          {/* Deployment Logs */}
-          {showLogs && deployLogs.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium flex items-center gap-1.5">
-                  <Terminal className="h-4 w-4" />
-                  Deployment Log
-                </h4>
-                <Button size="sm" variant="ghost" onClick={() => setShowLogs(false)}>Hide</Button>
-              </div>
-              <div className="bg-zinc-950 text-green-400 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs space-y-0.5">
-                {deployLogs.map((line, i) => (
-                  <div key={i} className={line.includes("ERROR") ? "text-red-400" : line.includes("Warning") ? "text-amber-400" : ""}>
-                    {line}
-                  </div>
-                ))}
-                {deploying && (
-                  <div className="flex items-center gap-2 text-blue-400">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Running...
-                  </div>
-                )}
-              </div>
+      {/* After Install: Useful Commands */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Terminal className="h-5 w-5 text-primary" />
+            After Installation
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-zinc-950 rounded-lg p-3 font-mono text-xs">
+              <p className="text-zinc-500 mb-1"># Check status</p>
+              <p className="text-green-400">systemctl status voice-ai-bridge</p>
             </div>
-          )}
-
-          {/* Bridge Logs */}
-          {showBridgeLogs && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium flex items-center gap-1.5">
-                  <Terminal className="h-4 w-4" />
-                  Service Logs (journalctl)
-                </h4>
-                <Button size="sm" variant="ghost" onClick={() => setShowBridgeLogs(false)}>Hide</Button>
-              </div>
-              <div className="bg-zinc-950 text-zinc-300 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-                {bridgeLogs || "No logs available"}
-              </div>
+            <div className="bg-zinc-950 rounded-lg p-3 font-mono text-xs">
+              <p className="text-zinc-500 mb-1"># View live logs</p>
+              <p className="text-green-400">journalctl -u voice-ai-bridge -f</p>
             </div>
-          )}
+            <div className="bg-zinc-950 rounded-lg p-3 font-mono text-xs">
+              <p className="text-zinc-500 mb-1"># Restart service</p>
+              <p className="text-green-400">systemctl restart voice-ai-bridge</p>
+            </div>
+            <div className="bg-zinc-950 rounded-lg p-3 font-mono text-xs">
+              <p className="text-zinc-500 mb-1"># Stop service</p>
+              <p className="text-green-400">systemctl stop voice-ai-bridge</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -986,12 +928,12 @@ function DeployTab() {
         </CardContent>
       </Card>
 
-      {/* What Gets Deployed Card */}
+      {/* What Gets Installed Card */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Settings className="h-5 w-5 text-primary" />
-            What Gets Deployed
+            What Gets Installed
           </CardTitle>
         </CardHeader>
         <CardContent>
