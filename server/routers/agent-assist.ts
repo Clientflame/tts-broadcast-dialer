@@ -22,6 +22,12 @@ import {
   respondToSuggestion,
   expirePendingSuggestions,
   getLiveAgent,
+  getAgentCoachingPerformance,
+  getTemplateEffectiveness,
+  getSuggestionTypeBreakdown,
+  getTrainingGaps,
+  getCoachingDailyTrend,
+  getSentimentDistribution,
 } from "../db";
 
 // ─── LLM Suggestion Engine ──────────────────────────────────────────────────
@@ -434,5 +440,200 @@ export const agentAssistRouter = router({
   // ─── Stats ────────────────────────────────────────────────────────────────
   stats: protectedProcedure.query(async ({ ctx }) => {
     return getAssistStats(ctx.user.id);
+  }),
+
+  // ─── Seed Starter Templates ──────────────────────────────────────────────
+  seedStarterTemplates: protectedProcedure.mutation(async ({ ctx }) => {
+    const existing = await getCoachingTemplates(ctx.user.id);
+    if (existing.length > 0) {
+      return { seeded: 0, message: "Templates already exist. Delete existing templates first to re-seed." };
+    }
+
+    const starterTemplates = [
+      // Objection Handling
+      {
+        name: "Already Paid",
+        description: "Handle contacts who claim they have already paid the debt.",
+        category: "objection_handling" as const,
+        triggers: ["already paid", "paid that", "sent payment", "paid in full", "check cleared"],
+        suggestions: [
+          { title: "Acknowledge & Verify", body: "I understand you believe this has been paid. Let me check our records to verify. Can you tell me the date and method of payment?", priority: "high" as const },
+          { title: "Request Proof", body: "If you have a confirmation number or receipt, that would help us locate the payment quickly and get this resolved for you.", priority: "medium" as const },
+          { title: "Offer Resolution", body: "If we can't locate the payment, I can open a dispute on your behalf. We'll investigate and get back to you within 30 days.", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Not My Debt",
+        description: "Handle contacts who dispute ownership of the debt.",
+        category: "objection_handling" as const,
+        triggers: ["not my debt", "don't owe", "never had", "identity theft", "wrong person", "not mine"],
+        suggestions: [
+          { title: "Verify Identity", body: "I understand your concern. To make sure we have the right person, can I verify your date of birth and last four of your Social Security number?", priority: "high" as const },
+          { title: "Explain Dispute Rights", body: "You have the right to dispute this debt in writing within 30 days. If you do, we'll provide verification of the debt including the original creditor.", priority: "high" as const },
+          { title: "Document the Dispute", body: "I'll note your dispute in our system. Would you like me to send you a written validation notice with the debt details?", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Can't Afford It",
+        description: "Handle contacts who say they cannot afford to pay.",
+        category: "objection_handling" as const,
+        triggers: ["can't afford", "no money", "broke", "unemployed", "fixed income", "disability", "can't pay", "don't have the money"],
+        suggestions: [
+          { title: "Show Empathy", body: "I understand financial difficulties can be stressful. Let's see what options might work within your budget.", priority: "high" as const },
+          { title: "Offer Payment Plan", body: "We have flexible payment plans available. Even a small monthly amount can help resolve this. What amount could you manage each month?", priority: "high" as const },
+          { title: "Suggest Hardship Program", body: "We may have a hardship program that could reduce your balance or extend your timeline. Would you like me to check your eligibility?", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Stop Calling Me",
+        description: "Handle contacts who demand calls stop.",
+        category: "objection_handling" as const,
+        triggers: ["stop calling", "don't call", "cease and desist", "harassment", "do not contact", "leave me alone", "take me off"],
+        suggestions: [
+          { title: "Acknowledge Request", body: "I understand and I respect your request. Before I process that, may I briefly explain your options for resolving this account?", priority: "high" as const },
+          { title: "Explain Written Request", body: "You can send a written cease-and-desist request. However, please note that stopping communication doesn't eliminate the debt — it may limit our ability to offer settlement options.", priority: "medium" as const },
+          { title: "Offer Alternative", body: "Would you prefer we communicate by mail or email instead? That way you can review information at your convenience.", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Need to Think About It",
+        description: "Handle contacts who want time to decide.",
+        category: "objection_handling" as const,
+        triggers: ["think about it", "need time", "call back later", "not ready", "let me think", "talk to my spouse"],
+        suggestions: [
+          { title: "Create Urgency", body: "I completely understand. Just so you know, the current settlement offer is available for a limited time. When would be a good time to follow up?", priority: "medium" as const },
+          { title: "Schedule Callback", body: "Let me schedule a callback at a time that works for you. What day and time would be best?", priority: "high" as const },
+          { title: "Summarize Benefits", body: "Before we hang up, let me recap: by resolving this now, you'd save [amount] and prevent further collection activity on your credit report.", priority: "medium" as const },
+        ],
+      },
+      // Compliance
+      {
+        name: "Mini-Miranda Warning",
+        description: "Ensure the Mini-Miranda disclosure is delivered at the start of every call.",
+        category: "compliance" as const,
+        triggers: ["hello", "hi", "good morning", "good afternoon", "speaking with"],
+        suggestions: [
+          { title: "Deliver Mini-Miranda", body: "This is [Agent Name] calling from [Company]. This is an attempt to collect a debt and any information obtained will be used for that purpose. This call may be recorded for quality assurance.", priority: "high" as const },
+          { title: "Verify Right Party", body: "Before I continue, I need to verify I'm speaking with the right person. Can you confirm your full name and date of birth?", priority: "high" as const },
+        ],
+      },
+      {
+        name: "FDCPA Disclosure",
+        description: "Ensure FDCPA rights are communicated when required.",
+        category: "compliance" as const,
+        triggers: ["rights", "what are my rights", "legal", "lawyer", "attorney", "sue"],
+        suggestions: [
+          { title: "State Dispute Rights", body: "Under the Fair Debt Collection Practices Act, you have the right to dispute this debt within 30 days of receiving our written notice. If disputed, we must provide verification.", priority: "high" as const },
+          { title: "Offer Written Notice", body: "I can send you a written validation notice that includes the amount owed, the original creditor, and your rights under federal law.", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Call Recording Notice",
+        description: "Remind agents to disclose call recording in two-party consent states.",
+        category: "compliance" as const,
+        triggers: ["recording", "being recorded", "is this recorded"],
+        suggestions: [
+          { title: "Confirm Recording", body: "Yes, this call is being recorded for quality and training purposes. If you prefer not to be recorded, please let me know and I can continue without recording.", priority: "high" as const },
+        ],
+      },
+      // Closing
+      {
+        name: "Payment Plan Offer",
+        description: "Guide agents through presenting payment plan options.",
+        category: "closing" as const,
+        triggers: ["payment plan", "monthly payments", "installments", "how much per month", "break it up"],
+        suggestions: [
+          { title: "Present Options", body: "We have several payment plan options. You could pay [amount] over [months] months, or we can customize a plan based on what fits your budget.", priority: "high" as const },
+          { title: "Explain Benefits", body: "Setting up a payment plan stops further collection activity and shows good faith. Once completed, we'll update your account as paid in full.", priority: "medium" as const },
+          { title: "Secure Commitment", body: "Which option works best for you? I can set up the first payment today and send you a confirmation with the full schedule.", priority: "high" as const },
+        ],
+      },
+      {
+        name: "Settlement Offer",
+        description: "Guide agents through presenting settlement/discount offers.",
+        category: "closing" as const,
+        triggers: ["settle", "settlement", "discount", "less than", "reduce", "lower amount", "deal"],
+        suggestions: [
+          { title: "Present Settlement", body: "I'm authorized to offer a settlement of [percentage]% of the balance — that's [amount] instead of [full amount]. This offer is available if paid by [date].", priority: "high" as const },
+          { title: "Emphasize Savings", body: "This settlement saves you [savings amount]. It's the best offer we can make, and once paid, the account will be marked as settled.", priority: "medium" as const },
+          { title: "Close the Deal", body: "Would you like to take advantage of this settlement today? I can process the payment right now and send you a settlement letter for your records.", priority: "high" as const },
+        ],
+      },
+      // Rapport Building
+      {
+        name: "Empathy Statements",
+        description: "Help agents build rapport with empathetic language.",
+        category: "rapport_building" as const,
+        triggers: ["stressed", "worried", "frustrated", "upset", "difficult", "hard time", "struggling"],
+        suggestions: [
+          { title: "Acknowledge Feelings", body: "I hear you, and I understand this situation can be really stressful. I'm here to help find a solution that works for you.", priority: "medium" as const },
+          { title: "Show Understanding", body: "Many people go through tough financial times. You're not alone in this, and there are options available to help you move forward.", priority: "medium" as const },
+          { title: "Offer Support", body: "My goal is to help you resolve this in a way that's manageable. Let's work together to find the best path forward.", priority: "low" as const },
+        ],
+      },
+      // De-escalation
+      {
+        name: "Angry Caller",
+        description: "De-escalation techniques for hostile or angry contacts.",
+        category: "de_escalation" as const,
+        triggers: ["angry", "furious", "yelling", "screaming", "unacceptable", "ridiculous", "outrageous", "damn", "hell"],
+        suggestions: [
+          { title: "Stay Calm & Listen", body: "I can hear this is very frustrating for you, and I want to help. Please tell me more about your concern so I can address it properly.", priority: "high" as const },
+          { title: "Validate & Redirect", body: "You have every right to be frustrated. Let me focus on what I can do to help resolve this for you today.", priority: "high" as const },
+          { title: "Offer Supervisor", body: "If you'd prefer, I can connect you with a supervisor who may have additional options available. Would that be helpful?", priority: "medium" as const },
+        ],
+      },
+      {
+        name: "Threats & Emotional Distress",
+        description: "Handle contacts making threats or showing signs of emotional distress.",
+        category: "de_escalation" as const,
+        triggers: ["kill myself", "suicide", "end it all", "hurt myself", "threat", "lawyer", "sue you", "report you"],
+        suggestions: [
+          { title: "CRITICAL: Self-Harm", body: "If the contact mentions self-harm, STOP collection activity immediately. Say: 'I'm concerned about what you've shared. The National Suicide Prevention Lifeline is 988. Would you like me to stay on the line?'", priority: "high" as const },
+          { title: "Legal Threats", body: "If they mention a lawyer: 'I understand. If you have legal representation, please provide their contact information and we'll direct all future communication to them.'", priority: "high" as const },
+          { title: "Regulatory Threats", body: "If they threaten to report you: 'You absolutely have that right. I want to make sure we're handling this properly. Let me review your account and see what options are available.'", priority: "medium" as const },
+        ],
+      },
+      // Payment Negotiation
+      {
+        name: "Negotiation Tactics",
+        description: "Guide agents through common negotiation scenarios.",
+        category: "payment_negotiation" as const,
+        triggers: ["negotiate", "lower", "best offer", "counter", "what's the lowest", "can you do better"],
+        suggestions: [
+          { title: "Anchor High", body: "Start with the full balance and work down. 'The current balance is [full amount]. However, I may be able to offer some flexibility. What were you thinking?'", priority: "medium" as const },
+          { title: "Use Silence", body: "After presenting an offer, pause and let the contact respond. Silence creates space for them to consider and often leads to acceptance.", priority: "low" as const },
+          { title: "Create Win-Win", body: "Frame the offer as mutual benefit: 'If we can agree on [amount] today, I can close this account and you'll have peace of mind knowing it's resolved.'", priority: "high" as const },
+        ],
+      },
+    ];
+
+    let seeded = 0;
+    for (const t of starterTemplates) {
+      await createCoachingTemplate({
+        userId: ctx.user.id,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        triggers: t.triggers,
+        suggestions: t.suggestions,
+      });
+      seeded++;
+    }
+
+    return { seeded, message: `Successfully created ${seeded} starter coaching templates.` };
+  }),
+
+  // ─── Coaching Reports ────────────────────────────────────────────────────
+  coachingReport: protectedProcedure.query(async ({ ctx }) => {
+    const [agentPerformance, templateEffectiveness, suggestionTypes, trainingGaps, dailyTrend, sentimentDist] = await Promise.all([
+      getAgentCoachingPerformance(ctx.user.id),
+      getTemplateEffectiveness(ctx.user.id),
+      getSuggestionTypeBreakdown(ctx.user.id),
+      getTrainingGaps(ctx.user.id),
+      getCoachingDailyTrend(ctx.user.id),
+      getSentimentDistribution(ctx.user.id),
+    ]);
+    return { agentPerformance, templateEffectiveness, suggestionTypes, trainingGaps, dailyTrend, sentimentDist };
   }),
 });

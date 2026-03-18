@@ -153,7 +153,7 @@ describe("Agent Assist Router", () => {
     it("should export agentAssistRouter with all expected procedures", async () => {
       const { agentAssistRouter } = await import("./routers/agent-assist");
       const procedures = Object.keys(agentAssistRouter._def.procedures);
-      expect(procedures.length).toBe(13);
+      expect(procedures.length).toBe(15);
       expect(procedures).toEqual(expect.arrayContaining([
         "listTemplates",
         "getTemplate",
@@ -168,6 +168,8 @@ describe("Agent Assist Router", () => {
         "generateSuggestions",
         "respondSuggestion",
         "stats",
+        "seedStarterTemplates",
+        "coachingReport",
       ]));
     });
   });

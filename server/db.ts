@@ -2798,3 +2798,140 @@ export async function expirePendingSuggestions(sessionId: number) {
   if (!db) return;
   await db.update(assistSuggestions).set({ status: "expired" }).where(and(eq(assistSuggestions.sessionId, sessionId), eq(assistSuggestions.status, "pending")));
 }
+
+// ─── Coaching Report: Agent Performance ─────────────────────────────────────
+export async function getAgentCoachingPerformance(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT 
+      s.agentId,
+      la.name AS agentName,
+      la.sipExtension,
+      COUNT(DISTINCT s.id) AS totalSessions,
+      SUM(s.totalSuggestions) AS totalSuggestions,
+      SUM(s.acceptedSuggestions) AS acceptedSuggestions,
+      SUM(s.dismissedSuggestions) AS dismissedSuggestions,
+      CASE WHEN SUM(s.totalSuggestions) > 0 
+        THEN ROUND(SUM(s.acceptedSuggestions) / SUM(s.totalSuggestions) * 100, 1)
+        ELSE 0 END AS acceptRate,
+      MAX(s.startedAt) AS lastSessionAt
+    FROM assist_sessions s
+    LEFT JOIN live_agents la ON la.id = s.agentId
+    WHERE s.userId = ${userId}
+    GROUP BY s.agentId, la.name, la.sipExtension
+    ORDER BY totalSessions DESC
+  `);
+  return (rows as any)[0] || [];
+}
+
+// ─── Coaching Report: Template Effectiveness ────────────────────────────────
+export async function getTemplateEffectiveness(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT 
+      ct.id,
+      ct.name,
+      ct.category,
+      ct.usageCount,
+      COUNT(DISTINCT asug.id) AS suggestionCount,
+      SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) AS acceptedCount,
+      SUM(CASE WHEN asug.status = 'dismissed' THEN 1 ELSE 0 END) AS dismissedCount,
+      CASE WHEN COUNT(DISTINCT asug.id) > 0
+        THEN ROUND(SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) / COUNT(DISTINCT asug.id) * 100, 1)
+        ELSE 0 END AS acceptRate
+    FROM coaching_templates ct
+    LEFT JOIN assist_suggestions asug ON asug.templateId = ct.id
+    WHERE ct.userId = ${userId}
+    GROUP BY ct.id, ct.name, ct.category, ct.usageCount
+    ORDER BY ct.usageCount DESC
+  `);
+  return (rows as any)[0] || [];
+}
+
+// ─── Coaching Report: Suggestion Type Breakdown ─────────────────────────────
+export async function getSuggestionTypeBreakdown(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT 
+      asug.type,
+      COUNT(*) AS total,
+      SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) AS accepted,
+      SUM(CASE WHEN asug.status = 'dismissed' THEN 1 ELSE 0 END) AS dismissed,
+      SUM(CASE WHEN asug.status = 'expired' THEN 1 ELSE 0 END) AS expired,
+      CASE WHEN COUNT(*) > 0
+        THEN ROUND(SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) / COUNT(*) * 100, 1)
+        ELSE 0 END AS acceptRate
+    FROM assist_suggestions asug
+    JOIN assist_sessions s ON s.id = asug.sessionId
+    WHERE s.userId = ${userId}
+    GROUP BY asug.type
+    ORDER BY total DESC
+  `);
+  return (rows as any)[0] || [];
+}
+
+// ─── Coaching Report: Training Gaps (low accept rate by category per agent) ─
+export async function getTrainingGaps(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT 
+      s.agentId,
+      la.name AS agentName,
+      asug.type AS suggestionType,
+      COUNT(*) AS total,
+      SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) AS accepted,
+      CASE WHEN COUNT(*) > 0
+        THEN ROUND(SUM(CASE WHEN asug.status = 'accepted' THEN 1 ELSE 0 END) / COUNT(*) * 100, 1)
+        ELSE 0 END AS acceptRate
+    FROM assist_suggestions asug
+    JOIN assist_sessions s ON s.id = asug.sessionId
+    LEFT JOIN live_agents la ON la.id = s.agentId
+    WHERE s.userId = ${userId}
+    GROUP BY s.agentId, la.name, asug.type
+    HAVING COUNT(*) >= 3 AND acceptRate < 40
+    ORDER BY acceptRate ASC
+  `);
+  return (rows as any)[0] || [];
+}
+
+// ─── Coaching Report: Daily Trend ───────────────────────────────────────────
+export async function getCoachingDailyTrend(userId: number, days = 30) {
+  const db = await getDb();
+  if (!db) return [];
+  const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  const rows = await db.execute(sql`
+    SELECT 
+      DATE(FROM_UNIXTIME(s.startedAt / 1000)) AS day,
+      COUNT(DISTINCT s.id) AS sessions,
+      SUM(s.totalSuggestions) AS suggestions,
+      SUM(s.acceptedSuggestions) AS accepted,
+      CASE WHEN SUM(s.totalSuggestions) > 0
+        THEN ROUND(SUM(s.acceptedSuggestions) / SUM(s.totalSuggestions) * 100, 1)
+        ELSE 0 END AS acceptRate
+    FROM assist_sessions s
+    WHERE s.userId = ${userId} AND s.startedAt >= ${cutoff}
+    GROUP BY day
+    ORDER BY day ASC
+  `);
+  return (rows as any)[0] || [];
+}
+
+// ─── Coaching Report: Sentiment Distribution ────────────────────────────────
+export async function getSentimentDistribution(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.execute(sql`
+    SELECT 
+      sentimentLabel AS label,
+      COUNT(*) AS count
+    FROM assist_sessions
+    WHERE userId = ${userId} AND sentimentLabel IS NOT NULL
+    GROUP BY sentimentLabel
+    ORDER BY FIELD(sentimentLabel, 'very_negative', 'negative', 'neutral', 'positive', 'very_positive')
+  `);
+  return (rows as any)[0] || [];
+}

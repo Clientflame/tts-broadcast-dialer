@@ -577,3 +577,14 @@
 - [x] Agent Assist: Integration into Live Agents page (agent-facing assist panel)
 - [x] Agent Assist: Vitest tests for suggestion engine and procedures
 - [x] Bug: vTiger CRM not connected - disregarded, not part of this application
+- [x] Starter Templates: Pre-built coaching templates for top objections (already paid, not my debt, can't afford, stop calling, need to think about it)
+- [x] Starter Templates: Compliance templates (Mini-Miranda, FDCPA disclosure, call recording notice)
+- [x] Starter Templates: Closing templates (payment plan offer, settlement offer, callback scheduling)
+- [x] Starter Templates: Rapport building templates (empathy statements, active listening cues)
+- [x] Starter Templates: De-escalation templates (angry caller, threats, emotional distress)
+- [x] Supervisor Report: Suggestion acceptance rate by agent (who follows coaching vs who dismisses)
+- [x] Supervisor Report: Top performing talk tracks (which suggestions lead to best outcomes)
+- [x] Supervisor Report: Training gap identification (agents with low accept rates by category)
+- [x] Supervisor Report: Template effectiveness ranking (which templates get used and accepted most)
+- [x] Supervisor Report: Time-series trend chart for coaching engagement over time
+- [x] Supervisor Report: Agent comparison table with sortable metrics

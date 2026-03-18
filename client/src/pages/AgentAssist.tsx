@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 import {
   Brain,
   Plus,
@@ -32,6 +32,11 @@ import {
   Clock,
   Zap,
   BookOpen,
+  Download,
+  AlertTriangle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
 } from "lucide-react";
 
 const CATEGORIES = [
@@ -43,6 +48,33 @@ const CATEGORIES = [
   { value: "de_escalation", label: "De-escalation", icon: MessageSquare, color: "text-amber-400" },
   { value: "general", label: "General", icon: BookOpen, color: "text-zinc-400" },
 ] as const;
+
+const SUGGESTION_TYPE_LABELS: Record<string, { label: string; color: string; icon: any }> = {
+  talk_track: { label: "Talk Track", color: "text-blue-400", icon: MessageSquare },
+  objection_handle: { label: "Objection Handle", color: "text-orange-400", icon: Flame },
+  compliance_alert: { label: "Compliance Alert", color: "text-red-400", icon: Shield },
+  next_action: { label: "Next Action", color: "text-green-400", icon: Target },
+  sentiment_alert: { label: "Sentiment Alert", color: "text-pink-400", icon: Heart },
+  closing_cue: { label: "Closing Cue", color: "text-emerald-400", icon: Handshake },
+  de_escalation: { label: "De-escalation", color: "text-amber-400", icon: MessageSquare },
+  info_card: { label: "Info Card", color: "text-zinc-400", icon: BookOpen },
+};
+
+const SENTIMENT_COLORS: Record<string, string> = {
+  very_negative: "bg-red-500",
+  negative: "bg-orange-500",
+  neutral: "bg-zinc-500",
+  positive: "bg-blue-500",
+  very_positive: "bg-green-500",
+};
+
+const SENTIMENT_LABELS: Record<string, string> = {
+  very_negative: "Very Negative",
+  negative: "Negative",
+  neutral: "Neutral",
+  positive: "Positive",
+  very_positive: "Very Positive",
+};
 
 interface TemplateSuggestion {
   title: string;
@@ -74,17 +106,30 @@ export default function AgentAssist() {
 
   const { data: templates, refetch: refetchTemplates } = trpc.agentAssist.listTemplates.useQuery();
   const { data: stats } = trpc.agentAssist.stats.useQuery();
+  const { data: report } = trpc.agentAssist.coachingReport.useQuery(undefined, { enabled: tab === "report" });
+
   const createMutation = trpc.agentAssist.createTemplate.useMutation({
     onSuccess: () => { refetchTemplates(); setShowDialog(false); toast.success("Template created"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
   const updateMutation = trpc.agentAssist.updateTemplate.useMutation({
     onSuccess: () => { refetchTemplates(); setShowDialog(false); toast.success("Template updated"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
   const deleteMutation = trpc.agentAssist.deleteTemplate.useMutation({
     onSuccess: () => { refetchTemplates(); toast.success("Template deleted"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
+  });
+  const seedMutation = trpc.agentAssist.seedStarterTemplates.useMutation({
+    onSuccess: (data) => {
+      refetchTemplates();
+      if (data.seeded > 0) {
+        toast.success(`${data.seeded} starter templates created!`);
+      } else {
+        toast.info(data.message);
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
   });
 
   const openCreate = () => {
@@ -144,6 +189,16 @@ export default function AgentAssist() {
   };
 
   const categoryConfig = (cat: string) => CATEGORIES.find(c => c.value === cat) || CATEGORIES[6];
+
+  // Report helpers
+  const agentPerformance = (report?.agentPerformance || []) as any[];
+  const templateEffectiveness = (report?.templateEffectiveness || []) as any[];
+  const suggestionTypes = (report?.suggestionTypes || []) as any[];
+  const trainingGaps = (report?.trainingGaps || []) as any[];
+  const dailyTrend = (report?.dailyTrend || []) as any[];
+  const sentimentDist = (report?.sentimentDist || []) as any[];
+
+  const totalSentiment = sentimentDist.reduce((sum: number, s: any) => sum + Number(s.count || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -213,6 +268,10 @@ export default function AgentAssist() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="templates">Coaching Templates</TabsTrigger>
+          <TabsTrigger value="report">
+            <BarChart3 className="h-4 w-4 mr-1.5" />
+            Coaching Report
+          </TabsTrigger>
           <TabsTrigger value="guide">How It Works</TabsTrigger>
         </TabsList>
 
@@ -222,9 +281,22 @@ export default function AgentAssist() {
             <p className="text-sm text-muted-foreground">
               Create coaching templates with trigger keywords. When these keywords appear in a call, the matching suggestions are automatically surfaced to the agent.
             </p>
-            <Button onClick={openCreate} className="bg-violet-600 hover:bg-violet-500">
-              <Plus className="h-4 w-4 mr-2" /> New Template
-            </Button>
+            <div className="flex items-center gap-2 shrink-0 ml-4">
+              {(!templates || templates.length === 0) && (
+                <Button
+                  variant="outline"
+                  onClick={() => seedMutation.mutate()}
+                  disabled={seedMutation.isPending}
+                  className="border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {seedMutation.isPending ? "Seeding..." : "Load Starter Templates"}
+                </Button>
+              )}
+              <Button onClick={openCreate} className="bg-violet-600 hover:bg-violet-500">
+                <Plus className="h-4 w-4 mr-2" /> New Template
+              </Button>
+            </div>
           </div>
 
           {(!templates || templates.length === 0) ? (
@@ -232,10 +304,22 @@ export default function AgentAssist() {
               <CardContent className="flex flex-col items-center justify-center py-12">
                 <BookOpen className="h-12 w-12 text-muted-foreground/30 mb-3" />
                 <p className="text-muted-foreground text-sm">No coaching templates yet</p>
-                <p className="text-muted-foreground/60 text-xs mt-1">Create templates to provide agents with pre-written responses</p>
-                <Button onClick={openCreate} variant="outline" className="mt-4">
-                  <Plus className="h-4 w-4 mr-2" /> Create First Template
-                </Button>
+                <p className="text-muted-foreground/60 text-xs mt-1 mb-4">Get started quickly with our pre-built templates or create your own</p>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => seedMutation.mutate()}
+                    disabled={seedMutation.isPending}
+                    className="border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {seedMutation.isPending ? "Loading 14 Templates..." : "Load 14 Starter Templates"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">or</span>
+                  <Button onClick={openCreate} variant="outline">
+                    <Plus className="h-4 w-4 mr-2" /> Create From Scratch
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -303,6 +387,291 @@ export default function AgentAssist() {
           )}
         </TabsContent>
 
+        {/* Coaching Report Tab */}
+        <TabsContent value="report" className="space-y-6">
+          {/* Agent Performance Table */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="h-5 w-5 text-violet-400" />
+                Agent Coaching Performance
+              </CardTitle>
+              <CardDescription>Suggestion acceptance rates by agent — identifies who follows coaching vs. who dismisses</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {agentPerformance.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  No coaching sessions recorded yet. Start an assist session from the Wallboard to begin tracking.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Agent</TableHead>
+                      <TableHead className="text-center">Extension</TableHead>
+                      <TableHead className="text-center">Sessions</TableHead>
+                      <TableHead className="text-center">Suggestions</TableHead>
+                      <TableHead className="text-center">Accepted</TableHead>
+                      <TableHead className="text-center">Dismissed</TableHead>
+                      <TableHead>Accept Rate</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {agentPerformance.map((agent: any, i: number) => {
+                      const rate = Number(agent.acceptRate) || 0;
+                      const rateColor = rate >= 70 ? "text-green-400" : rate >= 40 ? "text-amber-400" : "text-red-400";
+                      return (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{agent.agentName || `Agent #${agent.agentId}`}</TableCell>
+                          <TableCell className="text-center text-muted-foreground">{agent.sipExtension || "—"}</TableCell>
+                          <TableCell className="text-center">{Number(agent.totalSessions)}</TableCell>
+                          <TableCell className="text-center">{Number(agent.totalSuggestions)}</TableCell>
+                          <TableCell className="text-center text-green-400">{Number(agent.acceptedSuggestions)}</TableCell>
+                          <TableCell className="text-center text-red-400">{Number(agent.dismissedSuggestions)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 min-w-[120px]">
+                              <Progress value={rate} className="h-2 flex-1" />
+                              <span className={`text-sm font-semibold ${rateColor} w-12 text-right`}>{rate}%</span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Two-column: Suggestion Types + Template Effectiveness */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Suggestion Type Breakdown */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-blue-400" />
+                  Suggestion Type Breakdown
+                </CardTitle>
+                <CardDescription>Which types of suggestions are most effective</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {suggestionTypes.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">No data yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {suggestionTypes.map((st: any, i: number) => {
+                      const config = SUGGESTION_TYPE_LABELS[st.type] || { label: st.type, color: "text-zinc-400", icon: BookOpen };
+                      const TypeIcon = config.icon;
+                      const total = Number(st.total) || 0;
+                      const accepted = Number(st.accepted) || 0;
+                      const rate = Number(st.acceptRate) || 0;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <TypeIcon className={`h-4 w-4 shrink-0 ${config.color}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium truncate">{config.label}</span>
+                              <span className="text-xs text-muted-foreground">{accepted}/{total}</span>
+                            </div>
+                            <Progress value={rate} className="h-1.5" />
+                          </div>
+                          <span className={`text-sm font-semibold w-12 text-right ${rate >= 60 ? "text-green-400" : rate >= 30 ? "text-amber-400" : "text-red-400"}`}>
+                            {rate}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Template Effectiveness */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-emerald-400" />
+                  Template Effectiveness
+                </CardTitle>
+                <CardDescription>Which coaching templates get used and accepted most</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {templateEffectiveness.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">No template usage data yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {templateEffectiveness.map((te: any, i: number) => {
+                      const cat = categoryConfig(te.category);
+                      const CatIcon = cat.icon;
+                      const rate = Number(te.acceptRate) || 0;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <CatIcon className={`h-4 w-4 shrink-0 ${cat.color}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium truncate">{te.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {Number(te.usageCount)} triggers / {Number(te.suggestionCount)} suggestions
+                              </span>
+                            </div>
+                            <Progress value={rate} className="h-1.5" />
+                          </div>
+                          <span className={`text-sm font-semibold w-12 text-right ${rate >= 60 ? "text-green-400" : rate >= 30 ? "text-amber-400" : "text-red-400"}`}>
+                            {rate}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Two-column: Training Gaps + Sentiment Distribution */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Training Gaps */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-400" />
+                  Training Gaps
+                </CardTitle>
+                <CardDescription>Agents with low acceptance rates by suggestion type — areas needing coaching focus</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {trainingGaps.length === 0 ? (
+                  <div className="text-center py-6">
+                    <CheckCircle2 className="h-8 w-8 text-green-400/30 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No training gaps detected</p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">All agents have acceptable coaching acceptance rates</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {trainingGaps.map((gap: any, i: number) => {
+                      const config = SUGGESTION_TYPE_LABELS[gap.suggestionType] || { label: gap.suggestionType, color: "text-zinc-400", icon: BookOpen };
+                      const rate = Number(gap.acceptRate) || 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-amber-500/5 border border-amber-500/10">
+                          <div className="flex items-center gap-2">
+                            <div className="h-7 w-7 rounded-full bg-amber-500/10 flex items-center justify-center">
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{gap.agentName || `Agent #${gap.agentId}`}</p>
+                              <p className="text-[10px] text-muted-foreground">{config.label} — {Number(gap.accepted)}/{Number(gap.total)} accepted</p>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-red-400 border-red-500/30">{rate}%</Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Sentiment Distribution */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Heart className="h-5 w-5 text-pink-400" />
+                  Call Sentiment Distribution
+                </CardTitle>
+                <CardDescription>Caller mood across all coaching sessions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {sentimentDist.length === 0 ? (
+                  <div className="text-center py-6 text-muted-foreground text-sm">No sentiment data yet</div>
+                ) : (
+                  <div className="space-y-3">
+                    {sentimentDist.map((s: any, i: number) => {
+                      const count = Number(s.count) || 0;
+                      const pct = totalSentiment > 0 ? Math.round((count / totalSentiment) * 100) : 0;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <div className={`h-3 w-3 rounded-full shrink-0 ${SENTIMENT_COLORS[s.label] || "bg-zinc-500"}`} />
+                          <span className="text-sm w-28 shrink-0">{SENTIMENT_LABELS[s.label] || s.label}</span>
+                          <div className="flex-1">
+                            <div className="h-5 rounded-full bg-muted/50 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${SENTIMENT_COLORS[s.label] || "bg-zinc-500"} transition-all`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                          <span className="text-sm font-medium w-16 text-right">{count} ({pct}%)</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Daily Trend */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-violet-400" />
+                30-Day Coaching Engagement Trend
+              </CardTitle>
+              <CardDescription>Daily coaching sessions, suggestions generated, and acceptance rates</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {dailyTrend.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">No trend data available yet</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-center">Sessions</TableHead>
+                        <TableHead className="text-center">Suggestions</TableHead>
+                        <TableHead className="text-center">Accepted</TableHead>
+                        <TableHead>Accept Rate</TableHead>
+                        <TableHead className="text-center">Trend</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {dailyTrend.map((day: any, i: number) => {
+                        const rate = Number(day.acceptRate) || 0;
+                        const prevRate = i > 0 ? Number(dailyTrend[i - 1].acceptRate) || 0 : rate;
+                        const diff = rate - prevRate;
+                        return (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">{day.day}</TableCell>
+                            <TableCell className="text-center">{Number(day.sessions)}</TableCell>
+                            <TableCell className="text-center">{Number(day.suggestions)}</TableCell>
+                            <TableCell className="text-center text-green-400">{Number(day.accepted)}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2 min-w-[100px]">
+                                <Progress value={rate} className="h-1.5 flex-1" />
+                                <span className="text-xs font-medium w-10 text-right">{rate}%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {diff > 0 ? (
+                                <ArrowUpRight className="h-4 w-4 text-green-400 inline" />
+                              ) : diff < 0 ? (
+                                <ArrowDownRight className="h-4 w-4 text-red-400 inline" />
+                              ) : (
+                                <Minus className="h-4 w-4 text-zinc-500 inline" />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* How It Works Tab */}
         <TabsContent value="guide" className="space-y-4">
           <Card>
@@ -368,9 +737,16 @@ export default function AgentAssist() {
               </div>
 
               <div className="border-t pt-4">
-                <h3 className="font-semibold text-sm mb-2">Coaching Templates</h3>
+                <h3 className="font-semibold text-sm mb-2">Starter Templates</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Click <strong>"Load Starter Templates"</strong> on the Templates tab to instantly create 14 pre-built coaching templates covering objection handling (Already Paid, Not My Debt, Can't Afford It, Stop Calling, Need to Think), compliance (Mini-Miranda, FDCPA, Recording Notice), closing (Payment Plans, Settlements), rapport building, de-escalation, and negotiation tactics.
+                </p>
+              </div>
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold text-sm mb-2">Coaching Report</h3>
                 <p className="text-xs text-muted-foreground">
-                  Create templates with <strong>trigger keywords</strong>. When those keywords appear in a call transcript, the template's pre-written suggestions are automatically surfaced alongside AI-generated ones. This ensures compliance scripts and proven objection handlers are always available.
+                  The <strong>Coaching Report</strong> tab provides supervisor analytics: agent performance rankings by acceptance rate, template effectiveness scores, suggestion type breakdowns, training gap identification (agents with &lt;40% acceptance in specific categories), sentiment distribution, and a 30-day engagement trend.
                 </p>
               </div>
             </CardContent>
