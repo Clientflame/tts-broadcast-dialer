@@ -279,6 +279,440 @@ QUESTIONS:
       },
     ];
   }),
+
+  // ─── One-Click Deploy ──────────────────────────────────────────────
+
+  /** Check if Voice AI Bridge can be deployed (SSH creds configured) */
+  getDeployStatus: protectedProcedure.query(async () => {
+    const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+    const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+    const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+    const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+    return {
+      sshConfigured: !!(host && sshUser && sshPassword),
+      openaiConfigured: !!openaiKey,
+      host: host || null,
+      sshUser: sshUser || null,
+      canDeploy: !!(host && sshUser && sshPassword && openaiKey),
+    };
+  }),
+
+  /** Deploy Voice AI Bridge to FreePBX via SSH (one-click) */
+  deploy: protectedProcedure
+    .input(z.object({
+      ariUser: z.string().default("voice-ai"),
+      ariPassword: z.string().default("voice-ai-secret"),
+      bridgePort: z.number().default(8089),
+      openaiModel: z.string().default("gpt-4o-realtime-preview"),
+      dashboardOrigin: z.string().url(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+
+      if (!host || !sshUser || !sshPassword) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "SSH credentials not configured. Go to Settings to configure FreePBX connection." });
+      }
+      if (!openaiKey) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "OpenAI API key not configured. Go to Settings to add your API key." });
+      }
+
+      // Read the bridge Python script and config files
+      const path = await import("path");
+      const fs = await import("fs");
+      let bridgeScript: string;
+      let dialplanConf: string;
+      let requirementsTxt: string;
+      let serviceFile: string;
+
+      try {
+        const bridgeDir = path.resolve(process.cwd(), "voice-ai-bridge");
+        bridgeScript = fs.readFileSync(path.join(bridgeDir, "voice_ai_bridge.py"), "utf-8");
+        dialplanConf = fs.readFileSync(path.join(bridgeDir, "extensions_voice_ai.conf"), "utf-8");
+        requirementsTxt = fs.readFileSync(path.join(bridgeDir, "requirements.txt"), "utf-8");
+        serviceFile = fs.readFileSync(path.join(bridgeDir, "voice-ai-bridge.service"), "utf-8");
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not read Voice AI Bridge files" });
+      }
+
+      // Build the .env file
+      const dashboardApiUrl = `${input.dashboardOrigin}/api/pbx`;
+      // Get PBX agent API key for dashboard auth
+      const agents = await db.getPbxAgents();
+      const activeAgent = agents.find((a: any) => a.status === "online" || a.lastHeartbeat);
+      const dashboardApiKey = activeAgent?.apiKey || "";
+
+      const envContent = [
+        `OPENAI_API_KEY=${openaiKey}`,
+        `DASHBOARD_API_URL=${dashboardApiUrl}`,
+        `DASHBOARD_API_KEY=${dashboardApiKey}`,
+        `ARI_URL=http://localhost:8088`,
+        `ARI_USER=${input.ariUser}`,
+        `ARI_PASSWORD=${input.ariPassword}`,
+        `ARI_APP=voice-ai-bridge`,
+        `BRIDGE_PORT=${input.bridgePort}`,
+        `OPENAI_MODEL=${input.openaiModel}`,
+        `LOG_LEVEL=INFO`,
+      ].join("\n");
+
+      const { Client: SSHClient } = await import("ssh2");
+      const logs: string[] = [];
+      const log = (msg: string) => { logs.push(`[${new Date().toISOString()}] ${msg}`); };
+
+      return new Promise<{ success: boolean; logs: string[]; error?: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          log("ERROR: Connection timeout (120s)");
+          resolve({ success: false, logs, error: "Connection timeout" });
+        }, 120000);
+
+        conn.on("ready", () => {
+          log("SSH connected to " + host);
+
+          // Chain of SSH commands for deployment
+          const commands = [
+            // Step 1: Create directory
+            { label: "Creating /opt/voice-ai-bridge directory", cmd: "mkdir -p /opt/voice-ai-bridge" },
+            // Step 2: Install Python dependencies
+            { label: "Installing Python dependencies", cmd: "pip3 install aiohttp websockets 2>&1 || pip install aiohttp websockets 2>&1" },
+            // Step 3: Write the bridge script
+            { label: "Deploying voice_ai_bridge.py", cmd: `cat > /opt/voice-ai-bridge/voice_ai_bridge.py << 'BRIDGE_SCRIPT_EOF'\n${bridgeScript}\nBRIDGE_SCRIPT_EOF` },
+            // Step 4: Write requirements.txt
+            { label: "Writing requirements.txt", cmd: `cat > /opt/voice-ai-bridge/requirements.txt << 'REQ_EOF'\n${requirementsTxt}\nREQ_EOF` },
+            // Step 5: Write .env file
+            { label: "Configuring environment", cmd: `cat > /opt/voice-ai-bridge/.env << 'ENV_EOF'\n${envContent}\nENV_EOF` },
+            // Step 6: Write systemd service
+            { label: "Creating systemd service", cmd: `cat > /etc/systemd/system/voice-ai-bridge.service << 'SVC_EOF'\n${serviceFile}\nSVC_EOF` },
+            // Step 7: Configure Asterisk ARI
+            { label: "Configuring Asterisk ARI user", cmd: `grep -q "\\[${input.ariUser}\\]" /etc/asterisk/ari.conf 2>/dev/null || cat >> /etc/asterisk/ari.conf << 'ARI_EOF'\n\n[${input.ariUser}]\ntype=user\nread_only=no\npassword=${input.ariPassword}\nARI_EOF` },
+            // Step 8: Enable ARI in Asterisk HTTP
+            { label: "Enabling ARI HTTP", cmd: `grep -q "^enabled=yes" /etc/asterisk/http.conf 2>/dev/null || (sed -i 's/^enabled=no/enabled=yes/' /etc/asterisk/http.conf 2>/dev/null; sed -i 's/^;enabled=yes/enabled=yes/' /etc/asterisk/http.conf 2>/dev/null)` },
+            // Step 9: Deploy dialplan
+            { label: "Deploying Voice AI dialplan", cmd: `cat > /etc/asterisk/extensions_voice_ai.conf << 'DIAL_EOF'\n${dialplanConf}\nDIAL_EOF\ngrep -q "#include extensions_voice_ai.conf" /etc/asterisk/extensions_custom.conf 2>/dev/null || echo '#include extensions_voice_ai.conf' >> /etc/asterisk/extensions_custom.conf` },
+            // Step 10: Reload Asterisk
+            { label: "Reloading Asterisk configuration", cmd: "asterisk -rx 'core reload' 2>&1 || true" },
+            // Step 11: Start the service
+            { label: "Starting Voice AI Bridge service", cmd: "systemctl daemon-reload && systemctl enable voice-ai-bridge && systemctl restart voice-ai-bridge" },
+            // Step 12: Verify
+            { label: "Verifying deployment", cmd: "sleep 2 && systemctl is-active voice-ai-bridge && echo 'SERVICE_RUNNING' || echo 'SERVICE_FAILED'" },
+          ];
+
+          let cmdIndex = 0;
+          const runNext = () => {
+            if (cmdIndex >= commands.length) {
+              clearTimeout(timeout);
+              conn.end();
+              log("Deployment complete!");
+              resolve({ success: true, logs });
+              return;
+            }
+            const { label, cmd } = commands[cmdIndex];
+            log(`Step ${cmdIndex + 1}/${commands.length}: ${label}...`);
+            conn.exec(cmd, (err, stream) => {
+              if (err) {
+                log(`ERROR: ${err.message}`);
+                cmdIndex++;
+                runNext();
+                return;
+              }
+              let output = "";
+              stream.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.on("close", (code: number) => {
+                if (output.trim()) {
+                  // Truncate long outputs
+                  const trimmed = output.trim().slice(0, 500);
+                  log(`  Output: ${trimmed}`);
+                }
+                if (code !== 0 && code !== null) {
+                  log(`  Warning: exit code ${code}`);
+                }
+                cmdIndex++;
+                runNext();
+              });
+            });
+          };
+          runNext();
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          let errorMsg = err.message;
+          if (errorMsg.includes("Authentication")) errorMsg = "Authentication failed — check SSH credentials in Settings";
+          else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "Connection refused — SSH not running on FreePBX";
+          else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "Connection timed out — check FreePBX host";
+          log(`ERROR: ${errorMsg}`);
+          resolve({ success: false, logs, error: errorMsg });
+        });
+
+        conn.connect({
+          host,
+          port: 22,
+          username: sshUser,
+          password: sshPassword,
+          readyTimeout: 15000,
+        });
+      }).then(async (result) => {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          action: "voiceai.deploy",
+          resource: "voice-ai-bridge",
+          details: { success: result.success, error: result.error, steps: result.logs.length },
+        });
+        return result;
+      });
+    }),
+
+  /** Check bridge health on the FreePBX server via SSH */
+  checkBridgeHealth: protectedProcedure.mutation(async ({ ctx }) => {
+    const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+    const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+    const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+
+    if (!host || !sshUser || !sshPassword) {
+      return { status: "error" as const, message: "SSH not configured" };
+    }
+
+    const { Client: SSHClient } = await import("ssh2");
+    return new Promise<{ status: string; message: string; details?: any }>((resolve) => {
+      const conn = new SSHClient();
+      const timeout = setTimeout(() => {
+        conn.end();
+        resolve({ status: "error", message: "SSH timeout" });
+      }, 15000);
+
+      conn.on("ready", () => {
+        // Check systemd service status + try health endpoint
+        const cmd = `systemctl is-active voice-ai-bridge 2>/dev/null && echo 'ACTIVE' || echo 'INACTIVE'; curl -s http://localhost:8089/health 2>/dev/null || echo '{"status":"unreachable"}'`;
+        conn.exec(cmd, (err, stream) => {
+          if (err) {
+            clearTimeout(timeout);
+            conn.end();
+            resolve({ status: "error", message: err.message });
+            return;
+          }
+          let output = "";
+          stream.on("data", (data: Buffer) => { output += data.toString(); });
+          stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+          stream.on("close", () => {
+            clearTimeout(timeout);
+            conn.end();
+            const lines = output.trim().split("\n");
+            const serviceActive = lines[0]?.includes("ACTIVE");
+            let healthData: any = null;
+            try {
+              const jsonLine = lines.slice(1).join("\n");
+              healthData = JSON.parse(jsonLine);
+            } catch {}
+
+            if (serviceActive && healthData?.status === "running") {
+              resolve({
+                status: "running",
+                message: "Voice AI Bridge is running",
+                details: healthData,
+              });
+            } else if (serviceActive) {
+              resolve({
+                status: "starting",
+                message: "Service is active but health endpoint not responding yet",
+              });
+            } else {
+              resolve({
+                status: "stopped",
+                message: "Voice AI Bridge service is not running",
+              });
+            }
+          });
+        });
+      });
+
+      conn.on("error", (err: Error) => {
+        clearTimeout(timeout);
+        resolve({ status: "error", message: err.message });
+      });
+
+      conn.connect({
+        host,
+        port: 22,
+        username: sshUser,
+        password: sshPassword,
+        readyTimeout: 10000,
+      });
+    });
+  }),
+
+  /** Redeploy / update the bridge (overwrites existing files) */
+  redeploy: protectedProcedure
+    .input(z.object({ dashboardOrigin: z.string().url() }))
+    .mutation(async ({ ctx, input }) => {
+      // Reuse the deploy logic - it overwrites files
+      // This is a convenience wrapper
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+
+      if (!host || !sshUser || !sshPassword || !openaiKey) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Missing SSH or OpenAI credentials" });
+      }
+
+      const { Client: SSHClient } = await import("ssh2");
+      const path = await import("path");
+      const fs = await import("fs");
+
+      let bridgeScript: string;
+      try {
+        bridgeScript = fs.readFileSync(path.resolve(process.cwd(), "voice-ai-bridge", "voice_ai_bridge.py"), "utf-8");
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not read bridge script" });
+      }
+
+      return new Promise<{ success: boolean; message: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({ success: false, message: "SSH timeout" });
+        }, 60000);
+
+        conn.on("ready", () => {
+          const cmd = `cat > /opt/voice-ai-bridge/voice_ai_bridge.py << 'BRIDGE_SCRIPT_EOF'\n${bridgeScript}\nBRIDGE_SCRIPT_EOF\nsystemctl restart voice-ai-bridge 2>&1`;
+          conn.exec(cmd, (err, stream) => {
+            if (err) {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: false, message: err.message });
+              return;
+            }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", (code: number) => {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({
+                success: code === 0 || code === null,
+                message: code === 0 || code === null ? "Bridge updated and restarted" : `Update failed: ${output.trim().slice(0, 200)}`,
+              });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          resolve({ success: false, message: err.message });
+        });
+
+        conn.connect({ host, port: 22, username: sshUser, password: sshPassword, readyTimeout: 10000 });
+      }).then(async (result) => {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          action: "voiceai.redeploy",
+          resource: "voice-ai-bridge",
+          details: { success: result.success },
+        });
+        return result;
+      });
+    }),
+
+  /** Get bridge service logs from FreePBX */
+  getBridgeLogs: protectedProcedure
+    .input(z.object({ lines: z.number().min(10).max(500).default(50) }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+
+      if (!host || !sshUser || !sshPassword) {
+        return { success: false, logs: "SSH not configured" };
+      }
+
+      const { Client: SSHClient } = await import("ssh2");
+      const numLines = input?.lines ?? 50;
+
+      return new Promise<{ success: boolean; logs: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({ success: false, logs: "SSH timeout" });
+        }, 15000);
+
+        conn.on("ready", () => {
+          conn.exec(`journalctl -u voice-ai-bridge -n ${numLines} --no-pager 2>&1`, (err, stream) => {
+            if (err) {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: false, logs: err.message });
+              return;
+            }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", () => {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: true, logs: output.trim() });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          resolve({ success: false, logs: err.message });
+        });
+
+        conn.connect({ host, port: 22, username: sshUser, password: sshPassword, readyTimeout: 10000 });
+      });
+    }),
+
+  /** Test call with Voice AI - originates a test call to a phone number */
+  testCall: protectedProcedure
+    .input(z.object({
+      phoneNumber: z.string().min(10).max(15),
+      promptId: z.number(),
+      callerId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Queue a test call with voice_ai routing
+      const prompt = await db.getVoiceAiPrompt(input.promptId, ctx.user.id);
+      if (!prompt) throw new TRPCError({ code: "NOT_FOUND", message: "Prompt not found" });
+
+      // Use the call queue system to originate the test call
+      const callerId = input.callerId || "0000000000";
+      const result = await db.enqueueCall({
+        userId: ctx.user.id,
+        campaignId: 0, // test call
+        phoneNumber: input.phoneNumber,
+        channel: `SIP/${input.phoneNumber}`,
+        context: "voice-ai-handler",
+        callerIdStr: callerId,
+        audioUrl: "", // Voice AI doesn't use pre-recorded audio
+        priority: 1,
+        variables: {
+          routingMode: "voice_ai",
+          voiceAiPromptId: String(input.promptId),
+          contactName: "Test Call",
+        },
+      });
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "voiceai.testCall",
+        resource: "voice-ai-bridge",
+        details: { phoneNumber: input.phoneNumber, promptId: input.promptId },
+      });
+
+      return {
+        success: true,
+        message: `Test call queued to ${input.phoneNumber} using prompt "${prompt.name}"`,
+        queueId: result?.id,
+      };
+    }),
 });
 
 // ─── Supervisor Router ────────────────────────────────────────────────────────

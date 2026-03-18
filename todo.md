@@ -588,3 +588,10 @@
 - [x] Supervisor Report: Template effectiveness ranking (which templates get used and accepted most)
 - [x] Supervisor Report: Time-series trend chart for coaching engagement over time
 - [x] Supervisor Report: Agent comparison table with sortable metrics
+- [x] Voice AI Bridge: One-click deploy from web dashboard (no manual SSH)
+- [x] Voice AI Bridge: Backend SSH deployment service (install Python deps, deploy bridge script, create systemd service)
+- [x] Voice AI Bridge: Deploy UI with live progress logs and status indicators
+- [x] Voice AI Bridge: Bridge health check endpoint and status monitoring
+- [x] Voice AI Bridge: One-click test call button to verify end-to-end Voice AI flow
+- [x] Voice AI Bridge: Auto-configure Asterisk ARI and dialplan for Voice AI routing
+- [x] Voice AI Bridge: Redeploy/update button for pushing new versions

@@ -17,6 +17,7 @@ import {
   Bot, Plus, Pencil, Trash2, Copy, Play, Pause, MessageSquare,
   BarChart3, Clock, Phone, PhoneOff, Zap, Settings, Loader2,
   ChevronDown, ChevronUp, Mic, Volume2, Brain, Shield, ArrowRight,
+  Rocket, RefreshCw, CheckCircle2, XCircle, Terminal, Upload, Server,
 } from "lucide-react";
 
 const OPENAI_VOICES = [
@@ -248,7 +249,7 @@ export default function VoiceAi() {
             <TabsTrigger value="prompts" className="gap-1.5"><Brain className="h-4 w-4" />Prompts</TabsTrigger>
             <TabsTrigger value="conversations" className="gap-1.5"><MessageSquare className="h-4 w-4" />Conversations</TabsTrigger>
             <TabsTrigger value="analytics" className="gap-1.5"><BarChart3 className="h-4 w-4" />Analytics</TabsTrigger>
-            <TabsTrigger value="setup" className="gap-1.5"><Settings className="h-4 w-4" />Setup Guide</TabsTrigger>
+            <TabsTrigger value="deploy" className="gap-1.5"><Rocket className="h-4 w-4" />Deploy & Manage</TabsTrigger>
           </TabsList>
 
           {/* ─── Prompts Tab ─── */}
@@ -494,112 +495,8 @@ export default function VoiceAi() {
             </div>
           </TabsContent>
 
-          {/* ─── Setup Guide Tab ─── */}
-          <TabsContent value="setup" className="mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bot className="h-5 w-5 text-primary" />
-                  Voice AI Setup Guide
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">1</div>
-                    <div>
-                      <h3 className="font-semibold">Install the Voice AI Bridge on FreePBX</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        SSH into your FreePBX server and deploy the Python bridge service. This connects Asterisk ARI to OpenAI's gpt-realtime API.
-                      </p>
-                      <pre className="mt-2 p-3 rounded-lg bg-muted text-xs overflow-x-auto font-mono">
-{`# SSH into FreePBX
-ssh root@45.77.75.198
-
-# Clone the bridge service
-cd /opt
-git clone <your-repo>/voice-ai-bridge
-cd voice-ai-bridge
-
-# Install dependencies
-pip3 install -r requirements.txt
-
-# Configure
-cp .env.example .env
-# Edit .env with your OpenAI API key and dashboard URL
-
-# Start the service
-systemctl enable voice-ai-bridge
-systemctl start voice-ai-bridge`}
-                      </pre>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">2</div>
-                    <div>
-                      <h3 className="font-semibold">Configure Asterisk Dialplan</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Add the Voice AI context to your Asterisk dialplan. When a call is routed to voice_ai mode, it will be handled by the bridge via ARI.
-                      </p>
-                      <pre className="mt-2 p-3 rounded-lg bg-muted text-xs overflow-x-auto font-mono">
-{`; In /etc/asterisk/extensions_custom.conf
-[voice-ai-handler]
-exten => s,1,NoOp(Voice AI Bridge - Prompt: \${VOICE_AI_PROMPT_ID})
- same => n,Answer()
- same => n,Wait(0.5)
- same => n,Stasis(voice-ai-bridge,\${VOICE_AI_PROMPT_ID},\${CONTACT_NAME},\${CONTACT_PHONE},\${CAMPAIGN_NAME})
- same => n,Hangup()`}
-                      </pre>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">3</div>
-                    <div>
-                      <h3 className="font-semibold">Create a Voice AI Prompt</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Go to the Prompts tab above and create a prompt. Configure the system instructions, voice, temperature, and function calling tools.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">4</div>
-                    <div>
-                      <h3 className="font-semibold">Assign to a Campaign</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Edit any campaign and set the Routing Mode to "Voice AI". Select the prompt you created. When the campaign runs, the AI will handle all conversations.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">5</div>
-                    <div>
-                      <h3 className="font-semibold">Monitor & Optimize</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Review conversation transcripts, sentiment scores, and outcomes in the Conversations and Analytics tabs. Adjust your prompts based on real call data.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
-                  <h4 className="font-semibold text-amber-600 flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    Compliance Notes
-                  </h4>
-                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                    <li>• Some jurisdictions require disclosure that the caller is an AI</li>
-                    <li>• Always include opt-out instructions in your prompts</li>
-                    <li>• Record and store conversations per your retention policy</li>
-                    <li>• Test thoroughly before running production campaigns</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* ─── Deploy & Manage Tab ─── */}
+          <DeployTab />
         </Tabs>
 
         {/* ─── Prompt Create/Edit Dialog ─── */}
@@ -788,5 +685,379 @@ exten => s,1,NoOp(Voice AI Bridge - Prompt: \${VOICE_AI_PROMPT_ID})
         </Dialog>
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Deploy & Manage Tab Component ──────────────────────────────────────────
+
+function DeployTab() {
+  const [deploying, setDeploying] = useState(false);
+  const [deployLogs, setDeployLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [bridgeLogs, setBridgeLogs] = useState<string>("");
+  const [showBridgeLogs, setShowBridgeLogs] = useState(false);
+  const [testPhone, setTestPhone] = useState("");
+  const [testPromptId, setTestPromptId] = useState<string>("");
+
+  const deployStatus = trpc.voiceAi.getDeployStatus.useQuery();
+  const bridgeHealth = trpc.voiceAi.checkBridgeHealth.useMutation();
+  const deployMut = trpc.voiceAi.deploy.useMutation();
+  const redeployMut = trpc.voiceAi.redeploy.useMutation();
+  const getBridgeLogsMut = trpc.voiceAi.getBridgeLogs.useMutation();
+  const testCallMut = trpc.voiceAi.testCall.useMutation();
+  const prompts = trpc.voiceAi.listPrompts.useQuery();
+
+  const [healthStatus, setHealthStatus] = useState<{ status: string; message: string; details?: any } | null>(null);
+  const [checkingHealth, setCheckingHealth] = useState(false);
+
+  const handleCheckHealth = async () => {
+    setCheckingHealth(true);
+    try {
+      const result = await bridgeHealth.mutateAsync();
+      setHealthStatus(result);
+    } catch (e: any) {
+      setHealthStatus({ status: "error", message: e.message });
+    } finally {
+      setCheckingHealth(false);
+    }
+  };
+
+  const handleDeploy = async () => {
+    setDeploying(true);
+    setDeployLogs([]);
+    setShowLogs(true);
+    try {
+      const result = await deployMut.mutateAsync({
+        dashboardOrigin: window.location.origin,
+      });
+      setDeployLogs(result.logs);
+      if (result.success) {
+        toast.success("Voice AI Bridge deployed successfully!");
+        handleCheckHealth();
+      } else {
+        toast.error(result.error || "Deployment failed");
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+      setDeployLogs(prev => [...prev, `ERROR: ${e.message}`]);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleRedeploy = async () => {
+    setDeploying(true);
+    try {
+      const result = await redeployMut.mutateAsync({
+        dashboardOrigin: window.location.origin,
+      });
+      if (result.success) {
+        toast.success(result.message);
+        handleCheckHealth();
+      } else {
+        toast.error(result.message);
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const handleViewLogs = async () => {
+    try {
+      const result = await getBridgeLogsMut.mutateAsync({ lines: 100 });
+      setBridgeLogs(result.logs);
+      setShowBridgeLogs(true);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleTestCall = async () => {
+    if (!testPhone || !testPromptId) {
+      toast.error("Enter a phone number and select a prompt");
+      return;
+    }
+    try {
+      const result = await testCallMut.mutateAsync({
+        phoneNumber: testPhone,
+        promptId: Number(testPromptId),
+      });
+      if (result.success) {
+        toast.success(result.message);
+      }
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const statusIcon = (ok: boolean) => ok
+    ? <CheckCircle2 className="h-4 w-4 text-green-500" />
+    : <XCircle className="h-4 w-4 text-red-400" />;
+
+  const healthColor = healthStatus?.status === "running" ? "text-green-500" : healthStatus?.status === "starting" ? "text-amber-500" : "text-red-400";
+
+  return (
+    <TabsContent value="deploy" className="mt-4 space-y-4">
+      {/* Prerequisites Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Server className="h-5 w-5 text-primary" />
+            Deployment Prerequisites
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
+              {statusIcon(!!deployStatus.data?.sshConfigured)}
+              <div>
+                <p className="text-sm font-medium">FreePBX SSH</p>
+                <p className="text-xs text-muted-foreground">
+                  {deployStatus.data?.sshConfigured
+                    ? `Connected to ${deployStatus.data.host}`
+                    : "Not configured — go to Settings"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
+              {statusIcon(!!deployStatus.data?.openaiConfigured)}
+              <div>
+                <p className="text-sm font-medium">OpenAI API Key</p>
+                <p className="text-xs text-muted-foreground">
+                  {deployStatus.data?.openaiConfigured
+                    ? "API key configured"
+                    : "Not configured — go to Settings"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Deploy & Status Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Rocket className="h-5 w-5 text-primary" />
+              Voice AI Bridge
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {healthStatus && (
+                <Badge variant={healthStatus.status === "running" ? "default" : "secondary"} className="gap-1">
+                  <span className={`h-2 w-2 rounded-full ${healthStatus.status === "running" ? "bg-green-400 animate-pulse" : healthStatus.status === "starting" ? "bg-amber-400" : "bg-red-400"}`} />
+                  {healthStatus.status === "running" ? "Running" : healthStatus.status === "starting" ? "Starting" : healthStatus.status === "stopped" ? "Stopped" : "Unknown"}
+                </Badge>
+              )}
+              <Button size="sm" variant="outline" onClick={handleCheckHealth} disabled={checkingHealth}>
+                {checkingHealth ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Check Status
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Deploy the Voice AI Bridge to your FreePBX server with one click. This installs the Python bridge service,
+            configures Asterisk ARI, sets up the dialplan, and starts the systemd service automatically.
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={handleDeploy}
+              disabled={deploying || !deployStatus.data?.canDeploy}
+              className="gap-2"
+            >
+              {deploying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {deploying ? "Deploying..." : "Deploy to FreePBX"}
+            </Button>
+            <Button variant="outline" onClick={handleRedeploy} disabled={deploying} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Update & Restart
+            </Button>
+            <Button variant="outline" onClick={handleViewLogs} disabled={getBridgeLogsMut.isPending} className="gap-2">
+              <Terminal className="h-4 w-4" />
+              View Logs
+            </Button>
+          </div>
+
+          {!deployStatus.data?.canDeploy && (
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm">
+              <p className="font-medium text-amber-600">Cannot deploy yet</p>
+              <p className="text-muted-foreground mt-1">
+                {!deployStatus.data?.sshConfigured && "FreePBX SSH credentials are not configured. "}
+                {!deployStatus.data?.openaiConfigured && "OpenAI API key is not set. "}
+                Go to the Settings page to configure these.
+              </p>
+            </div>
+          )}
+
+          {/* Deployment Logs */}
+          {showLogs && deployLogs.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium flex items-center gap-1.5">
+                  <Terminal className="h-4 w-4" />
+                  Deployment Log
+                </h4>
+                <Button size="sm" variant="ghost" onClick={() => setShowLogs(false)}>Hide</Button>
+              </div>
+              <div className="bg-zinc-950 text-green-400 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs space-y-0.5">
+                {deployLogs.map((line, i) => (
+                  <div key={i} className={line.includes("ERROR") ? "text-red-400" : line.includes("Warning") ? "text-amber-400" : ""}>
+                    {line}
+                  </div>
+                ))}
+                {deploying && (
+                  <div className="flex items-center gap-2 text-blue-400">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Running...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bridge Logs */}
+          {showBridgeLogs && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium flex items-center gap-1.5">
+                  <Terminal className="h-4 w-4" />
+                  Service Logs (journalctl)
+                </h4>
+                <Button size="sm" variant="ghost" onClick={() => setShowBridgeLogs(false)}>Hide</Button>
+              </div>
+              <div className="bg-zinc-950 text-zinc-300 rounded-lg p-4 max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
+                {bridgeLogs || "No logs available"}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Test Call Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Phone className="h-5 w-5 text-primary" />
+            Test Call
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Send a test call to verify the Voice AI Bridge is working end-to-end. The AI will call the number and use the selected prompt.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs">Phone Number</Label>
+              <Input
+                placeholder="e.g. 5551234567"
+                value={testPhone}
+                onChange={e => setTestPhone(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Voice AI Prompt</Label>
+              <Select value={testPromptId} onValueChange={setTestPromptId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select prompt" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(prompts.data || []).map((p: any) => (
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                onClick={handleTestCall}
+                disabled={testCallMut.isPending || !testPhone || !testPromptId}
+                className="gap-2 w-full"
+              >
+                {testCallMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                Send Test Call
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* What Gets Deployed Card */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Settings className="h-5 w-5 text-primary" />
+            What Gets Deployed
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">1</div>
+                <div>
+                  <p className="text-sm font-medium">Python Bridge Service</p>
+                  <p className="text-xs text-muted-foreground">Installed to /opt/voice-ai-bridge/ with systemd auto-start</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">2</div>
+                <div>
+                  <p className="text-sm font-medium">Asterisk ARI Configuration</p>
+                  <p className="text-xs text-muted-foreground">ARI user created in ari.conf, HTTP enabled</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">3</div>
+                <div>
+                  <p className="text-sm font-medium">Voice AI Dialplan</p>
+                  <p className="text-xs text-muted-foreground">extensions_voice_ai.conf with Stasis routing</p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">4</div>
+                <div>
+                  <p className="text-sm font-medium">Environment Configuration</p>
+                  <p className="text-xs text-muted-foreground">OpenAI key, ARI credentials, dashboard API URL</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">5</div>
+                <div>
+                  <p className="text-sm font-medium">Python Dependencies</p>
+                  <p className="text-xs text-muted-foreground">aiohttp, websockets installed via pip3</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">6</div>
+                <div>
+                  <p className="text-sm font-medium">Asterisk Reload</p>
+                  <p className="text-xs text-muted-foreground">Core reload to pick up new dialplan and ARI config</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5">
+            <h4 className="font-semibold text-amber-600 flex items-center gap-2 text-sm">
+              <Shield className="h-4 w-4" />
+              Compliance Notes
+            </h4>
+            <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <li>Some jurisdictions require disclosure that the caller is an AI</li>
+              <li>Always include opt-out instructions in your prompts</li>
+              <li>Record and store conversations per your retention policy</li>
+              <li>Test thoroughly before running production campaigns</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
   );
 }

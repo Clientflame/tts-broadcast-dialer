@@ -1,0 +1,18 @@
+[Unit]
+Description=Voice AI Bridge - Asterisk ARI to OpenAI Realtime
+After=network.target asterisk.service
+Wants=asterisk.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/voice-ai-bridge
+EnvironmentFile=/opt/voice-ai-bridge/.env
+ExecStart=/usr/bin/python3 /opt/voice-ai-bridge/voice_ai_bridge.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
