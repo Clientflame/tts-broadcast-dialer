@@ -58,7 +58,7 @@ export function createVoiceAiInstallerRouter(): Router {
     // ARI defaults
     const ariUser = "voice-ai";
     const ariPassword = "voice-ai-secret";
-    const bridgePort = 8089;
+    const bridgePort = 8090;
     const openaiModel = "gpt-4o-realtime-preview";
 
     // Build the .env content
@@ -73,7 +73,7 @@ export function createVoiceAiInstallerRouter(): Router {
       `BRIDGE_PORT=${bridgePort}`,
       `OPENAI_MODEL=${openaiModel}`,
       `LOG_LEVEL=INFO`,
-    ].join("\\n");
+    ].join("\n");
 
     // Generate the installer script
     const script = generateVoiceAiInstaller(
