@@ -165,8 +165,40 @@ echo "Installing to \$INSTALL_DIR ..."
 
 # Install Python dependencies
 echo "Installing Python dependencies..."
-pip3 install aiohttp websockets 2>&1 | tail -1 || pip install aiohttp websockets 2>&1 | tail -1 || true
-echo "[OK] Python dependencies installed"
+
+# Try multiple pip install methods (FreePBX/CentOS can have quirky Python setups)
+if command -v pip3 &> /dev/null; then
+  pip3 install --break-system-packages aiohttp websockets 2>/dev/null || pip3 install aiohttp websockets 2>&1 || true
+elif command -v pip &> /dev/null; then
+  pip install --break-system-packages aiohttp websockets 2>/dev/null || pip install aiohttp websockets 2>&1 || true
+else
+  python3 -m ensurepip --default-pip 2>/dev/null || true
+  python3 -m pip install --break-system-packages aiohttp websockets 2>/dev/null || python3 -m pip install aiohttp websockets 2>&1 || true
+fi
+
+# Verify critical modules are importable
+if ! python3 -c "import websockets" 2>/dev/null; then
+  echo "[WARN] websockets module not found, trying alternative install..."
+  python3 -m pip install --user websockets aiohttp 2>&1 || true
+  # Also try installing to system site-packages directly
+  SITE_PACKAGES=\$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/usr/lib/python3/dist-packages")
+  pip3 install --target="\$SITE_PACKAGES" websockets aiohttp 2>/dev/null || true
+fi
+
+if ! python3 -c "import aiohttp" 2>/dev/null; then
+  echo "[WARN] aiohttp module not found, trying alternative install..."
+  SITE_PACKAGES=\$(python3 -c "import site; print(site.getsitepackages()[0])" 2>/dev/null || echo "/usr/lib/python3/dist-packages")
+  pip3 install --target="\$SITE_PACKAGES" aiohttp 2>/dev/null || true
+fi
+
+# Final verification
+if python3 -c "import websockets, aiohttp" 2>/dev/null; then
+  echo "[OK] Python dependencies installed and verified"
+else
+  echo "[ERROR] Could not install Python dependencies. Install manually:"
+  echo "  pip3 install aiohttp websockets"
+  echo "  Then restart: systemctl restart voice-ai-bridge"
+fi
 
 # Write the Voice AI Bridge script
 cat > "\$INSTALL_DIR/voice_ai_bridge.py" << 'BRIDGE_SCRIPT_EOF'`);
