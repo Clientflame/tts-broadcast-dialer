@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,26 @@ function RadialGauge({
 // ─── Agent Status Card ──────────────────────────────────────────────────────
 
 function AgentCard({ agent }: { agent: any }) {
+  const [supervisorMode, setSupervisorMode] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<number | null>(null);
+
+  const monitorMutation = trpc.supervisor.monitor.useMutation({
+    onSuccess: (data) => { setSupervisorMode("monitor"); setActionId(data.actionId ?? null); toast.success(data.message); },
+    onError: (e) => toast.error(e.message),
+  });
+  const whisperMutation = trpc.supervisor.whisper.useMutation({
+    onSuccess: (data) => { setSupervisorMode("whisper"); setActionId(data.actionId ?? null); toast.success(data.message); },
+    onError: (e) => toast.error(e.message),
+  });
+  const bargeMutation = trpc.supervisor.barge.useMutation({
+    onSuccess: (data) => { setSupervisorMode("barge"); setActionId(data.actionId ?? null); toast.success(data.message); },
+    onError: (e) => toast.error(e.message),
+  });
+  const stopMutation = trpc.supervisor.stop.useMutation({
+    onSuccess: () => { setSupervisorMode(null); setActionId(null); toast.success("Supervision ended"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const statusConfig: Record<string, { icon: any; color: string; bg: string }> = {
     available: { icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10 border-emerald-500/30" },
     on_call: { icon: PhoneCall, color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/30" },
@@ -159,6 +180,9 @@ function AgentCard({ agent }: { agent: any }) {
     return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
   };
 
+  const isOnCall = agent.status === "on_call";
+  const isSupervising = supervisorMode !== null;
+
   return (
     <div className={`rounded-lg border p-3 ${config.bg} transition-all duration-300`}>
       <div className="flex items-center gap-2 mb-1">
@@ -177,6 +201,60 @@ function AgentCard({ agent }: { agent: any }) {
           {agent.status.replace("_", " ")}
         </Badge>
       </div>
+      {/* Supervisor Controls — visible when agent is on a call */}
+      {isOnCall && (
+        <div className="mt-2 pt-2 border-t border-border/50">
+          {isSupervising ? (
+            <div className="flex items-center gap-1">
+              <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-amber-500 animate-pulse">
+                {supervisorMode === "monitor" ? "\uD83D\uDD0A Listening" : supervisorMode === "whisper" ? "\uD83D\uDDE3\uFE0F Whispering" : "\uD83D\uDCDE Barged"}
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 px-1.5 text-[10px] text-destructive hover:text-destructive"
+                onClick={() => actionId && stopMutation.mutate({ actionId })}
+                disabled={stopMutation.isPending}
+              >
+                Stop
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[10px] flex-1"
+                onClick={() => monitorMutation.mutate({ agentId: agent.id })}
+                disabled={monitorMutation.isPending}
+                title="Silent Monitor — listen to both sides"
+              >
+                <Headphones className="h-3 w-3 mr-0.5" />Listen
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[10px] flex-1"
+                onClick={() => whisperMutation.mutate({ agentId: agent.id })}
+                disabled={whisperMutation.isPending}
+                title="Whisper — speak privately to agent"
+              >
+                <Mic className="h-3 w-3 mr-0.5" />Whisper
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[10px] flex-1"
+                onClick={() => bargeMutation.mutate({ agentId: agent.id })}
+                disabled={bargeMutation.isPending}
+                title="Barge — join as 3-way conference"
+              >
+                <PhoneCall className="h-3 w-3 mr-0.5" />Barge
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

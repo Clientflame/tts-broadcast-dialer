@@ -100,6 +100,9 @@ type FormState = {
   ivrPaymentEnabled: boolean; ivrPaymentDigit: string; ivrPaymentAmount: number;
   // Timezone enforcement
   tzEnforcementEnabled: boolean; tcpaStartHour: number; tcpaEndHour: number;
+  // Routing mode & Voice AI
+  routingMode: "broadcast" | "live_agent" | "hybrid" | "voice_ai";
+  voiceAiPromptId: number;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -116,6 +119,7 @@ const DEFAULT_FORM: FormState = {
   amdEnabled: false, voicemailAudioId: 0, voicemailMessage: "",
   ivrPaymentEnabled: false, ivrPaymentDigit: "1", ivrPaymentAmount: 0,
   tzEnforcementEnabled: true, tcpaStartHour: 8, tcpaEndHour: 21,
+  routingMode: "broadcast", voiceAiPromptId: 0,
 };
 
 function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
@@ -278,6 +282,39 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Routing Mode */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Routing Mode</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { value: "broadcast", label: "Broadcast", desc: "Play TTS/audio" },
+                { value: "live_agent", label: "Live Agent", desc: "Transfer to agent" },
+                { value: "hybrid", label: "Hybrid", desc: "TTS then agent" },
+                { value: "voice_ai", label: "Voice AI", desc: "AI conversation" },
+              ].map(mode => (
+                <button key={mode.value} type="button" className={`p-2 rounded-lg border text-center text-sm transition-colors ${
+                  form.routingMode === mode.value ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                }`} onClick={() => setForm(p => ({ ...p, routingMode: mode.value as any }))}>
+                  <div className="font-medium">{mode.label}</div>
+                  <div className="text-xs text-muted-foreground">{mode.desc}</div>
+                </button>
+              ))}
+            </div>
+            {form.routingMode === "voice_ai" && (
+              <div className="mt-3 p-3 rounded-lg border border-primary/20 bg-primary/5">
+                <p className="text-sm text-muted-foreground mb-2">Select a Voice AI prompt to control the AI agent's behavior during calls.</p>
+                <Label>Voice AI Prompt</Label>
+                <Select value={form.voiceAiPromptId ? String(form.voiceAiPromptId) : ""} onValueChange={v => setForm(p => ({ ...p, voiceAiPromptId: parseInt(v) }))}>
+                  <SelectTrigger><SelectValue placeholder="Select a Voice AI prompt" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">None (use default)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Create and manage prompts in the Voice AI section.</p>
+              </div>
+            )}
           </div>
 
           {/* Audio Mode Selection */}
@@ -979,6 +1016,8 @@ export default function Campaigns() {
       tzEnforcementEnabled: (c as any).tzEnforcementEnabled !== false,
       tcpaStartHour: (c as any).tcpaStartHour ?? 8,
       tcpaEndHour: (c as any).tcpaEndHour ?? 21,
+      routingMode: (c as any).routingMode || "broadcast",
+      voiceAiPromptId: (c as any).voiceAiPromptId || 0,
     });
     setEditOpen(true);
   };
@@ -1033,9 +1072,11 @@ export default function Campaigns() {
       tzEnforcementEnabled: editForm.tzEnforcementEnabled ? 1 : 0,
       tcpaStartHour: editForm.tzEnforcementEnabled ? editForm.tcpaStartHour : undefined,
       tcpaEndHour: editForm.tzEnforcementEnabled ? editForm.tcpaEndHour : undefined,
+      // Routing mode & Voice AI
+      routingMode: editForm.routingMode,
+      voiceAiPromptId: editForm.routingMode === "voice_ai" ? editForm.voiceAiPromptId || undefined : undefined,
     });
   };
-
   const submitCreate = () => {
     createCampaign.mutate({
       name: form.name,
@@ -1084,6 +1125,9 @@ export default function Campaigns() {
       tzEnforcementEnabled: form.tzEnforcementEnabled ? 1 : 0,
       tcpaStartHour: form.tzEnforcementEnabled ? form.tcpaStartHour : undefined,
       tcpaEndHour: form.tzEnforcementEnabled ? form.tcpaEndHour : undefined,
+      // Routing mode & Voice AI
+      routingMode: form.routingMode,
+      voiceAiPromptId: form.routingMode === "voice_ai" ? form.voiceAiPromptId || undefined : undefined,
     });
   };
 

@@ -532,3 +532,36 @@
 - [x] Recording retention policy with compliance tracking (consent, retainUntil)
 - [x] 303 tests passing (18 test files)
 - [x] Bug: Wallboard page not working - fixed: SQL queries used 'result' column instead of 'status', and GROUP BY had only_full_group_by compatibility issue
+- [ ] Future: Regulation F 7-in-7 call frequency capping
+- [ ] Future: DNC scrubbing integration (Federal + State registries)
+- [ ] Future: STIR/SHAKEN attestation monitoring dashboard
+- [ ] Future: Consent management system (TCPA one-to-one)
+- [ ] Future: Compliance audit report generator (PDF export)
+- [x] Future: Supervisor whisper, barge, and silent monitor
+- [ ] Future: Skill-based routing with weighted distribution
+- [ ] Future: Agent disposition workflow with required fields
+- [ ] Future: Callback scheduling with agent reservation
+- [ ] Future: Campaign segmentation with account scoring
+- [ ] Future: Real-time speech analytics (post-call transcription + sentiment)
+- [ ] Future: Agent performance scorecards
+- [ ] Future: Predictive best-time-to-call engine
+- [ ] Future: Campaign A/B testing with statistical significance
+- [ ] Future: Multi-channel outreach orchestration (SMS + Email)
+- [ ] Future: Multi-tenant architecture
+- [ ] Future: Failover and high availability
+- [ ] Future: Webhook and CRM integration framework
+- [ ] Future: Real-time cost tracking and budget alerts
+- [ ] Future: Call quality monitoring (MOS scoring)
+- [x] Future: Conversational Voice AI integration (OpenAI gpt-realtime + Asterisk ARI)
+- [x] Voice AI: Python bridge service (Asterisk ARI + OpenAI Realtime API)
+- [x] Voice AI: Database schema for conversations, transcripts, AI dispositions
+- [x] Voice AI: Campaign routing mode "voice_ai" in dialer engine
+- [x] Voice AI: Prompt editor UI for configuring AI agent personality/script
+- [x] Voice AI: Function calling tools (account lookup, payment, callback, dispute, transfer)
+- [x] Voice AI: Compliance guardrails (Mini-Miranda, AI disclosure, escalation triggers)
+- [x] Voice AI: Conversation transcript viewer in call logs
+- [x] Voice AI: Voice AI Analytics dashboard
+- [x] Supervisor: Silent Monitor (listen to both sides)
+- [x] Supervisor: Whisper mode (speak privately to agent)
+- [x] Supervisor: Barge mode (join as 3-way conference)
+- [x] Supervisor: Wallboard integration with one-click supervision controls

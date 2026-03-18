@@ -18,6 +18,7 @@ import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getS
 import { validatePassword } from "../shared/passwordValidation";
 import { liveAgentRouter } from "./routers/live-agents";
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
+import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -490,6 +491,9 @@ export const appRouter = router({
       tzEnforcementEnabled: z.number().min(0).max(1).optional(),
       tcpaStartHour: z.number().min(0).max(23).optional(),
       tcpaEndHour: z.number().min(0).max(23).optional(),
+      // Routing mode & Voice AI
+      routingMode: z.enum(["broadcast", "live_agent", "hybrid", "voice_ai"]).optional(),
+      voiceAiPromptId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -546,6 +550,9 @@ export const appRouter = router({
       tzEnforcementEnabled: z.number().min(0).max(1).optional(),
       tcpaStartHour: z.number().min(0).max(23).optional(),
       tcpaEndHour: z.number().min(0).max(23).optional(),
+      // Routing mode & Voice AI
+      routingMode: z.enum(["broadcast", "live_agent", "hybrid", "voice_ai"]).optional(),
+      voiceAiPromptId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id, ctx.user.id);
@@ -2153,6 +2160,8 @@ Return ONLY the message text, nothing else.`;
   liveAgents: liveAgentRouter,
   recordings: recordingsRouter,
   wallboard: wallboardRouter,
+  voiceAi: voiceAiRouter,
+  supervisor: supervisorRouter,
 
   onboarding: router({
     /** Get onboarding status — checks which setup steps are completed */

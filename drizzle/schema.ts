@@ -134,7 +134,8 @@ export const campaigns = mysqlTable("campaigns", {
   callerIdNumber: varchar("callerIdNumber", { length: 20 }),
   callerIdName: varchar("callerIdName", { length: 100 }),
   // Call routing mode
-  routingMode: mysqlEnum("routingMode", ["broadcast", "live_agent", "hybrid"]).default("broadcast").notNull(),
+  routingMode: mysqlEnum("routingMode", ["broadcast", "live_agent", "hybrid", "voice_ai"]).default("broadcast").notNull(),
+  voiceAiPromptId: int("voiceAiPromptId"), // FK to voice_ai_prompts
   // Power dialer settings
   powerDialRatio: varchar("powerDialRatio", { length: 10 }).default("1.2"), // e.g., 1.2 = 20% overdial
   wrapUpTimeSecs: int("wrapUpTimeSecs").default(30).notNull(), // seconds for agent wrap-up
@@ -666,3 +667,105 @@ export const callRecordings = mysqlTable("call_recordings", {
 
 export type CallRecording = typeof callRecordings.$inferSelect;
 export type InsertCallRecording = typeof callRecordings.$inferInsert;
+
+
+// ─── Voice AI Prompts ─────────────────────────────────────────────────────────
+export const voiceAiPrompts = mysqlTable("voice_ai_prompts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  systemPrompt: text("systemPrompt").notNull(),
+  openingMessage: text("openingMessage"), // What the AI says first
+  voice: varchar("voice", { length: 50 }).default("coral").notNull(), // OpenAI Realtime voice
+  language: varchar("language", { length: 10 }).default("en").notNull(),
+  temperature: varchar("temperature", { length: 10 }).default("0.7"),
+  maxTurnDuration: int("maxTurnDuration").default(120).notNull(), // seconds
+  maxConversationDuration: int("maxConversationDuration").default(300).notNull(), // seconds
+  silenceTimeout: int("silenceTimeout").default(10).notNull(), // seconds before hang up on silence
+  // Compliance
+  requireAiDisclosure: int("requireAiDisclosure").default(1).notNull(),
+  requireMiniMiranda: int("requireMiniMiranda").default(0).notNull(),
+  miniMirandaText: text("miniMirandaText"),
+  // Escalation triggers
+  escalateOnDtmf: varchar("escalateOnDtmf", { length: 5 }).default("#"),
+  escalateKeywords: json("escalateKeywords").$type<string[]>(), // e.g., ["speak to human", "supervisor", "lawyer"]
+  // Function tools enabled
+  enabledTools: json("enabledTools").$type<string[]>(), // e.g., ["account_lookup", "schedule_callback", "process_payment"]
+  isDefault: int("isDefault").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type VoiceAiPrompt = typeof voiceAiPrompts.$inferSelect;
+export type InsertVoiceAiPrompt = typeof voiceAiPrompts.$inferInsert;
+
+// ─── Voice AI Conversations ───────────────────────────────────────────────────
+export const voiceAiConversations = mysqlTable("voice_ai_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  campaignId: int("campaignId"),
+  callLogId: int("callLogId"),
+  callQueueId: int("callQueueId"),
+  promptId: int("promptId"), // which voice AI prompt was used
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  contactName: varchar("contactName", { length: 200 }),
+  // Conversation data
+  transcript: json("transcript").$type<Array<{ role: string; content: string; timestamp: number; functionCall?: { name: string; args: string; result?: string } }>>(),
+  summary: text("summary"), // AI-generated conversation summary
+  sentiment: varchar("sentiment", { length: 20 }), // positive, neutral, negative, hostile
+  // Outcomes
+  disposition: mysqlEnum("disposition", [
+    "completed",
+    "promise_to_pay",
+    "payment_made",
+    "callback_scheduled",
+    "dispute_filed",
+    "wrong_number",
+    "refused",
+    "escalated_to_agent",
+    "no_response",
+    "voicemail",
+    "hung_up",
+    "error",
+  ]).default("completed"),
+  paymentAmount: varchar("paymentAmount", { length: 20 }),
+  callbackDate: bigint("callbackDate", { mode: "number" }),
+  // Function calls made during conversation
+  functionCalls: json("functionCalls").$type<Array<{ name: string; args: Record<string, unknown>; result: unknown; timestamp: number }>>(),
+  // Metrics
+  turnCount: int("turnCount").default(0), // number of back-and-forth turns
+  aiTokensUsed: int("aiTokensUsed").default(0),
+  estimatedCost: varchar("estimatedCost", { length: 20 }), // e.g., "0.45"
+  duration: int("duration"), // seconds
+  // Status
+  status: mysqlEnum("status", ["active", "completed", "error", "escalated"]).default("active").notNull(),
+  errorMessage: text("errorMessage"),
+  // Escalation
+  escalatedToAgentId: int("escalatedToAgentId"),
+  escalationReason: varchar("escalationReason", { length: 255 }),
+  // Timestamps
+  startedAt: bigint("startedAt", { mode: "number" }),
+  endedAt: bigint("endedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VoiceAiConversation = typeof voiceAiConversations.$inferSelect;
+export type InsertVoiceAiConversation = typeof voiceAiConversations.$inferInsert;
+
+// ─── Supervisor Actions (Whisper/Barge/Monitor) ───────────────────────────────
+export const supervisorActions = mysqlTable("supervisor_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // supervisor user ID
+  agentId: int("agentId").notNull(), // target agent
+  callLogId: int("callLogId"),
+  actionType: mysqlEnum("actionType", ["monitor", "whisper", "barge", "disconnect"]).notNull(),
+  channel: varchar("channel", { length: 255 }), // Asterisk channel being supervised
+  startedAt: bigint("startedAt", { mode: "number" }),
+  endedAt: bigint("endedAt", { mode: "number" }),
+  duration: int("duration"), // seconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SupervisorAction = typeof supervisorActions.$inferSelect;
+export type InsertSupervisorAction = typeof supervisorActions.$inferInsert;

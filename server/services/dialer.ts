@@ -283,6 +283,7 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
       return;
     }
   }
+  // voice_ai mode: no agent check needed — AI handles all calls
 
   // Get pending calls
   let pendingCalls = await db.getPendingCallLogs(campaignId);
@@ -589,6 +590,18 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
       return;
     }
     // hybrid mode: if no agent, fall through to broadcast TTS
+  } else if (routingMode === "voice_ai") {
+    variables.ROUTING_MODE = "voice_ai";
+    // Voice AI bridge on FreePBX will handle the conversation
+    // Pass the campaign's voice AI prompt ID so the bridge knows which prompt to use
+    const voiceAiPromptId = (active.campaign as any).voiceAiPromptId;
+    if (voiceAiPromptId) {
+      variables.VOICE_AI_PROMPT_ID = String(voiceAiPromptId);
+    }
+    // Contact info for personalization
+    variables.CONTACT_NAME = callLog.contactName || "";
+    variables.CONTACT_PHONE = callLog.phoneNumber;
+    variables.CAMPAIGN_NAME = active.campaign.name;
   }
 
   // Enqueue into call_queue for PBX agent to pick up

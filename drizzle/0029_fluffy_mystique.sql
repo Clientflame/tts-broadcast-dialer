@@ -1,0 +1,70 @@
+CREATE TABLE `supervisor_actions` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`agentId` int NOT NULL,
+	`callLogId` int,
+	`actionType` enum('monitor','whisper','barge','disconnect') NOT NULL,
+	`channel` varchar(255),
+	`startedAt` bigint,
+	`endedAt` bigint,
+	`duration` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `supervisor_actions_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `voice_ai_conversations` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`campaignId` int,
+	`callLogId` int,
+	`callQueueId` int,
+	`promptId` int,
+	`phoneNumber` varchar(20) NOT NULL,
+	`contactName` varchar(200),
+	`transcript` json,
+	`summary` text,
+	`sentiment` varchar(20),
+	`disposition` enum('completed','promise_to_pay','payment_made','callback_scheduled','dispute_filed','wrong_number','refused','escalated_to_agent','no_response','voicemail','hung_up','error') DEFAULT 'completed',
+	`paymentAmount` varchar(20),
+	`callbackDate` bigint,
+	`functionCalls` json,
+	`turnCount` int DEFAULT 0,
+	`aiTokensUsed` int DEFAULT 0,
+	`estimatedCost` varchar(20),
+	`duration` int,
+	`status` enum('active','completed','error','escalated') NOT NULL DEFAULT 'active',
+	`errorMessage` text,
+	`escalatedToAgentId` int,
+	`escalationReason` varchar(255),
+	`startedAt` bigint,
+	`endedAt` bigint,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `voice_ai_conversations_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `voice_ai_prompts` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`userId` int NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`description` text,
+	`systemPrompt` text NOT NULL,
+	`openingMessage` text,
+	`voice` varchar(50) NOT NULL DEFAULT 'coral',
+	`language` varchar(10) NOT NULL DEFAULT 'en',
+	`temperature` varchar(10) DEFAULT '0.7',
+	`maxTurnDuration` int NOT NULL DEFAULT 120,
+	`maxConversationDuration` int NOT NULL DEFAULT 300,
+	`silenceTimeout` int NOT NULL DEFAULT 10,
+	`requireAiDisclosure` int NOT NULL DEFAULT 1,
+	`requireMiniMiranda` int NOT NULL DEFAULT 0,
+	`miniMirandaText` text,
+	`escalateOnDtmf` varchar(5) DEFAULT '#',
+	`escalateKeywords` json,
+	`enabledTools` json,
+	`isDefault` int NOT NULL DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `voice_ai_prompts_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+ALTER TABLE `campaigns` MODIFY COLUMN `routingMode` enum('broadcast','live_agent','hybrid','voice_ai') NOT NULL DEFAULT 'broadcast';

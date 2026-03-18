@@ -204,6 +204,20 @@
       "when": 1773716881667,
       "tag": "0028_solid_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "5",
+      "when": 1773867993607,
+      "tag": "0029_fluffy_mystique",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1773868415528,
+      "tag": "0030_massive_captain_britain",
+      "breakpoints": true
     }
   ]
 }

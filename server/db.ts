@@ -21,6 +21,10 @@ import {
   throttleHistory, InsertThrottleHistory,
   appSettings, InsertAppSetting,
   payments, InsertPayment,
+  voiceAiPrompts, InsertVoiceAiPrompt,
+  voiceAiConversations, InsertVoiceAiConversation,
+  supervisorActions, InsertSupervisorAction,
+  liveAgents,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2534,3 +2538,118 @@ export async function getAllPayments(userId: number, limit = 100) {
   if (!db) return [];
   return db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt)).limit(limit);
 }
+
+
+// ─── Voice AI Prompts ─────────────────────────────────────────────────────────
+export async function getVoiceAiPrompts(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(voiceAiPrompts).where(eq(voiceAiPrompts.userId, userId)).orderBy(desc(voiceAiPrompts.createdAt));
+}
+
+export async function getVoiceAiPrompt(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(voiceAiPrompts).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+  return row ?? null;
+}
+
+export async function createVoiceAiPrompt(data: InsertVoiceAiPrompt) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(voiceAiPrompts).values(data).$returningId();
+  return result;
+}
+
+export async function updateVoiceAiPrompt(id: number, userId: number, data: Partial<InsertVoiceAiPrompt>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(voiceAiPrompts).set(data).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+}
+
+export async function deleteVoiceAiPrompt(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(voiceAiPrompts).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+}
+
+// ─── Voice AI Conversations ───────────────────────────────────────────────────
+export async function getVoiceAiConversations(userId: number, opts?: { campaignId?: number; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(voiceAiConversations.userId, userId)];
+  if (opts?.campaignId) conditions.push(eq(voiceAiConversations.campaignId, opts.campaignId));
+  return db.select().from(voiceAiConversations)
+    .where(and(...conditions))
+    .orderBy(desc(voiceAiConversations.createdAt))
+    .limit(opts?.limit ?? 50)
+    .offset(opts?.offset ?? 0);
+}
+
+export async function getVoiceAiConversation(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(voiceAiConversations).where(and(eq(voiceAiConversations.id, id), eq(voiceAiConversations.userId, userId)));
+  return row ?? null;
+}
+
+export async function createVoiceAiConversation(data: InsertVoiceAiConversation) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(voiceAiConversations).values(data).$returningId();
+  return result;
+}
+
+export async function updateVoiceAiConversation(id: number, data: Partial<InsertVoiceAiConversation>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(voiceAiConversations).set(data).where(eq(voiceAiConversations.id, id));
+}
+
+export async function getVoiceAiStats(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [stats] = await db.select({
+    total: sql<number>`count(*)`,
+    completed: sql<number>`sum(case when ${voiceAiConversations.status} = 'completed' then 1 else 0 end)`,
+    escalated: sql<number>`sum(case when ${voiceAiConversations.status} = 'escalated' then 1 else 0 end)`,
+    errors: sql<number>`sum(case when ${voiceAiConversations.status} = 'error' then 1 else 0 end)`,
+    avgDuration: sql<number>`coalesce(avg(${voiceAiConversations.duration}), 0)`,
+    avgTurns: sql<number>`coalesce(avg(${voiceAiConversations.turnCount}), 0)`,
+    promiseToPay: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'promise_to_pay' then 1 else 0 end)`,
+    paymentMade: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'payment_made' then 1 else 0 end)`,
+    callbackScheduled: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'callback_scheduled' then 1 else 0 end)`,
+    disputed: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'dispute_filed' then 1 else 0 end)`,
+  }).from(voiceAiConversations).where(eq(voiceAiConversations.userId, userId));
+  return stats;
+}
+
+// ─── Supervisor Actions ───────────────────────────────────────────────────────
+export async function createSupervisorAction(data: InsertSupervisorAction) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(supervisorActions).values(data).$returningId();
+  return result;
+}
+
+export async function updateSupervisorAction(id: number, data: Partial<InsertSupervisorAction>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(supervisorActions).set(data).where(eq(supervisorActions.id, id));
+}
+
+export async function getRecentSupervisorActions(userId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(supervisorActions).where(eq(supervisorActions.userId, userId)).orderBy(desc(supervisorActions.createdAt)).limit(limit);
+}
+
+
+// ─── Get Single Live Agent ────────────────────────────────────────────────────
+export async function getLiveAgent(agentId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(liveAgents).where(and(eq(liveAgents.id, agentId), eq(liveAgents.userId, userId)));
+  return row ?? null;
+}
+

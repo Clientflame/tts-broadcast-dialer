@@ -1,0 +1,792 @@
+import { useState, useMemo } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import {
+  Bot, Plus, Pencil, Trash2, Copy, Play, Pause, MessageSquare,
+  BarChart3, Clock, Phone, PhoneOff, Zap, Settings, Loader2,
+  ChevronDown, ChevronUp, Mic, Volume2, Brain, Shield, ArrowRight,
+} from "lucide-react";
+
+const OPENAI_VOICES = [
+  { id: "alloy", label: "Alloy", desc: "Neutral, balanced" },
+  { id: "echo", label: "Echo", desc: "Warm, conversational" },
+  { id: "fable", label: "Fable", desc: "Expressive, dynamic" },
+  { id: "onyx", label: "Onyx", desc: "Deep, authoritative" },
+  { id: "nova", label: "Nova", desc: "Friendly, upbeat" },
+  { id: "shimmer", label: "Shimmer", desc: "Clear, professional" },
+];
+
+const DEFAULT_SYSTEM_PROMPT = `You are a professional AI phone agent for {{company_name}}. You are calling {{contact_name}} regarding their account.
+
+Your goals:
+1. Greet the contact politely and identify yourself
+2. Deliver the campaign message clearly and naturally
+3. Answer any questions the contact may have
+4. If requested, transfer to a live agent
+5. Always remain professional, empathetic, and compliant
+
+Rules:
+- Never reveal you are an AI unless directly asked
+- Do not discuss topics outside the scope of the call
+- If the contact asks to be removed from the call list, acknowledge and end the call
+- Keep responses concise — this is a phone call, not a chat`;
+
+const FUNCTION_TEMPLATES = [
+  { name: "transfer_to_agent", description: "Transfer the call to a live human agent", parameters: '{"reason": "string"}' },
+  { name: "schedule_callback", description: "Schedule a callback at a specific time", parameters: '{"datetime": "string", "phone": "string"}' },
+  { name: "opt_out", description: "Add the contact to the Do Not Call list", parameters: '{"reason": "string"}' },
+  { name: "collect_payment", description: "Initiate payment collection", parameters: '{"amount": "number", "method": "string"}' },
+  { name: "verify_identity", description: "Verify the contact's identity", parameters: '{"last4ssn": "string", "dob": "string"}' },
+  { name: "send_sms", description: "Send an SMS to the contact", parameters: '{"message": "string"}' },
+];
+
+type PromptForm = {
+  name: string;
+  systemPrompt: string;
+  voice: string;
+  temperature: number;
+  maxTokens: number;
+  interruptionThreshold: number;
+  silenceTimeout: number;
+  maxDuration: number;
+  enableFunctions: boolean;
+  functions: string;
+  complianceMode: string;
+  greeting: string;
+  fallbackMessage: string;
+  endCallPhrases: string;
+  isActive: boolean;
+};
+
+const DEFAULT_PROMPT: PromptForm = {
+  name: "",
+  systemPrompt: DEFAULT_SYSTEM_PROMPT,
+  voice: "nova",
+  temperature: 0.7,
+  maxTokens: 150,
+  interruptionThreshold: 0.5,
+  silenceTimeout: 5,
+  maxDuration: 300,
+  enableFunctions: true,
+  functions: JSON.stringify(FUNCTION_TEMPLATES.slice(0, 3), null, 2),
+  complianceMode: "standard",
+  greeting: "Hello, this is {{agent_name}} calling from {{company_name}}. Am I speaking with {{contact_name}}?",
+  fallbackMessage: "I'm sorry, I didn't quite catch that. Could you please repeat?",
+  endCallPhrases: "goodbye, hang up, stop calling, remove me, do not call",
+  isActive: true,
+};
+
+export default function VoiceAi() {
+  const [activeTab, setActiveTab] = useState("prompts");
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [editingPromptId, setEditingPromptId] = useState<number | null>(null);
+  const [form, setForm] = useState<PromptForm>(DEFAULT_PROMPT);
+  const [expandedConvo, setExpandedConvo] = useState<number | null>(null);
+
+  // tRPC queries
+  const prompts = trpc.voiceAi.listPrompts.useQuery();
+  const conversations = trpc.voiceAi.listConversations.useQuery({ limit: 50 });
+  const analytics = trpc.voiceAi.getStats.useQuery();
+  const utils = trpc.useUtils();
+
+  const createPrompt = trpc.voiceAi.createPrompt.useMutation({
+    onSuccess: () => { utils.voiceAi.listPrompts.invalidate(); setPromptDialogOpen(false); toast.success("Prompt created"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updatePrompt = trpc.voiceAi.updatePrompt.useMutation({
+    onSuccess: () => { utils.voiceAi.listPrompts.invalidate(); setPromptDialogOpen(false); toast.success("Prompt updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deletePrompt = trpc.voiceAi.deletePrompt.useMutation({
+    onSuccess: () => { utils.voiceAi.listPrompts.invalidate(); toast.success("Prompt deleted"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const openCreateDialog = () => {
+    setEditingPromptId(null);
+    setForm(DEFAULT_PROMPT);
+    setPromptDialogOpen(true);
+  };
+
+  const openEditDialog = (p: any) => {
+    setEditingPromptId(p.id);
+    setForm({
+      name: p.name,
+      systemPrompt: p.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+      voice: p.voice || "nova",
+      temperature: p.temperature ?? 0.7,
+      maxTokens: p.maxTokens ?? 150,
+      interruptionThreshold: p.interruptionThreshold ?? 0.5,
+      silenceTimeout: p.silenceTimeout ?? 5,
+      maxDuration: p.maxDuration ?? 300,
+      enableFunctions: !!p.enableFunctions,
+      functions: p.functions || "[]",
+      complianceMode: p.complianceMode || "standard",
+      greeting: p.greeting || "",
+      fallbackMessage: p.fallbackMessage || "",
+      endCallPhrases: p.endCallPhrases || "",
+      isActive: p.isActive !== false,
+    });
+    setPromptDialogOpen(true);
+  };
+
+  const submitPrompt = () => {
+    const data = {
+      name: form.name,
+      systemPrompt: form.systemPrompt,
+      voice: form.voice,
+      temperature: String(form.temperature),
+      openingMessage: form.greeting || undefined,
+      silenceTimeout: form.silenceTimeout,
+      maxConversationDuration: form.maxDuration,
+      requireAiDisclosure: form.complianceMode !== "standard" ? 1 : 0,
+      enabledTools: form.enableFunctions ? ["transfer_to_agent", "schedule_callback"] : undefined,
+      isDefault: form.isActive ? 0 : 0,
+    };
+    if (editingPromptId) {
+      updatePrompt.mutate({ id: editingPromptId, ...data });
+    } else {
+      createPrompt.mutate(data);
+    }
+  };
+
+  const formatDuration = (secs: number) => {
+    if (!secs) return "0s";
+    if (secs < 60) return `${secs}s`;
+    return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  };
+
+  const rawStats = analytics.data || {
+    total: 0, completed: 0, escalated: 0, errors: 0, avgDuration: 0, avgTurns: 0,
+    promiseToPay: 0, paymentMade: 0, callbackScheduled: 0, disputed: 0,
+  };
+  const analyticsData = {
+    totalConversations: rawStats.total || 0,
+    avgDuration: rawStats.avgDuration || 0,
+    successRate: rawStats.total ? ((rawStats.completed || 0) / rawStats.total) * 100 : 0,
+    transferRate: rawStats.total ? ((rawStats.escalated || 0) / rawStats.total) * 100 : 0,
+    avgSentiment: 0,
+    totalCost: 0,
+    avgTurns: rawStats.avgTurns || 0,
+    promiseToPay: rawStats.promiseToPay || 0,
+    paymentMade: rawStats.paymentMade || 0,
+    callbackScheduled: rawStats.callbackScheduled || 0,
+    disputed: rawStats.disputed || 0,
+  };
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Bot className="h-6 w-6 text-primary" />
+              Voice AI
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Manage AI conversation prompts, view transcripts, and track performance
+            </p>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Phone className="h-4 w-4" />
+                <span>Total Calls</span>
+              </div>
+              <p className="text-2xl font-bold mt-1">{analyticsData.totalConversations}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>Avg Duration</span>
+              </div>
+              <p className="text-2xl font-bold mt-1">{formatDuration(Math.round(analyticsData.avgDuration))}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Zap className="h-4 w-4" />
+                <span>Success Rate</span>
+              </div>
+              <p className="text-2xl font-bold mt-1">{analyticsData.successRate.toFixed(1)}%</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ArrowRight className="h-4 w-4" />
+                <span>Transfer Rate</span>
+              </div>
+              <p className="text-2xl font-bold mt-1">{analyticsData.transferRate.toFixed(1)}%</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="prompts" className="gap-1.5"><Brain className="h-4 w-4" />Prompts</TabsTrigger>
+            <TabsTrigger value="conversations" className="gap-1.5"><MessageSquare className="h-4 w-4" />Conversations</TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-1.5"><BarChart3 className="h-4 w-4" />Analytics</TabsTrigger>
+            <TabsTrigger value="setup" className="gap-1.5"><Settings className="h-4 w-4" />Setup Guide</TabsTrigger>
+          </TabsList>
+
+          {/* ─── Prompts Tab ─── */}
+          <TabsContent value="prompts" className="mt-4">
+            <div className="flex justify-between items-center mb-4">
+              <p className="text-sm text-muted-foreground">
+                Configure AI agent behavior, voice, and function calling for each campaign type.
+              </p>
+              <Button onClick={openCreateDialog} className="gap-1.5">
+                <Plus className="h-4 w-4" />New Prompt
+              </Button>
+            </div>
+
+            {prompts.isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !prompts.data?.length ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Bot className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                  <h3 className="font-semibold text-lg">No Voice AI Prompts</h3>
+                  <p className="text-muted-foreground mt-1 mb-4">Create your first prompt to configure how the AI agent behaves during calls.</p>
+                  <Button onClick={openCreateDialog} className="gap-1.5"><Plus className="h-4 w-4" />Create Prompt</Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {prompts.data.map((p: any) => (
+                  <Card key={p.id} className={!p.isActive ? "opacity-60" : ""}>
+                    <CardContent className="pt-4 pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold truncate">{p.name}</h3>
+                            <Badge variant={p.isActive ? "default" : "secondary"} className="text-xs">
+                              {p.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs gap-1">
+                              <Volume2 className="h-3 w-3" />{p.voice || "nova"}
+                            </Badge>
+                            {p.complianceMode && (
+                              <Badge variant="outline" className="text-xs gap-1">
+                                <Shield className="h-3 w-3" />{p.complianceMode}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{p.systemPrompt?.slice(0, 200)}...</p>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                            <span>Temp: {p.temperature ?? 0.7}</span>
+                            <span>Max tokens: {p.maxTokens ?? 150}</span>
+                            <span>Max duration: {formatDuration(p.maxDuration ?? 300)}</span>
+                            {p.enableFunctions ? <span className="text-primary">Functions enabled</span> : null}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 ml-4">
+                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(p)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => {
+                            openCreateDialog();
+                            setTimeout(() => {
+                              setForm(prev => ({
+                                ...prev,
+                                name: `${p.name} (copy)`,
+                                systemPrompt: p.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+                                voice: p.voice || "nova",
+                                temperature: p.temperature ?? 0.7,
+                                maxTokens: p.maxTokens ?? 150,
+                                functions: p.functions || "[]",
+                              }));
+                            }, 0);
+                          }}>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => {
+                            if (confirm("Delete this prompt?")) deletePrompt.mutate({ id: p.id });
+                          }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ─── Conversations Tab ─── */}
+          <TabsContent value="conversations" className="mt-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Review AI conversation transcripts, sentiment analysis, and call outcomes.
+            </p>
+
+            {conversations.isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !conversations.data?.length ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <MessageSquare className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                  <h3 className="font-semibold text-lg">No Conversations Yet</h3>
+                  <p className="text-muted-foreground mt-1">Voice AI conversations will appear here once campaigns start running.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {conversations.data.map((c: any) => (
+                  <Card key={c.id} className="cursor-pointer" onClick={() => setExpandedConvo(expandedConvo === c.id ? null : c.id)}>
+                    <CardContent className="pt-3 pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                            c.outcome === "success" ? "bg-emerald-500/10 text-emerald-500" :
+                            c.outcome === "transferred" ? "bg-blue-500/10 text-blue-500" :
+                            c.outcome === "voicemail" ? "bg-amber-500/10 text-amber-500" :
+                            "bg-muted text-muted-foreground"
+                          }`}>
+                            {c.outcome === "success" ? <Zap className="h-4 w-4" /> :
+                             c.outcome === "transferred" ? <ArrowRight className="h-4 w-4" /> :
+                             <Phone className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{c.contactName || c.contactPhone}</span>
+                              <Badge variant="outline" className="text-[10px]">{c.outcome || "unknown"}</Badge>
+                              {c.sentimentScore != null && (
+                                <Badge variant={c.sentimentScore > 0.3 ? "default" : c.sentimentScore < -0.3 ? "destructive" : "secondary"} className="text-[10px]">
+                                  {c.sentimentScore > 0.3 ? "Positive" : c.sentimentScore < -0.3 ? "Negative" : "Neutral"}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                              <span>{new Date(c.startedAt).toLocaleString()}</span>
+                              <span>{formatDuration(c.durationSecs || 0)}</span>
+                              <span>{c.turnCount || 0} turns</span>
+                            </div>
+                          </div>
+                        </div>
+                        {expandedConvo === c.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </div>
+
+                      {/* Expanded Transcript */}
+                      {expandedConvo === c.id && c.transcript && (
+                        <div className="mt-4 pt-3 border-t space-y-2">
+                          <h4 className="text-sm font-medium mb-2">Transcript</h4>
+                          <div className="space-y-2 max-h-80 overflow-y-auto">
+                            {(typeof c.transcript === "string" ? JSON.parse(c.transcript) : c.transcript).map((turn: any, i: number) => (
+                              <div key={i} className={`flex gap-2 ${turn.role === "assistant" ? "" : "flex-row-reverse"}`}>
+                                <div className={`rounded-lg px-3 py-2 text-sm max-w-[80%] ${
+                                  turn.role === "assistant"
+                                    ? "bg-primary/10 text-foreground"
+                                    : "bg-muted text-foreground"
+                                }`}>
+                                  <div className="text-[10px] text-muted-foreground mb-0.5">
+                                    {turn.role === "assistant" ? "AI Agent" : "Contact"}
+                                  </div>
+                                  {turn.content}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {c.functionCalls && (
+                            <div className="mt-3 pt-2 border-t">
+                              <h4 className="text-sm font-medium mb-1">Function Calls</h4>
+                              <div className="space-y-1">
+                                {(typeof c.functionCalls === "string" ? JSON.parse(c.functionCalls) : c.functionCalls).map((fc: any, i: number) => (
+                                  <div key={i} className="text-xs bg-muted/50 rounded px-2 py-1 font-mono">
+                                    {fc.name}({JSON.stringify(fc.arguments)}) → {fc.result || "ok"}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {c.summary && (
+                            <div className="mt-2 pt-2 border-t">
+                              <h4 className="text-sm font-medium mb-1">AI Summary</h4>
+                              <p className="text-sm text-muted-foreground">{c.summary}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ─── Analytics Tab ─── */}
+          <TabsContent value="analytics" className="mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader><CardTitle className="text-base">Conversation Outcomes</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {[
+                      { label: "Successful", value: analyticsData.successRate, color: "bg-emerald-500" },
+                      { label: "Transferred", value: analyticsData.transferRate, color: "bg-blue-500" },
+                      { label: "No Answer", value: Math.max(0, 100 - analyticsData.successRate - analyticsData.transferRate), color: "bg-muted" },
+                    ].map(item => (
+                      <div key={item.label}>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span>{item.label}</span>
+                          <span className="font-medium">{item.value.toFixed(1)}%</span>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${item.value}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle className="text-base">Performance Metrics</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Avg Sentiment Score</span>
+                      <span className="font-medium">{analyticsData.avgSentiment.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Avg Call Duration</span>
+                      <span className="font-medium">{formatDuration(Math.round(analyticsData.avgDuration))}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Total Conversations</span>
+                      <span className="font-medium">{analyticsData.totalConversations}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Est. Cost Savings</span>
+                      <span className="font-medium text-emerald-500">
+                        ${((analyticsData.totalConversations * 1.5) - analyticsData.totalCost).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ─── Setup Guide Tab ─── */}
+          <TabsContent value="setup" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-primary" />
+                  Voice AI Setup Guide
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">1</div>
+                    <div>
+                      <h3 className="font-semibold">Install the Voice AI Bridge on FreePBX</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        SSH into your FreePBX server and deploy the Python bridge service. This connects Asterisk ARI to OpenAI's gpt-realtime API.
+                      </p>
+                      <pre className="mt-2 p-3 rounded-lg bg-muted text-xs overflow-x-auto font-mono">
+{`# SSH into FreePBX
+ssh root@45.77.75.198
+
+# Clone the bridge service
+cd /opt
+git clone <your-repo>/voice-ai-bridge
+cd voice-ai-bridge
+
+# Install dependencies
+pip3 install -r requirements.txt
+
+# Configure
+cp .env.example .env
+# Edit .env with your OpenAI API key and dashboard URL
+
+# Start the service
+systemctl enable voice-ai-bridge
+systemctl start voice-ai-bridge`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">2</div>
+                    <div>
+                      <h3 className="font-semibold">Configure Asterisk Dialplan</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Add the Voice AI context to your Asterisk dialplan. When a call is routed to voice_ai mode, it will be handled by the bridge via ARI.
+                      </p>
+                      <pre className="mt-2 p-3 rounded-lg bg-muted text-xs overflow-x-auto font-mono">
+{`; In /etc/asterisk/extensions_custom.conf
+[voice-ai-handler]
+exten => s,1,NoOp(Voice AI Bridge - Prompt: \${VOICE_AI_PROMPT_ID})
+ same => n,Answer()
+ same => n,Wait(0.5)
+ same => n,Stasis(voice-ai-bridge,\${VOICE_AI_PROMPT_ID},\${CONTACT_NAME},\${CONTACT_PHONE},\${CAMPAIGN_NAME})
+ same => n,Hangup()`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">3</div>
+                    <div>
+                      <h3 className="font-semibold">Create a Voice AI Prompt</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Go to the Prompts tab above and create a prompt. Configure the system instructions, voice, temperature, and function calling tools.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">4</div>
+                    <div>
+                      <h3 className="font-semibold">Assign to a Campaign</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Edit any campaign and set the Routing Mode to "Voice AI". Select the prompt you created. When the campaign runs, the AI will handle all conversations.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">5</div>
+                    <div>
+                      <h3 className="font-semibold">Monitor & Optimize</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Review conversation transcripts, sentiment scores, and outcomes in the Conversations and Analytics tabs. Adjust your prompts based on real call data.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
+                  <h4 className="font-semibold text-amber-600 flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Compliance Notes
+                  </h4>
+                  <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                    <li>• Some jurisdictions require disclosure that the caller is an AI</li>
+                    <li>• Always include opt-out instructions in your prompts</li>
+                    <li>• Record and store conversations per your retention policy</li>
+                    <li>• Test thoroughly before running production campaigns</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* ─── Prompt Create/Edit Dialog ─── */}
+        <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingPromptId ? "Edit Voice AI Prompt" : "Create Voice AI Prompt"}</DialogTitle>
+            </DialogHeader>
+            <Tabs defaultValue="behavior" className="w-full">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="behavior">Behavior</TabsTrigger>
+                <TabsTrigger value="voice">Voice</TabsTrigger>
+                <TabsTrigger value="functions">Functions</TabsTrigger>
+                <TabsTrigger value="compliance">Compliance</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="behavior" className="space-y-4 mt-4">
+                <div>
+                  <Label>Prompt Name *</Label>
+                  <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Debt Collection Agent" />
+                </div>
+                <div>
+                  <Label>System Prompt *</Label>
+                  <Textarea
+                    value={form.systemPrompt}
+                    onChange={e => setForm(p => ({ ...p, systemPrompt: e.target.value }))}
+                    className="min-h-[200px] font-mono text-sm"
+                    placeholder="Define the AI agent's personality, goals, and rules..."
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Available variables: {"{{contact_name}}, {{company_name}}, {{campaign_name}}, {{agent_name}}, {{callback_number}}"}
+                  </p>
+                </div>
+                <div>
+                  <Label>Opening Greeting</Label>
+                  <Textarea
+                    value={form.greeting}
+                    onChange={e => setForm(p => ({ ...p, greeting: e.target.value }))}
+                    className="min-h-[60px]"
+                    placeholder="Hello, this is {{agent_name}} calling from {{company_name}}..."
+                  />
+                </div>
+                <div>
+                  <Label>Fallback Message</Label>
+                  <Input value={form.fallbackMessage} onChange={e => setForm(p => ({ ...p, fallbackMessage: e.target.value }))} placeholder="I'm sorry, could you repeat that?" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Temperature: {form.temperature}</Label>
+                    <Slider value={[form.temperature]} onValueChange={([v]) => setForm(p => ({ ...p, temperature: v }))} min={0} max={1} step={0.1} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">Lower = more focused, Higher = more creative</p>
+                  </div>
+                  <div>
+                    <Label>Max Tokens per Response: {form.maxTokens}</Label>
+                    <Slider value={[form.maxTokens]} onValueChange={([v]) => setForm(p => ({ ...p, maxTokens: v }))} min={50} max={500} step={10} className="mt-2" />
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="voice" className="space-y-4 mt-4">
+                <div>
+                  <Label>Voice</Label>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {OPENAI_VOICES.map(v => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        className={`p-3 rounded-lg border text-left transition-colors ${
+                          form.voice === v.id ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"
+                        }`}
+                        onClick={() => setForm(p => ({ ...p, voice: v.id }))}
+                      >
+                        <div className="font-medium text-sm">{v.label}</div>
+                        <div className="text-xs text-muted-foreground">{v.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>Interruption Threshold: {form.interruptionThreshold}</Label>
+                  <Slider value={[form.interruptionThreshold]} onValueChange={([v]) => setForm(p => ({ ...p, interruptionThreshold: v }))} min={0} max={1} step={0.1} className="mt-2" />
+                  <p className="text-xs text-muted-foreground mt-1">How sensitive the AI is to being interrupted (0 = never, 1 = very sensitive)</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Silence Timeout (seconds): {form.silenceTimeout}</Label>
+                    <Slider value={[form.silenceTimeout]} onValueChange={([v]) => setForm(p => ({ ...p, silenceTimeout: v }))} min={2} max={15} step={1} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">Seconds of silence before AI prompts again</p>
+                  </div>
+                  <div>
+                    <Label>Max Call Duration (seconds): {form.maxDuration}</Label>
+                    <Slider value={[form.maxDuration]} onValueChange={([v]) => setForm(p => ({ ...p, maxDuration: v }))} min={60} max={900} step={30} className="mt-2" />
+                    <p className="text-xs text-muted-foreground mt-1">{formatDuration(form.maxDuration)} max per call</p>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="functions" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Enable Function Calling</Label>
+                    <p className="text-xs text-muted-foreground">Allow the AI to trigger actions during the call</p>
+                  </div>
+                  <Switch checked={form.enableFunctions} onCheckedChange={v => setForm(p => ({ ...p, enableFunctions: v }))} />
+                </div>
+                {form.enableFunctions && (
+                  <>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {FUNCTION_TEMPLATES.map(ft => (
+                        <Button
+                          key={ft.name}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7"
+                          onClick={() => {
+                            try {
+                              const current = JSON.parse(form.functions || "[]");
+                              if (!current.find((f: any) => f.name === ft.name)) {
+                                current.push(ft);
+                                setForm(p => ({ ...p, functions: JSON.stringify(current, null, 2) }));
+                              }
+                            } catch { /* ignore */ }
+                          }}
+                        >
+                          + {ft.name}
+                        </Button>
+                      ))}
+                    </div>
+                    <div>
+                      <Label>Function Definitions (JSON)</Label>
+                      <Textarea
+                        value={form.functions}
+                        onChange={e => setForm(p => ({ ...p, functions: e.target.value }))}
+                        className="min-h-[200px] font-mono text-xs"
+                        placeholder="[{ name, description, parameters }]"
+                      />
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+
+              <TabsContent value="compliance" className="space-y-4 mt-4">
+                <div>
+                  <Label>Compliance Mode</Label>
+                  <Select value={form.complianceMode} onValueChange={v => setForm(p => ({ ...p, complianceMode: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="fdcpa">FDCPA (Debt Collection)</SelectItem>
+                      <SelectItem value="hipaa">HIPAA (Healthcare)</SelectItem>
+                      <SelectItem value="tcpa">TCPA (Telemarketing)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Adds compliance-specific guardrails to the AI's behavior</p>
+                </div>
+                <div>
+                  <Label>End Call Phrases</Label>
+                  <Input
+                    value={form.endCallPhrases}
+                    onChange={e => setForm(p => ({ ...p, endCallPhrases: e.target.value }))}
+                    placeholder="goodbye, stop calling, remove me, do not call"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Comma-separated phrases that trigger call termination</p>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Active</Label>
+                    <p className="text-xs text-muted-foreground">Only active prompts can be assigned to campaigns</p>
+                  </div>
+                  <Switch checked={form.isActive} onCheckedChange={v => setForm(p => ({ ...p, isActive: v }))} />
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            <DialogFooter className="mt-4">
+              <Button variant="outline" onClick={() => setPromptDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={submitPrompt}
+                disabled={!form.name || !form.systemPrompt || createPrompt.isPending || updatePrompt.isPending}
+              >
+                {(createPrompt.isPending || updatePrompt.isPending) && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+                {editingPromptId ? "Update Prompt" : "Create Prompt"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DashboardLayout>
+  );
+}
