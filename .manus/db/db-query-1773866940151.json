@@ -1,0 +1,18 @@
+{
+  "query": "SHOW COLUMNS FROM call_logs WHERE Field = 'amdResult';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SHOW COLUMNS FROM call_logs WHERE Field = 'amdResult';",
+  "rows": [
+    {
+      "Field": "amdResult",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\namdResult\tvarchar(20)\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

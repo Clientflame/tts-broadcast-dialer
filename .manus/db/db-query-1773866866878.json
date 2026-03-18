@@ -1,0 +1,34 @@
+{
+  "query": "SHOW COLUMNS FROM call_logs WHERE Field IN ('startedAt', 'result', 'duration', 'userId');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SHOW COLUMNS FROM call_logs WHERE Field IN ('startedAt', 'result', 'duration', 'userId');",
+  "rows": [
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "duration",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "startedAt",
+      "Type": "bigint",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nuserId\tint\tNO\t\tNULL\t\nduration\tint\tYES\t\tNULL\t\nstartedAt\tbigint\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 50
+}

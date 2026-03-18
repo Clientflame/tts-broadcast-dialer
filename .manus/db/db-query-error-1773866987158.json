@@ -1,0 +1,8 @@
+{
+  "query": "select DATE_FORMAT(FROM_UNIXTIME(`startedAt` / 1000), '%Y-%m-%d %H:00'), count(*), sum(case when `status` = 'answered' then 1 else 0 end), sum(case when `status` != 'answered' then 1 else 0 end), coalesce(avg(duration), 0) from `call_logs` where (`call_logs`.`userId` = 1 and `call_logs`.`startedAt` >= 1773780567214) group by DATE_FORMAT(FROM_UNIXTIME(`call_logs`.`startedAt` / 1000), '%Y-%m-%d %H:00') order by DATE_FORMAT(FROM_UNIXTIME(`call_logs`.`startedAt` / 1000), '%Y-%m-%d %H:00') LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute select DATE_FORMAT(FROM_UNIXTIME(`startedAt` / 1000), '%Y-%m-%d %H:00'), count(*), sum(case when `status` = 'answered' then 1 else 0 end), sum(case when `status` != 'answered' then 1 else 0 end), coalesce(avg(duration), 0) from `call_logs` where (`call_logs`.`userId` = 1 and `call_logs`.`startedAt` >= 1773780567214) group by DATE_FORMAT(FROM_UNIXTIME(`call_logs`.`startedAt` / 1000), '%Y-%m-%d %H:00') order by DATE_FORMAT(FROM_UNIXTIME(`call_logs`.`startedAt` / 1000), '%Y-%m-%d %H:00') LIMIT 5;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1055 (42000) at line 1: Expression #1 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'QaP68Z2AATogwpccsoDAFH.call_logs.startedAt' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by"
+  ]
+}

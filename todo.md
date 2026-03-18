@@ -531,3 +531,4 @@
 - [x] Campaign setting: enable/disable call recording + retention days
 - [x] Recording retention policy with compliance tracking (consent, retainUntil)
 - [x] 303 tests passing (18 test files)
+- [x] Bug: Wallboard page not working - fixed: SQL queries used 'result' column instead of 'status', and GROUP BY had only_full_group_by compatibility issue

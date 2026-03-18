@@ -166,11 +166,11 @@ export const wallboardRouter = router({
     const [hourlyStats] = await db
       .select({
         total: sql<number>`count(*)`,
-        answered: sql<number>`sum(case when result = 'answered' then 1 else 0 end)`,
-        noAnswer: sql<number>`sum(case when result = 'no-answer' then 1 else 0 end)`,
-        busy: sql<number>`sum(case when result = 'busy' then 1 else 0 end)`,
-        failed: sql<number>`sum(case when result = 'failed' then 1 else 0 end)`,
-        voicemail: sql<number>`sum(case when result = 'voicemail' then 1 else 0 end)`,
+        answered: sql<number>`sum(case when ${callLogs.status} = 'answered' then 1 else 0 end)`,
+        noAnswer: sql<number>`sum(case when ${callLogs.status} = 'no-answer' then 1 else 0 end)`,
+        busy: sql<number>`sum(case when ${callLogs.status} = 'busy' then 1 else 0 end)`,
+        failed: sql<number>`sum(case when ${callLogs.status} = 'failed' then 1 else 0 end)`,
+        voicemail: sql<number>`sum(case when ${callLogs.status} = 'completed' AND ${callLogs.amdResult} = 'MACHINE' then 1 else 0 end)`,
         avgDuration: sql<number>`coalesce(avg(duration), 0)`,
       })
       .from(callLogs)
@@ -270,14 +270,15 @@ export const wallboardRouter = router({
       const userId = ctx.user.id;
       const cutoff = Date.now() - input.hours * 3600000;
 
-      // Get hourly call counts
+      // Get hourly call counts using raw SQL to avoid only_full_group_by issues
+      const hourBucket = sql`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%Y-%m-%d %H:00')`;
       const hourlyData = await db
         .select({
-          hour: sql<string>`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%Y-%m-%d %H:00')`,
+          hour: sql<string>`${hourBucket}`.as("hour_bucket"),
           total: sql<number>`count(*)`,
-          answered: sql<number>`sum(case when result = 'answered' then 1 else 0 end)`,
-          failed: sql<number>`sum(case when result != 'answered' then 1 else 0 end)`,
-          avgDuration: sql<number>`coalesce(avg(duration), 0)`,
+          answered: sql<number>`sum(case when ${callLogs.status} = 'answered' then 1 else 0 end)`,
+          failed: sql<number>`sum(case when ${callLogs.status} != 'answered' then 1 else 0 end)`,
+          avgDuration: sql<number>`coalesce(avg(${callLogs.duration}), 0)`,
         })
         .from(callLogs)
         .where(
@@ -286,8 +287,8 @@ export const wallboardRouter = router({
             gte(callLogs.startedAt, cutoff)
           )
         )
-        .groupBy(sql`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%Y-%m-%d %H:00')`)
-        .orderBy(sql`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%Y-%m-%d %H:00')`);
+        .groupBy(sql`hour_bucket`)
+        .orderBy(sql`hour_bucket`);
 
       return {
         hourly: hourlyData.map((h) => ({
