@@ -622,3 +622,6 @@
 - [x] Fix: Updated dialplan with Stasis fallback — plays error message if bridge not running
 - [x] Fix: Added getVoiceAiPromptById() db helper for bridge API (no user filter needed)
 - [x] Bug: Voice AI Bridge infinite ARI reconnection loop — switched from HTTP long-poll to WebSocket for ARI events
+- [x] Bug: websockets v16 API change — extra_headers renamed to additional_headers, crashes OpenAI connection
+- [x] Bug: ExternalMedia channels trigger new StasisStart events, causing infinite cascade of bridges
+- [x] Bug: Prompt fetch URL returns HTML — added empty ID check and content-type validation

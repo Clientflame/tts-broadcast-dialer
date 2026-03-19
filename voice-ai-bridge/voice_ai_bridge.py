@@ -341,12 +341,22 @@ async def fetch_prompt(prompt_id: str) -> Optional[dict]:
     """Fetch the AI prompt configuration from the dashboard API."""
     try:
         import aiohttp
+        if not prompt_id or prompt_id.strip() == "":
+            logger.warning("No prompt ID provided, skipping fetch")
+            return None
         url = f"{DASHBOARD_API_URL}/prompt/{prompt_id}"
         headers = {"Authorization": f"Bearer {DASHBOARD_API_KEY}"}
+        logger.info(f"Fetching prompt config from: {url}")
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
+                content_type = resp.headers.get("Content-Type", "")
+                if resp.status == 200 and "json" in content_type:
                     return await resp.json()
+                elif resp.status == 200:
+                    # Got HTML instead of JSON — likely a routing issue
+                    body_preview = (await resp.text())[:200]
+                    logger.warning(f"Prompt fetch returned non-JSON ({content_type}): {body_preview}")
+                    return None
                 logger.warning(f"Failed to fetch prompt {prompt_id}: HTTP {resp.status}")
                 return None
     except Exception as e:
@@ -413,7 +423,12 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
 
         logger.info(f"Connecting to OpenAI Realtime for {session.channel_id}...")
 
-        async with websockets.connect(url, extra_headers=headers, max_size=10 * 1024 * 1024) as ws:
+        # websockets v16 renamed extra_headers to additional_headers
+        try:
+            ws_conn = websockets.connect(url, additional_headers=headers, max_size=10 * 1024 * 1024)
+        except TypeError:
+            ws_conn = websockets.connect(url, extra_headers=headers, max_size=10 * 1024 * 1024)
+        async with ws_conn as ws:
             session.openai_ws = ws
             logger.info(f"OpenAI Realtime connected for {session.channel_id}")
 
@@ -698,7 +713,20 @@ async def handle_stasis_start(event: dict):
 
     channel = event.get("channel", {})
     channel_id = channel.get("id", "")
+    channel_name = channel.get("name", "")
     args = event.get("args", [])
+
+    # CRITICAL: Ignore StasisStart events from ExternalMedia channels we created.
+    # ExternalMedia channels also fire StasisStart when added to the app,
+    # which would cause an infinite cascade of bridges if not filtered.
+    if channel_id.startswith("ext-") or "UnicastRTP" in channel_name or "ExternalMedia" in channel_name:
+        logger.debug(f"Ignoring StasisStart for ExternalMedia channel: {channel_id} ({channel_name})")
+        return
+
+    # Also skip if we already have a session for this channel
+    if channel_id in active_sessions:
+        logger.debug(f"Ignoring duplicate StasisStart for {channel_id}")
+        return
 
     # Parse arguments from dialplan: prompt_id, contact_name, contact_phone, campaign_name
     prompt_id = args[0] if len(args) > 0 else ""
