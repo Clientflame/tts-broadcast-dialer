@@ -154,23 +154,24 @@ class AriClient:
             logger.debug(f"Channel hangup error (may already be gone): {e}")
 
     async def events_stream(self, handler):
-        """Listen to ARI events via HTTP long-poll (chunked response)."""
-        import aiohttp
-        auth = aiohttp.BasicAuth(self.user, self.password)
-        url = f"{self.base}/ari/events"
-        params = {"app": self.app}
-        async with aiohttp.ClientSession(auth=auth) as sess:
-            async with sess.get(url, params=params, timeout=aiohttp.ClientTimeout(total=0)) as resp:
-                async for line in resp.content:
-                    if not line or line == b"\n":
-                        continue
-                    try:
-                        evt = json.loads(line.decode(errors="ignore"))
-                        await handler(evt)
-                    except json.JSONDecodeError:
-                        continue
-                    except Exception as e:
-                        logger.error(f"Event handler error: {e}\n{traceback.format_exc()}")
+        """Listen to ARI events via WebSocket connection."""
+        import websockets
+        from urllib.parse import urlencode
+        # Build WebSocket URL: ws://host:port/ari/events?app=voice-ai-bridge&api_key=user:password
+        ws_base = self.base.replace("http://", "ws://").replace("https://", "wss://")
+        params = urlencode({"app": self.app, "api_key": f"{self.user}:{self.password}"})
+        ws_url = f"{ws_base}/ari/events?{params}"
+        logger.info(f"Opening ARI WebSocket: {ws_base}/ari/events?app={self.app}")
+        async with websockets.connect(ws_url, ping_interval=30, ping_timeout=10) as ws:
+            logger.info("ARI WebSocket connected — listening for Stasis events")
+            async for message in ws:
+                try:
+                    evt = json.loads(message)
+                    await handler(evt)
+                except json.JSONDecodeError:
+                    continue
+                except Exception as e:
+                    logger.error(f"Event handler error: {e}\n{traceback.format_exc()}")
 
 
 # ─── Active Call Sessions ───────────────────────────────────────────────────

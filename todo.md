@@ -621,3 +621,4 @@
 - [x] Fix: Added openingMessage support — AI greets caller with configured message
 - [x] Fix: Updated dialplan with Stasis fallback — plays error message if bridge not running
 - [x] Fix: Added getVoiceAiPromptById() db helper for bridge API (no user filter needed)
+- [x] Bug: Voice AI Bridge infinite ARI reconnection loop — switched from HTTP long-poll to WebSocket for ARI events
