@@ -270,6 +270,13 @@ if [ -f /etc/asterisk/http.conf ]; then
   fi
 fi
 
+# Ensure required Asterisk modules are loaded for ExternalMedia/ARI
+asterisk -rx 'module load res_ari' 2>/dev/null || true
+asterisk -rx 'module load res_stasis' 2>/dev/null || true
+asterisk -rx 'module load res_ari_channels' 2>/dev/null || true
+asterisk -rx 'module load res_ari_bridges' 2>/dev/null || true
+echo "[OK] ARI modules loaded"
+
 # Deploy Voice AI dialplan
 cat > /etc/asterisk/extensions_voice_ai.conf << 'DIALPLAN_EOF'`);
 

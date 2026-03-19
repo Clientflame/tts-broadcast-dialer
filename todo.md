@@ -603,3 +603,8 @@
 - [x] Fix: Voice AI test call used invalid caller ID (0000000000) - now resolves from user's DID pool like Quick Test
 - [x] Fix: Voice AI test call used SIP channel format instead of PJSIP - fixed to PJSIP/{number}@vitel-outbound
 - [x] Fix: Voice AI test call priority was 1 (normal) - changed to 0 (highest) for immediate processing
+- [x] Bug: Voice AI test call connects (phone rings, answers) but no AI voice is heard — Voice AI Bridge not engaging
+- [x] Fix: Rewrote Voice AI Bridge v2.0 with ExternalMedia + RTP bidirectional audio streaming
+- [x] Fix: Variable name mismatch (camelCase vs UPPER_SNAKE_CASE) between dashboard and dialplan
+- [x] Fix: Campaign voice_ai calls used wrong context (tts-broadcast instead of voice-ai-handler)
+- [x] Fix: Installer now loads required ARI modules for ExternalMedia support

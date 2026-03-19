@@ -605,13 +605,15 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   }
 
   // Enqueue into call_queue for PBX agent to pick up
+  // Voice AI calls use voice-ai-handler context so Asterisk routes to Stasis bridge
+  const callContext = routingMode === "voice_ai" ? "voice-ai-handler" : "tts-broadcast";
   await db.enqueueCall({
     userId,
     campaignId: callLog.campaignId,
     callLogId: callLog.id,
     phoneNumber,
     channel,
-    context: "tts-broadcast",
+    context: callContext,
     callerIdStr,
     audioUrl: variables.AUDIO_URL || null,
     audioUrls: audioUrls, // multi-segment audio URLs for PBX agent to concatenate

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-Voice AI Bridge - Connects Asterisk ARI to OpenAI Realtime API
-Handles two-way audio streaming for AI-powered phone conversations.
+Voice AI Bridge v2.0 - Connects Asterisk ARI to OpenAI Realtime API
+Full bidirectional audio streaming via ExternalMedia + RTP.
 
 Architecture:
-  Asterisk ARI (WebSocket) <-> This Bridge <-> OpenAI Realtime API (WebSocket)
+  PSTN Call -> Asterisk -> Stasis(voice-ai-bridge)
+    -> Mixing Bridge (caller + ExternalMedia)
+    -> ExternalMedia channel <-> RTP (slin16/16kHz) <-> UDP socket
+    -> This Bridge <-> OpenAI Realtime API (WebSocket, pcm16/16kHz)
 
 The bridge:
-1. Listens for Stasis events from Asterisk via ARI
-2. When a call enters the voice-ai-bridge app, opens an OpenAI Realtime session
-3. Streams audio bidirectionally between the phone call and OpenAI
-4. Handles function calls (transfer, callback, payment, etc.)
-5. Reports conversation results back to the dashboard API
+1. Listens for Stasis events from Asterisk via ARI HTTP long-poll
+2. On StasisStart: creates mixing bridge, ExternalMedia channel, gets RTP ports
+3. Opens OpenAI Realtime session with the prompt config
+4. Streams caller audio (RTP from Asterisk) -> OpenAI input_audio_buffer.append
+5. Streams AI audio (OpenAI response.audio.delta) -> RTP back to Asterisk
+6. Handles function calls, transcripts, and reports to dashboard
 """
 
 import asyncio
@@ -20,11 +24,15 @@ import json
 import logging
 import os
 import signal
+import socket
+import struct
 import sys
 import time
 import traceback
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, Optional, Any
+from uuid import uuid4
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -34,14 +42,17 @@ ARI_URL = os.environ.get("ARI_URL", "http://localhost:8088")
 ARI_USER = os.environ.get("ARI_USER", "voice-ai")
 ARI_PASSWORD = os.environ.get("ARI_PASSWORD", "voice-ai-secret")
 ARI_APP = os.environ.get("ARI_APP", "voice-ai-bridge")
-BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "8089"))
+BRIDGE_PORT = int(os.environ.get("BRIDGE_PORT", "8090"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 # OpenAI Realtime API config
 OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview")
-AUDIO_FORMAT = "pcm16"  # 16-bit PCM at 24kHz for OpenAI
-SAMPLE_RATE = 24000
+
+# RTP config
+UDP_BASE_PORT = 42000  # Base port for RTP UDP sockets
+RTP_VERSION = 2
+PT_SLIN16 = 118  # Dynamic payload type for slin16 in Asterisk
 
 # ─── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -50,6 +61,117 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("voice-ai-bridge")
+
+# ─── RTP Helpers ────────────────────────────────────────────────────────────
+@dataclass
+class RtpState:
+    seq: int = 1
+    ts: int = 0
+    ssrc: int = 0x12345678
+
+
+def build_rtp(payload: bytes, st: RtpState) -> bytes:
+    """Build RTP packet with 12-byte header + payload."""
+    vpxcc = (RTP_VERSION << 6)
+    mpt = PT_SLIN16  # no marker bit for continuous audio
+    header = struct.pack("!BBHII", vpxcc, mpt, st.seq & 0xFFFF, st.ts & 0xFFFFFFFF, st.ssrc)
+    st.seq = (st.seq + 1) & 0xFFFF
+    st.ts = (st.ts + 320) & 0xFFFFFFFF  # 16kHz * 0.02s = 320 samples per 20ms frame
+    return header + payload
+
+
+def parse_rtp(packet: bytes) -> bytes:
+    """Extract payload from RTP packet (strip 12-byte header)."""
+    if len(packet) < 12:
+        return b""
+    return packet[12:]
+
+
+# ─── ARI REST Client ───────────────────────────────────────────────────────
+class AriClient:
+    """Minimal ARI REST client for bridge/channel operations."""
+
+    def __init__(self, base_url: str, user: str, password: str, app: str):
+        self.base = base_url.rstrip("/")
+        self.user = user
+        self.password = password
+        self.app = app
+
+    async def _request(self, method: str, path: str, **params):
+        import aiohttp
+        auth = aiohttp.BasicAuth(self.user, self.password)
+        url = f"{self.base}/ari{path}"
+        async with aiohttp.ClientSession(auth=auth) as sess:
+            async with sess.request(method, url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                text = await resp.text()
+                if resp.status >= 300:
+                    raise RuntimeError(f"ARI {method} {path} failed ({resp.status}): {text}")
+                if text:
+                    try:
+                        return json.loads(text)
+                    except json.JSONDecodeError:
+                        return text
+                return None
+
+    async def create_bridge(self, bridge_id: str):
+        """Create a mixing bridge."""
+        return await self._request("POST", "/bridges", type="mixing", bridgeId=bridge_id)
+
+    async def add_to_bridge(self, bridge_id: str, channel_id: str):
+        """Add a channel to a bridge."""
+        return await self._request("POST", f"/bridges/{bridge_id}/addChannel", channel=channel_id)
+
+    async def create_external_media(self, channel_id: str, host: str, fmt="slin16", direction="both"):
+        """Create an ExternalMedia channel."""
+        return await self._request(
+            "POST", "/channels/externalMedia",
+            app=self.app,
+            channelId=channel_id,
+            external_host=host,
+            format=fmt,
+            direction=direction,
+        )
+
+    async def get_channel_var(self, channel_id: str, variable: str) -> str:
+        """Get a channel variable value."""
+        result = await self._request("GET", f"/channels/{channel_id}/variable", variable=variable)
+        if isinstance(result, dict):
+            return result.get("value", "")
+        return ""
+
+    async def delete_bridge(self, bridge_id: str):
+        """Delete a bridge."""
+        try:
+            await self._request("DELETE", f"/bridges/{bridge_id}")
+        except Exception as e:
+            logger.debug(f"Bridge delete error (may already be gone): {e}")
+
+    async def hangup_channel(self, channel_id: str):
+        """Hang up a channel."""
+        try:
+            await self._request("DELETE", f"/channels/{channel_id}")
+        except Exception as e:
+            logger.debug(f"Channel hangup error (may already be gone): {e}")
+
+    async def events_stream(self, handler):
+        """Listen to ARI events via HTTP long-poll (chunked response)."""
+        import aiohttp
+        auth = aiohttp.BasicAuth(self.user, self.password)
+        url = f"{self.base}/ari/events"
+        params = {"app": self.app}
+        async with aiohttp.ClientSession(auth=auth) as sess:
+            async with sess.get(url, params=params, timeout=aiohttp.ClientTimeout(total=0)) as resp:
+                async for line in resp.content:
+                    if not line or line == b"\n":
+                        continue
+                    try:
+                        evt = json.loads(line.decode(errors="ignore"))
+                        await handler(evt)
+                    except json.JSONDecodeError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Event handler error: {e}\n{traceback.format_exc()}")
+
 
 # ─── Active Call Sessions ───────────────────────────────────────────────────
 active_sessions: Dict[str, "CallSession"] = {}
@@ -61,9 +183,21 @@ bridge_stats = {
     "failed_calls": 0,
 }
 
+# Port allocator
+_next_udp_port = UDP_BASE_PORT
+
+
+def allocate_udp_port() -> int:
+    global _next_udp_port
+    port = _next_udp_port
+    _next_udp_port += 2  # RTP uses even ports
+    if _next_udp_port > UDP_BASE_PORT + 500:
+        _next_udp_port = UDP_BASE_PORT
+    return port
+
 
 class CallSession:
-    """Manages a single AI-powered phone call."""
+    """Manages a single AI-powered phone call with RTP audio bridge."""
 
     def __init__(self, channel_id: str, prompt_id: str, contact_name: str,
                  contact_phone: str, campaign_name: str):
@@ -77,9 +211,20 @@ class CallSession:
         self.ai_disposition: Optional[str] = None
         self.sentiment: str = "neutral"
         self.openai_ws = None
-        self.ari_ws = None
         self.ended = False
         self.end_reason: Optional[str] = None
+        self.stop_event = asyncio.Event()
+
+        # RTP state
+        self.udp_port: int = 0
+        self.udp_socket: Optional[socket.socket] = None
+        self.asterisk_rtp_host: str = ""
+        self.asterisk_rtp_port: int = 0
+        self.rtp_state = RtpState()
+
+        # ARI resources
+        self.bridge_id: str = ""
+        self.ext_media_channel_id: str = ""
 
     @property
     def duration_seconds(self) -> int:
@@ -99,7 +244,17 @@ class CallSession:
             "transcriptLength": len(self.transcript),
         }
 
+    def cleanup(self):
+        """Close UDP socket."""
+        if self.udp_socket:
+            try:
+                self.udp_socket.close()
+            except Exception:
+                pass
+            self.udp_socket = None
 
+
+# ─── Dashboard API Helpers ──────────────────────────────────────────────────
 async def fetch_prompt(prompt_id: str) -> Optional[dict]:
     """Fetch the AI prompt configuration from the dashboard API."""
     try:
@@ -148,10 +303,13 @@ async def report_conversation(session: CallSession):
         logger.error(f"Error reporting conversation: {e}")
 
 
-async def handle_openai_session(session: CallSession, prompt_config: dict):
+# ─── Audio Bridge (RTP <-> OpenAI Realtime) ─────────────────────────────────
+async def run_audio_bridge(session: CallSession, prompt_config: dict):
     """
-    Connect to OpenAI Realtime API and stream audio bidirectionally.
-    This is the core of the voice AI bridge.
+    The core audio bridge:
+    1. Open UDP socket to receive RTP from Asterisk ExternalMedia
+    2. Connect to OpenAI Realtime API
+    3. Pump caller audio (UDP->OpenAI) and AI audio (OpenAI->UDP) bidirectionally
     """
     try:
         import websockets
@@ -161,33 +319,36 @@ async def handle_openai_session(session: CallSession, prompt_config: dict):
         temperature = float(prompt_config.get("temperature", "0.7"))
         tools = prompt_config.get("tools", [])
 
+        # Connect to OpenAI Realtime
         headers = {
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "OpenAI-Beta": "realtime=v1",
         }
-
         url = f"{OPENAI_REALTIME_URL}?model={OPENAI_MODEL}"
 
-        async with websockets.connect(url, extra_headers=headers) as ws:
+        logger.info(f"Connecting to OpenAI Realtime for {session.channel_id}...")
+
+        async with websockets.connect(url, extra_headers=headers, max_size=10 * 1024 * 1024) as ws:
             session.openai_ws = ws
             logger.info(f"OpenAI Realtime connected for {session.channel_id}")
 
-            # Configure the session
+            # Configure session: server-VAD + voice + PCM16 @ 16kHz
             session_config = {
                 "type": "session.update",
                 "session": {
                     "modalities": ["text", "audio"],
                     "instructions": system_prompt,
                     "voice": voice,
-                    "input_audio_format": AUDIO_FORMAT,
-                    "output_audio_format": AUDIO_FORMAT,
-                    "temperature": temperature,
                     "turn_detection": {
                         "type": "server_vad",
                         "threshold": 0.5,
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 500,
                     },
+                    "input_audio_format": {"type": "pcm16", "sample_rate_hz": 16000},
+                    "output_audio_format": {"type": "pcm16", "sample_rate_hz": 16000},
+                    "input_audio_transcription": {"enabled": True},
+                    "temperature": temperature,
                 },
             }
 
@@ -205,80 +366,140 @@ async def handle_openai_session(session: CallSession, prompt_config: dict):
 
             await ws.send(json.dumps(session_config))
 
-            # Listen for OpenAI responses
-            async for message in ws:
-                if session.ended:
-                    break
+            # Push a touch of silence so VAD doesn't stumble on first packets
+            silence = bytes(16000)  # ~0.5s @ 16kHz x 2 bytes
+            await ws.send(json.dumps({
+                "type": "input_audio_buffer.append",
+                "audio": base64.b64encode(silence).decode(),
+            }))
 
-                try:
-                    data = json.loads(message)
-                    event_type = data.get("type", "")
+            # Run bidirectional pumps
+            recv_task = asyncio.create_task(pump_openai_to_rtp(session, ws))
+            send_task = asyncio.create_task(pump_rtp_to_openai(session, ws))
+            await asyncio.wait([recv_task, send_task], return_when=asyncio.FIRST_COMPLETED)
 
-                    if event_type == "response.audio.delta":
-                        # Forward AI audio to Asterisk channel
-                        audio_b64 = data.get("delta", "")
-                        if audio_b64 and session.ari_ws:
-                            await forward_audio_to_asterisk(session, audio_b64)
-
-                    elif event_type == "response.audio_transcript.done":
-                        # AI finished speaking - log transcript
-                        text = data.get("transcript", "")
-                        if text:
-                            session.transcript.append({
-                                "role": "assistant",
-                                "text": text,
-                                "timestamp": time.time(),
-                            })
-
-                    elif event_type == "input_audio_buffer.speech_started":
-                        logger.debug(f"Caller started speaking on {session.channel_id}")
-
-                    elif event_type == "conversation.item.input_audio_transcription.completed":
-                        text = data.get("transcript", "")
-                        if text:
-                            session.transcript.append({
-                                "role": "user",
-                                "text": text,
-                                "timestamp": time.time(),
-                            })
-
-                    elif event_type == "response.function_call_arguments.done":
-                        # Handle function calls
-                        await handle_function_call(session, data)
-
-                    elif event_type == "error":
-                        error = data.get("error", {})
-                        logger.error(f"OpenAI error: {error}")
-                        if error.get("code") == "session_expired":
-                            session.end_reason = "session_expired"
-                            break
-
-                    elif event_type == "session.created":
-                        logger.info(f"OpenAI session created for {session.channel_id}")
-
-                except json.JSONDecodeError:
-                    logger.warning("Non-JSON message from OpenAI")
-                except Exception as e:
-                    logger.error(f"Error processing OpenAI message: {e}")
+            # Cancel remaining task
+            for task in [recv_task, send_task]:
+                if not task.done():
+                    task.cancel()
 
     except Exception as e:
-        logger.error(f"OpenAI session error for {session.channel_id}: {e}")
-        session.end_reason = "openai_error"
+        logger.error(f"Audio bridge error for {session.channel_id}: {e}\n{traceback.format_exc()}")
+        session.end_reason = "bridge_error"
     finally:
         session.openai_ws = None
+        logger.info(f"Audio bridge ended for {session.channel_id}")
 
 
-async def forward_audio_to_asterisk(session: CallSession, audio_b64: str):
-    """Forward base64-encoded audio from OpenAI to the Asterisk channel via ARI."""
-    try:
-        import aiohttp
-        # ARI external media endpoint for sending audio
-        url = f"{ARI_URL}/ari/channels/{session.channel_id}/play"
-        # In practice, we'd use an external media channel or AudioSocket
-        # For now, we buffer and play via ARI
-        pass  # Placeholder - actual implementation depends on ARI external media setup
-    except Exception as e:
-        logger.error(f"Error forwarding audio to Asterisk: {e}")
+async def pump_rtp_to_openai(session: CallSession, ws):
+    """Receive RTP from Asterisk via UDP, strip header, send PCM to OpenAI."""
+    loop = asyncio.get_running_loop()
+    logger.info(f"RTP->OpenAI pump started on UDP port {session.udp_port} for {session.channel_id}")
+
+    while not session.stop_event.is_set():
+        try:
+            data = await asyncio.wait_for(
+                loop.sock_recv(session.udp_socket, 4096),
+                timeout=1.0,
+            )
+        except asyncio.TimeoutError:
+            continue
+        except (asyncio.CancelledError, OSError):
+            break
+
+        pcm = parse_rtp(data)
+        if not pcm:
+            continue
+
+        # Send to OpenAI as base64 PCM
+        msg = json.dumps({
+            "type": "input_audio_buffer.append",
+            "audio": base64.b64encode(pcm).decode(),
+        })
+        try:
+            await ws.send(msg)
+        except Exception as e:
+            logger.error(f"Error sending audio to OpenAI: {e}")
+            break
+
+
+async def pump_openai_to_rtp(session: CallSession, ws):
+    """Receive audio/events from OpenAI, send PCM back to Asterisk as RTP."""
+    logger.info(f"OpenAI->RTP pump started for {session.channel_id} -> {session.asterisk_rtp_host}:{session.asterisk_rtp_port}")
+
+    while not session.stop_event.is_set():
+        try:
+            raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        except (asyncio.CancelledError, Exception):
+            break
+
+        if not isinstance(raw, (str, bytes)):
+            continue
+
+        try:
+            evt = json.loads(raw if isinstance(raw, str) else raw.decode())
+        except Exception:
+            continue
+
+        event_type = evt.get("type", "")
+
+        if event_type == "response.audio.delta":
+            # AI audio -> RTP -> Asterisk
+            audio_b64 = evt.get("delta", "")
+            if audio_b64 and session.udp_socket and session.asterisk_rtp_port:
+                pcm = base64.b64decode(audio_b64)
+                # Packetize into 20ms frames (640 bytes = 320 samples * 2 bytes @ 16kHz)
+                for i in range(0, len(pcm), 640):
+                    chunk = pcm[i:i + 640]
+                    if len(chunk) < 640:
+                        chunk = chunk + bytes(640 - len(chunk))  # pad last frame
+                    pkt = build_rtp(chunk, session.rtp_state)
+                    try:
+                        session.udp_socket.sendto(pkt, (session.asterisk_rtp_host, session.asterisk_rtp_port))
+                    except Exception as e:
+                        logger.error(f"RTP send error: {e}")
+                        break
+
+        elif event_type == "response.audio_transcript.done":
+            text = evt.get("transcript", "")
+            if text:
+                session.transcript.append({
+                    "role": "assistant",
+                    "text": text,
+                    "timestamp": time.time(),
+                })
+                logger.debug(f"AI said: {text[:80]}...")
+
+        elif event_type == "conversation.item.input_audio_transcription.completed":
+            text = evt.get("transcript", "")
+            if text:
+                session.transcript.append({
+                    "role": "user",
+                    "text": text,
+                    "timestamp": time.time(),
+                })
+                logger.debug(f"Caller said: {text[:80]}...")
+
+        elif event_type == "input_audio_buffer.speech_started":
+            logger.debug(f"Caller started speaking on {session.channel_id}")
+
+        elif event_type == "response.function_call_arguments.done":
+            await handle_function_call(session, evt)
+
+        elif event_type == "error":
+            error = evt.get("error", {})
+            logger.error(f"OpenAI error: {error}")
+            if error.get("code") == "session_expired":
+                session.end_reason = "session_expired"
+                break
+
+        elif event_type == "session.created":
+            logger.info(f"OpenAI session created for {session.channel_id}")
+
+        elif event_type == "session.updated":
+            logger.info(f"OpenAI session configured for {session.channel_id}")
 
 
 async def handle_function_call(session: CallSession, data: dict):
@@ -294,31 +515,26 @@ async def handle_function_call(session: CallSession, data: dict):
     if fn_name == "transfer_to_agent":
         result = {"success": True, "message": "Transferring to live agent..."}
         session.ai_disposition = "transferred"
-        # In production: initiate Asterisk blind transfer via ARI
-
     elif fn_name == "schedule_callback":
         result = {"success": True, "message": f"Callback scheduled for {arguments.get('date', 'tomorrow')}"}
         session.ai_disposition = "callback_scheduled"
-
     elif fn_name == "process_payment":
         result = {"success": True, "message": "Payment link sent via SMS"}
         session.ai_disposition = "payment_initiated"
-
     elif fn_name == "opt_out":
         result = {"success": True, "message": "Contact opted out. Ending call."}
         session.ai_disposition = "opted_out"
         session.ended = True
-
+        session.stop_event.set()
     elif fn_name == "verify_identity":
         result = {"success": True, "message": "Identity verification initiated"}
-
     elif fn_name == "send_sms":
         result = {"success": True, "message": f"SMS sent to {session.contact_phone}"}
-
     elif fn_name == "end_call":
         result = {"success": True, "message": "Ending call"}
         session.ai_disposition = arguments.get("disposition", "completed")
         session.ended = True
+        session.stop_event.set()
 
     # Send function result back to OpenAI
     if session.openai_ws:
@@ -331,7 +547,6 @@ async def handle_function_call(session: CallSession, data: dict):
             },
         }
         await session.openai_ws.send(json.dumps(response))
-        # Trigger response generation
         await session.openai_ws.send(json.dumps({"type": "response.create"}))
 
 
@@ -341,7 +556,7 @@ async def health_handler(request):
     from aiohttp import web
     return web.json_response({
         "status": "running",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "uptime": int(time.time() - time.mktime(datetime.fromisoformat(bridge_stats["started_at"]).timetuple())),
         "stats": bridge_stats,
         "activeSessions": {cid: s.to_dict() for cid, s in active_sessions.items()},
@@ -364,61 +579,41 @@ async def start_health_server():
         logger.error(f"Failed to start health server: {e}")
 
 
-# ─── ARI Event Loop ────────────────────────────────────────────────────────
-async def ari_event_loop():
-    """Connect to Asterisk ARI WebSocket and handle Stasis events."""
-    import websockets
-    import aiohttp
+# ─── ARI Event Handler ─────────────────────────────────────────────────────
+ari_client: Optional[AriClient] = None
 
-    ari_ws_url = ARI_URL.replace("http://", "ws://").replace("https://", "wss://")
-    ws_url = f"{ari_ws_url}/ari/events?api_key={ARI_USER}:{ARI_PASSWORD}&app={ARI_APP}"
 
-    while True:
-        try:
-            logger.info(f"Connecting to ARI WebSocket: {ARI_URL}")
-            async with websockets.connect(ws_url) as ws:
-                logger.info("Connected to Asterisk ARI")
+async def handle_ari_event(evt: dict):
+    """Route ARI events to the appropriate handler."""
+    event_type = evt.get("type", "")
 
-                async for message in ws:
-                    try:
-                        event = json.loads(message)
-                        event_type = event.get("type", "")
-
-                        if event_type == "StasisStart":
-                            await handle_stasis_start(event)
-                        elif event_type == "StasisEnd":
-                            await handle_stasis_end(event)
-                        elif event_type == "ChannelDtmfReceived":
-                            await handle_dtmf(event)
-                        elif event_type == "ChannelStateChange":
-                            pass  # Ignore state changes
-                        else:
-                            logger.debug(f"ARI event: {event_type}")
-
-                    except json.JSONDecodeError:
-                        logger.warning("Non-JSON ARI message")
-                    except Exception as e:
-                        logger.error(f"Error handling ARI event: {e}\n{traceback.format_exc()}")
-
-        except Exception as e:
-            logger.error(f"ARI connection error: {e}")
-            await asyncio.sleep(5)
-            logger.info("Reconnecting to ARI...")
+    if event_type == "StasisStart":
+        await handle_stasis_start(evt)
+    elif event_type == "StasisEnd":
+        await handle_stasis_end(evt)
+    elif event_type == "ChannelDtmfReceived":
+        await handle_dtmf(evt)
+    elif event_type == "ChannelStateChange":
+        pass  # Ignore
+    else:
+        logger.debug(f"ARI event: {event_type}")
 
 
 async def handle_stasis_start(event: dict):
     """Handle a new call entering the voice-ai-bridge Stasis app."""
+    global ari_client
+
     channel = event.get("channel", {})
     channel_id = channel.get("id", "")
     args = event.get("args", [])
 
-    # Parse arguments: prompt_id, contact_name, contact_phone, campaign_name
+    # Parse arguments from dialplan: prompt_id, contact_name, contact_phone, campaign_name
     prompt_id = args[0] if len(args) > 0 else ""
     contact_name = args[1] if len(args) > 1 else "Unknown"
     contact_phone = args[2] if len(args) > 2 else ""
     campaign_name = args[3] if len(args) > 3 else ""
 
-    logger.info(f"New Voice AI call: {channel_id} | Prompt: {prompt_id} | Contact: {contact_name} ({contact_phone})")
+    logger.info(f"StasisStart: {channel_id} | Prompt: {prompt_id} | Contact: {contact_name} ({contact_phone})")
 
     # Create session
     session = CallSession(channel_id, prompt_id, contact_name, contact_phone, campaign_name)
@@ -426,19 +621,84 @@ async def handle_stasis_start(event: dict):
     bridge_stats["total_calls"] += 1
     bridge_stats["active_calls"] = len(active_sessions)
 
-    # Fetch prompt config
-    prompt_config = await fetch_prompt(prompt_id)
-    if not prompt_config:
-        logger.warning(f"Using default prompt for {channel_id}")
-        prompt_config = {
-            "systemPrompt": "You are a professional assistant on a phone call. Be helpful and concise.",
-            "voice": "alloy",
-            "temperature": "0.7",
-            "tools": [],
-        }
+    try:
+        # 1. Allocate UDP port for RTP
+        session.udp_port = allocate_udp_port()
 
-    # Start OpenAI session in background
-    asyncio.create_task(handle_openai_session(session, prompt_config))
+        # 2. Create UDP socket
+        session.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        session.udp_socket.bind(("0.0.0.0", session.udp_port))
+        session.udp_socket.setblocking(False)
+        logger.info(f"UDP socket bound on port {session.udp_port}")
+
+        # 3. Create a mixing bridge
+        session.bridge_id = f"b-{channel_id[:20]}-{uuid4().hex[:8]}"
+        await ari_client.create_bridge(session.bridge_id)
+        logger.info(f"Created bridge {session.bridge_id}")
+
+        # 4. Add caller channel to bridge
+        await ari_client.add_to_bridge(session.bridge_id, channel_id)
+        logger.info(f"Added caller {channel_id} to bridge")
+
+        # 5. Create ExternalMedia channel pointing at our UDP socket
+        session.ext_media_channel_id = f"ext-{uuid4().hex[:12]}"
+        em = await ari_client.create_external_media(
+            session.ext_media_channel_id,
+            host=f"127.0.0.1:{session.udp_port}",
+            fmt="slin16",
+            direction="both",
+        )
+        em_actual_id = em.get("id", session.ext_media_channel_id) if isinstance(em, dict) else session.ext_media_channel_id
+        logger.info(f"Created ExternalMedia channel {em_actual_id}")
+
+        # 6. Add ExternalMedia to bridge
+        await ari_client.add_to_bridge(session.bridge_id, em_actual_id)
+        logger.info(f"Added ExternalMedia to bridge")
+
+        # 7. Get Asterisk's RTP address/port (where to send audio back)
+        rtp_port_str = await ari_client.get_channel_var(em_actual_id, "UNICASTRTP_LOCAL_PORT")
+        rtp_addr_str = await ari_client.get_channel_var(em_actual_id, "UNICASTRTP_LOCAL_ADDRESS")
+
+        session.asterisk_rtp_host = rtp_addr_str or "127.0.0.1"
+        session.asterisk_rtp_port = int(rtp_port_str) if rtp_port_str else 0
+
+        logger.info(f"Asterisk RTP endpoint: {session.asterisk_rtp_host}:{session.asterisk_rtp_port}")
+
+        if not session.asterisk_rtp_port:
+            logger.error(f"Could not get UNICASTRTP_LOCAL_PORT for {channel_id}")
+            session.end_reason = "rtp_setup_failed"
+            return
+
+        # 8. Fetch prompt config from dashboard
+        prompt_config = await fetch_prompt(prompt_id)
+        if not prompt_config:
+            logger.warning(f"Using default prompt for {channel_id}")
+            prompt_config = {
+                "systemPrompt": "You are a professional assistant on a phone call. Be helpful and concise.",
+                "voice": "alloy",
+                "temperature": "0.7",
+                "tools": [],
+            }
+
+        # 9. Start the audio bridge (RTP <-> OpenAI Realtime)
+        asyncio.create_task(run_audio_bridge_with_cleanup(session, prompt_config))
+
+    except Exception as e:
+        logger.error(f"StasisStart setup failed for {channel_id}: {e}\n{traceback.format_exc()}")
+        session.end_reason = "setup_failed"
+        bridge_stats["failed_calls"] += 1
+        session.cleanup()
+
+
+async def run_audio_bridge_with_cleanup(session: CallSession, prompt_config: dict):
+    """Run the audio bridge and clean up when done."""
+    try:
+        await run_audio_bridge(session, prompt_config)
+    finally:
+        session.cleanup()
+        # Clean up ARI resources
+        if ari_client and session.bridge_id:
+            await ari_client.delete_bridge(session.bridge_id)
 
 
 async def handle_stasis_end(event: dict):
@@ -449,6 +709,7 @@ async def handle_stasis_end(event: dict):
     session = active_sessions.pop(channel_id, None)
     if session:
         session.ended = True
+        session.stop_event.set()
         session.end_reason = session.end_reason or "caller_hangup"
         bridge_stats["active_calls"] = len(active_sessions)
         bridge_stats["completed_calls"] += 1
@@ -466,7 +727,6 @@ async def handle_dtmf(event: dict):
 
     session = active_sessions.get(channel_id)
     if session and session.openai_ws:
-        # Send DTMF as text input to OpenAI
         dtmf_message = {
             "type": "conversation.item.create",
             "item": {
@@ -479,19 +739,40 @@ async def handle_dtmf(event: dict):
         await session.openai_ws.send(json.dumps({"type": "response.create"}))
 
 
+# ─── ARI Event Loop ────────────────────────────────────────────────────────
+async def ari_event_loop():
+    """Connect to Asterisk ARI and listen for events."""
+    global ari_client
+
+    while True:
+        try:
+            logger.info(f"Connecting to ARI: {ARI_URL} (app: {ARI_APP})")
+            await ari_client.events_stream(handle_ari_event)
+        except Exception as e:
+            logger.error(f"ARI connection error: {e}")
+            await asyncio.sleep(5)
+            logger.info("Reconnecting to ARI...")
+
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 async def main():
     """Start the Voice AI Bridge."""
+    global ari_client
+
     logger.info("=" * 60)
-    logger.info("  Voice AI Bridge v1.0.0")
+    logger.info("  Voice AI Bridge v2.0.0")
     logger.info(f"  ARI: {ARI_URL} (app: {ARI_APP})")
     logger.info(f"  OpenAI Model: {OPENAI_MODEL}")
     logger.info(f"  Health Port: {BRIDGE_PORT}")
+    logger.info(f"  RTP UDP Base: {UDP_BASE_PORT}")
     logger.info("=" * 60)
 
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set!")
         sys.exit(1)
+
+    # Initialize ARI client
+    ari_client = AriClient(ARI_URL, ARI_USER, ARI_PASSWORD, ARI_APP)
 
     # Start health check server
     await start_health_server()
@@ -504,6 +785,7 @@ def signal_handler(sig, frame):
     logger.info("Shutting down Voice AI Bridge...")
     for session in active_sessions.values():
         session.ended = True
+        session.stop_event.set()
     sys.exit(0)
 
 

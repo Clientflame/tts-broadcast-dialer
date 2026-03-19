@@ -363,8 +363,10 @@ QUESTIONS:
         priority: 0, // highest priority for test calls
         variables: {
           routingMode: "voice_ai",
-          voiceAiPromptId: String(input.promptId),
-          contactName: "Test Call",
+          VOICE_AI_PROMPT_ID: String(input.promptId),
+          CONTACT_NAME: "Test Call",
+          CONTACT_PHONE: phoneNumber,
+          CAMPAIGN_NAME: "test",
           ...(callerIdStr ? { CALLER_ID: callerIdStr } : {}),
         },
       });
