@@ -1,0 +1,65 @@
+{
+  "query": "SELECT id, phoneNumber, status, campaignId, context, callerIdStr, variables, claimedBy, createdAt FROM call_queue WHERE context = 'voice-ai-handler' OR campaignId = 0 ORDER BY createdAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, status, campaignId, context, callerIdStr, variables, claimedBy, createdAt FROM call_queue WHERE context = 'voice-ai-handler' OR campaignId = 0 ORDER BY createdAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "60952",
+      "phoneNumber": "140745511877",
+      "status": "failed",
+      "campaignId": "0",
+      "context": "voice-ai-handler",
+      "callerIdStr": "0000000000",
+      "variables": "{\"contactName\": \"Test Call\", \"routingMode\": \"voice_ai\", \"voiceAiPromptId\": \"1\"}",
+      "claimedBy": "agent-d0cfa445",
+      "createdAt": "2026-03-18 23:49:05"
+    },
+    {
+      "id": "60934",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "campaignId": "0",
+      "context": "tts-broadcast",
+      "callerIdStr": "9502589811",
+      "variables": "{\"CALLER_ID\": \"9502589811\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"468\", \"healthCheckDID\": \"9502589811\"}",
+      "claimedBy": "agent-d0cfa445",
+      "createdAt": "2026-03-18 20:08:40"
+    },
+    {
+      "id": "60932",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "campaignId": "0",
+      "context": "tts-broadcast",
+      "callerIdStr": "9504971369",
+      "variables": "{\"CALLER_ID\": \"9504971369\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"482\", \"healthCheckDID\": \"9504971369\"}",
+      "claimedBy": "agent-d0cfa445",
+      "createdAt": "2026-03-18 20:08:40"
+    },
+    {
+      "id": "60933",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "campaignId": "0",
+      "context": "tts-broadcast",
+      "callerIdStr": "9504788215",
+      "variables": "{\"CALLER_ID\": \"9504788215\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"475\", \"healthCheckDID\": \"9504788215\"}",
+      "claimedBy": "agent-d0cfa445",
+      "createdAt": "2026-03-18 20:08:40"
+    },
+    {
+      "id": "60931",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "campaignId": "0",
+      "context": "tts-broadcast",
+      "callerIdStr": "9505028379",
+      "variables": "{\"CALLER_ID\": \"9505028379\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"489\", \"healthCheckDID\": \"9505028379\"}",
+      "claimedBy": "agent-d0cfa445",
+      "createdAt": "2026-03-18 20:08:40"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tstatus\tcampaignId\tcontext\tcallerIdStr\tvariables\tclaimedBy\tcreatedAt\n60952\t140745511877\tfailed\t0\tvoice-ai-handler\t0000000000\t{\"contactName\": \"Test Call\", \"routingMode\": \"voice_ai\", \"voiceAiPromptId\": \"1\"}\tagent-d0cfa445\t2026-03-18 23:49:05\n60934\t*43\tcompleted\t0\ttts-broadcast\t9502589811\t{\"CALLER_ID\": \"9502589811\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"468\", \"healthCheckDID\": \"9502589811\"}\tagent-d0cfa445\t2026-03-18 20:08:40\n60932\t*43\tcompleted\t0\ttts-broadcast\t9504971369\t{\"CALLER_ID\": \"9504971369\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"482\", \"healthCheckDID\": \"9504971369\"}\tagent-d0cfa445\t2026-03-18 20:08:40\n60933\t*43\tcompleted\t0\ttts-broadcast\t9504788215\t{\"CALLER_ID\": \"9504788215\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"475\", \"healthCheckDID\": \"9504788215\"}\tagent-d0cfa445\t2026-03-18 20:08:40\n60931\t*43\tcompleted\t0\ttts-broadcast\t9505028379\t{\"CALLER_ID\": \"9505028379\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"489\", \"healthCheckDID\": \"9505028379\"}\tagent-d0cfa445\t2026-03-18 20:08:40\n",
+  "stderr": "",
+  "execution_time_ms": 65
+}

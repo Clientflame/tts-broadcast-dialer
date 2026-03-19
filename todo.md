@@ -598,3 +598,8 @@
 - [x] Bug: Voice AI Bridge deploy SSH handshake timeout - replaced SSH deploy with curl-based one-liner installer (same as PBX Agent)
 - [x] Bug: Voice AI Bridge installer - fixed pip3 dependencies with multiple fallback methods and verification
 - [x] Bug: Voice AI Bridge installer writes literal \\n instead of actual newlines in .env file, also changed default health port to 8090
+- [ ] Bug: Voice AI test call sent but no call received - investigate call flow
+- [x] Fix: Voice AI test call missing Caller ID selector - added dropdown with active DIDs and auto-random fallback
+- [x] Fix: Voice AI test call used invalid caller ID (0000000000) - now resolves from user's DID pool like Quick Test
+- [x] Fix: Voice AI test call used SIP channel format instead of PJSIP - fixed to PJSIP/{number}@vitel-outbound
+- [x] Fix: Voice AI test call priority was 1 (normal) - changed to 0 (highest) for immediate processing

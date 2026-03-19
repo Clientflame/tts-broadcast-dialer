@@ -694,11 +694,14 @@ function DeployTab() {
   const [copied, setCopied] = useState(false);
   const [testPhone, setTestPhone] = useState("");
   const [testPromptId, setTestPromptId] = useState<string>("");
+  const [testCallerId, setTestCallerId] = useState<number | undefined>(undefined);
 
   const deployStatus = trpc.voiceAi.getDeployStatus.useQuery();
   const installCmd = trpc.voiceAi.getInstallCommand.useQuery({ origin: window.location.origin });
   const testCallMut = trpc.voiceAi.testCall.useMutation();
   const prompts = trpc.voiceAi.listPrompts.useQuery();
+  const callerIdsQuery = trpc.callerIds.list.useQuery();
+  const activeCallerIds = (callerIdsQuery.data || []).filter((c: any) => c.isActive === 1 && !c.autoDisabled);
 
   const handleCopy = () => {
     if (installCmd.data?.command) {
@@ -718,6 +721,7 @@ function DeployTab() {
       const result = await testCallMut.mutateAsync({
         phoneNumber: testPhone,
         promptId: Number(testPromptId),
+        callerIdId: testCallerId,
       });
       if (result.success) {
         toast.success(result.message);
@@ -892,11 +896,11 @@ function DeployTab() {
           <p className="text-sm text-muted-foreground">
             Send a test call to verify the Voice AI Bridge is working end-to-end. The AI will call the number and use the selected prompt.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Phone Number</Label>
               <Input
-                placeholder="e.g. 5551234567"
+                placeholder="e.g. 4071234567"
                 value={testPhone}
                 onChange={e => setTestPhone(e.target.value)}
               />
@@ -913,6 +917,25 @@ function DeployTab() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Caller ID</Label>
+              <Select value={testCallerId?.toString() || "auto"} onValueChange={v => setTestCallerId(v === "auto" ? undefined : parseInt(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Auto (random)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto (random rotation)</SelectItem>
+                  {activeCallerIds.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id.toString()}>
+                      {c.phoneNumber}{c.label ? ` - ${c.label}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {activeCallerIds.length === 0 && (
+                <p className="text-xs text-amber-500 mt-1">No active caller IDs found. Add one in Caller IDs page first.</p>
+              )}
             </div>
             <div className="flex items-end">
               <Button

@@ -323,28 +323,49 @@ QUESTIONS:
     .input(z.object({
       phoneNumber: z.string().min(10).max(15),
       promptId: z.number(),
-      callerId: z.string().optional(),
+      callerIdId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Queue a test call with voice_ai routing
       const prompt = await db.getVoiceAiPrompt(input.promptId, ctx.user.id);
       if (!prompt) throw new TRPCError({ code: "NOT_FOUND", message: "Prompt not found" });
 
-      // Use the call queue system to originate the test call
-      const callerId = input.callerId || "0000000000";
+      // Resolve caller ID — use selected DID or pick a random active one
+      const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
+      let callerIdStr: string | undefined;
+      const callerIdList = await db.getCallerIds(ctx.user.id);
+      if (input.callerIdId) {
+        const selectedCid = callerIdList.find(c => c.id === input.callerIdId);
+        if (selectedCid) callerIdStr = selectedCid.phoneNumber;
+      }
+      // If no caller ID selected, pick a random active DID to avoid trunk default
+      if (!callerIdStr) {
+        const activeDids = callerIdList.filter(c => c.isActive && !c.autoDisabled);
+        if (activeDids.length > 0) {
+          const randomDid = activeDids[Math.floor(Math.random() * activeDids.length)];
+          callerIdStr = randomDid.phoneNumber;
+          console.log(`[VoiceAI TestCall] No caller ID selected, using random DID: ${callerIdStr}`);
+        }
+      }
+      if (!callerIdStr) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No active caller IDs available. Add a caller ID first." });
+      }
+
+      const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
       const result = await db.enqueueCall({
         userId: ctx.user.id,
         campaignId: 0, // test call
-        phoneNumber: input.phoneNumber,
-        channel: `SIP/${input.phoneNumber}`,
+        phoneNumber,
+        channel,
         context: "voice-ai-handler",
-        callerIdStr: callerId,
+        callerIdStr,
         audioUrl: "", // Voice AI doesn't use pre-recorded audio
-        priority: 1,
+        priority: 0, // highest priority for test calls
         variables: {
           routingMode: "voice_ai",
           voiceAiPromptId: String(input.promptId),
           contactName: "Test Call",
+          ...(callerIdStr ? { CALLER_ID: callerIdStr } : {}),
         },
       });
 
@@ -353,12 +374,12 @@ QUESTIONS:
         userName: ctx.user.name || undefined,
         action: "voiceai.testCall",
         resource: "voice-ai-bridge",
-        details: { phoneNumber: input.phoneNumber, promptId: input.promptId },
+        details: { phoneNumber, promptId: input.promptId, callerId: callerIdStr },
       });
 
       return {
         success: true,
-        message: `Test call queued to ${input.phoneNumber} using prompt "${prompt.name}"`,
+        message: `Test call queued to ${phoneNumber} using prompt "${prompt.name}" (Caller ID: ${callerIdStr})`,
         queueId: result?.id,
       };
     }),
