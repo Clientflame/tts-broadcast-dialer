@@ -627,3 +627,5 @@
 - [x] Bug: Prompt fetch URL returns HTML — added empty ID check and content-type validation
 - [x] Bug: Voice AI test call sends routing=tts_only instead of voice_ai — poll endpoint now checks variables.routingMode first
 - [x] Bug: Regular test calls "Extension does not exist" — was actually Voice AI calls misrouted as tts_only due to above bug
+- [x] Fix: Installer now writes voice-ai-handler dialplan inline into extensions_custom.conf (avoids #include file descriptor issues)
+- [x] Fix: Asterisk "Too many open files" caused dialplan reload to silently fail — resolved by fwconsole restart

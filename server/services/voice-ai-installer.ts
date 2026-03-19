@@ -418,22 +418,47 @@ asterisk -rx 'module load res_ari_channels' 2>/dev/null || true
 asterisk -rx 'module load res_ari_bridges' 2>/dev/null || true
 echo "[OK] ARI modules loaded"
 
-# Deploy Voice AI dialplan
+# Deploy Voice AI dialplan - write inline into extensions_custom.conf
+# (Avoids #include which can fail if Asterisk runs out of file descriptors)
 cat > /etc/asterisk/extensions_voice_ai.conf << 'DIALPLAN_EOF'`);
 
   parts.push(dialplanConf);
 
   parts.push(`DIALPLAN_EOF
 
-# Include dialplan in extensions_custom.conf
+# Remove old #include reference if present
 if [ -f /etc/asterisk/extensions_custom.conf ]; then
-  if ! grep -q "#include extensions_voice_ai.conf" /etc/asterisk/extensions_custom.conf 2>/dev/null; then
-    echo '#include extensions_voice_ai.conf' >> /etc/asterisk/extensions_custom.conf
-    echo "[OK] Voice AI dialplan included in extensions_custom.conf"
-  else
-    echo "[OK] Voice AI dialplan already included"
-  fi
+  sed -i '/^#include extensions_voice_ai.conf$/d' /etc/asterisk/extensions_custom.conf
 fi
+
+# Remove any previously inlined voice-ai-handler context
+if [ -f /etc/asterisk/extensions_custom.conf ]; then
+  python3 -c "
+import re
+with open('/etc/asterisk/extensions_custom.conf') as f:
+    content = f.read()
+# Remove the voice-ai-handler block (from context header to end of its extensions)
+cleaned = re.sub(r'\\n*\\[voice-ai-handler\\][\\s\\S]*?(?=\\n\\[|\\Z)', '', content)
+with open('/etc/asterisk/extensions_custom.conf', 'w') as f:
+    f.write(cleaned.rstrip() + '\\n')
+" 2>/dev/null || true
+fi
+
+# Append the voice-ai-handler context inline
+cat >> /etc/asterisk/extensions_custom.conf << 'INLINE_DIALPLAN_EOF'
+
+[voice-ai-handler]
+exten => s,1,NoOp(Voice AI Bridge - Prompt: \${VOICE_AI_PROMPT_ID})
+same => n,Answer()
+same => n,Wait(0.5)
+same => n,Stasis(voice-ai-bridge,\${VOICE_AI_PROMPT_ID},\${CONTACT_NAME},\${CONTACT_PHONE},\${CAMPAIGN_NAME})
+same => n,Hangup()
+
+exten => failed,1,NoOp(Voice AI call failed)
+same => n,Hangup()
+
+exten => h,1,NoOp(Voice AI call hangup handler)
+INLINE_DIALPLAN_EOF
 
 echo "[OK] Voice AI dialplan deployed"
 
