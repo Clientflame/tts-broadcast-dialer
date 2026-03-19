@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Voice AI Bridge v2.0 - Connects Asterisk ARI to OpenAI Realtime API
+Voice AI Bridge v2.1 - Connects Asterisk ARI to OpenAI Realtime API
 Full bidirectional audio streaming via ExternalMedia + RTP.
 
 Architecture:
   PSTN Call -> Asterisk -> Stasis(voice-ai-bridge)
     -> Mixing Bridge (caller + ExternalMedia)
     -> ExternalMedia channel <-> RTP (slin16/16kHz) <-> UDP socket
-    -> This Bridge <-> OpenAI Realtime API (WebSocket, pcm16/16kHz)
+    -> This Bridge (resample 16kHz<->24kHz) <-> OpenAI Realtime API (WebSocket, pcm16/24kHz)
 
 The bridge:
 1. Listens for Stasis events from Asterisk via ARI HTTP long-poll
@@ -54,6 +54,9 @@ UDP_BASE_PORT = 42000  # Base port for RTP UDP sockets
 RTP_VERSION = 2
 PT_SLIN16 = 118  # Dynamic payload type for slin16 in Asterisk
 
+# Valid voices for OpenAI Realtime API (as of 2025+)
+VALID_REALTIME_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"}
+
 # ─── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper(), logging.INFO),
@@ -78,6 +81,50 @@ def build_rtp(payload: bytes, st: RtpState) -> bytes:
     st.seq = (st.seq + 1) & 0xFFFF
     st.ts = (st.ts + 320) & 0xFFFFFFFF  # 16kHz * 0.02s = 320 samples per 20ms frame
     return header + payload
+
+
+def resample_16k_to_24k(pcm16k: bytes) -> bytes:
+    """Upsample PCM16 audio from 16kHz to 24kHz using linear interpolation.
+    Each 16-bit LE sample is interpolated 3:2 (for every 2 input samples, produce 3 output samples)."""
+    import array
+    samples_in = array.array('h')  # signed 16-bit
+    samples_in.frombytes(pcm16k)
+    n = len(samples_in)
+    if n < 2:
+        return pcm16k
+    # 16kHz -> 24kHz = ratio 3/2: for every 2 input samples, output 3
+    out = array.array('h')
+    for i in range(n - 1):
+        s0 = samples_in[i]
+        s1 = samples_in[i + 1]
+        out.append(s0)
+        # Interpolated sample at 1/3 and 2/3 between pairs
+        if i % 2 == 0:
+            out.append(int(s0 * 2 / 3 + s1 * 1 / 3))
+    out.append(samples_in[-1])
+    return out.tobytes()
+
+
+def resample_24k_to_16k(pcm24k: bytes) -> bytes:
+    """Downsample PCM16 audio from 24kHz to 16kHz by picking every 3rd sample out of 2.
+    Ratio 2/3: for every 3 input samples, output 2."""
+    import array
+    samples_in = array.array('h')
+    samples_in.frombytes(pcm24k)
+    n = len(samples_in)
+    if n < 3:
+        return pcm24k
+    out = array.array('h')
+    i = 0
+    while i + 2 < n:
+        out.append(samples_in[i])
+        # Interpolate between sample[1] and sample[2] of each triplet
+        out.append(int((samples_in[i + 1] + samples_in[i + 2]) / 2))
+        i += 3
+    # Handle remaining samples
+    if i < n:
+        out.append(samples_in[i])
+    return out.tobytes()
 
 
 def parse_rtp(packet: bytes) -> bytes:
@@ -409,6 +456,10 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
         system_prompt = prompt_config.get("systemPrompt", "You are a helpful assistant on a phone call.")
         opening_message = prompt_config.get("openingMessage", "")
         voice = prompt_config.get("voice", "alloy")
+        # Validate voice — old prompts may have unsupported voices like "onyx", "fable", "nova"
+        if voice not in VALID_REALTIME_VOICES:
+            logger.warning(f"Voice '{voice}' is not supported by Realtime API, falling back to 'coral'")
+            voice = "coral"
         temperature = float(prompt_config.get("temperature", "0.7"))
         enabled_tools = prompt_config.get("enabledTools", [])
         max_duration = int(prompt_config.get("maxConversationDuration", 300))
@@ -433,7 +484,9 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
             session.openai_ws = ws
             logger.info(f"OpenAI Realtime connected for {session.channel_id}")
 
-            # Configure session: server-VAD + voice + PCM16 @ 16kHz
+            # Configure session: server-VAD + voice + PCM16 @ 24kHz
+            # OpenAI Realtime API only supports 24kHz for PCM audio.
+            # We resample 16kHz (Asterisk slin16) <-> 24kHz (OpenAI) in the bridge.
             session_config = {
                 "type": "session.update",
                 "session": {
@@ -446,9 +499,9 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
                         "prefix_padding_ms": 300,
                         "silence_duration_ms": 500,
                     },
-                    "input_audio_format": {"type": "pcm16", "sample_rate_hz": 16000},
-                    "output_audio_format": {"type": "pcm16", "sample_rate_hz": 16000},
-                    "input_audio_transcription": {"enabled": True},
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                    "input_audio_transcription": {"model": "whisper-1"},
                     "temperature": temperature,
                 },
             }
@@ -463,7 +516,7 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
             await ws.send(json.dumps(session_config))
 
             # Push a touch of silence so VAD doesn't stumble on first packets
-            silence = bytes(16000)  # ~0.5s @ 16kHz x 2 bytes
+            silence = bytes(24000)  # ~0.5s @ 24kHz x 2 bytes
             await ws.send(json.dumps({
                 "type": "input_audio_buffer.append",
                 "audio": base64.b64encode(silence).decode(),
@@ -520,10 +573,13 @@ async def pump_rtp_to_openai(session: CallSession, ws):
         if not pcm:
             continue
 
+        # Resample 16kHz (Asterisk) -> 24kHz (OpenAI Realtime API)
+        pcm_24k = resample_16k_to_24k(pcm)
+
         # Send to OpenAI as base64 PCM
         msg = json.dumps({
             "type": "input_audio_buffer.append",
-            "audio": base64.b64encode(pcm).decode(),
+            "audio": base64.b64encode(pcm_24k).decode(),
         })
         try:
             await ws.send(msg)
@@ -555,10 +611,12 @@ async def pump_openai_to_rtp(session: CallSession, ws):
         event_type = evt.get("type", "")
 
         if event_type == "response.audio.delta":
-            # AI audio -> RTP -> Asterisk
+            # AI audio (24kHz from OpenAI) -> resample to 16kHz -> RTP -> Asterisk
             audio_b64 = evt.get("delta", "")
             if audio_b64 and session.udp_socket and session.asterisk_rtp_port:
-                pcm = base64.b64decode(audio_b64)
+                pcm_24k = base64.b64decode(audio_b64)
+                # Resample 24kHz (OpenAI) -> 16kHz (Asterisk slin16)
+                pcm = resample_24k_to_16k(pcm_24k)
                 # Packetize into 20ms frames (640 bytes = 320 samples * 2 bytes @ 16kHz)
                 for i in range(0, len(pcm), 640):
                     chunk = pcm[i:i + 640]
@@ -798,7 +856,7 @@ async def handle_stasis_start(event: dict):
             prompt_config = {
                 "systemPrompt": "You are a professional assistant on a phone call. Be helpful and concise.",
                 "openingMessage": "",
-                "voice": "alloy",
+                "voice": "coral",
                 "temperature": "0.7",
                 "enabledTools": [],
                 "maxConversationDuration": 300,

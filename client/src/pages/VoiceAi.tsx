@@ -21,12 +21,16 @@ import {
 } from "lucide-react";
 
 const OPENAI_VOICES = [
+  { id: "coral", label: "Coral", desc: "Warm, natural (recommended)" },
+  { id: "marin", label: "Marin", desc: "Smooth, professional (recommended)" },
+  { id: "cedar", label: "Cedar", desc: "Rich, authoritative" },
   { id: "alloy", label: "Alloy", desc: "Neutral, balanced" },
-  { id: "echo", label: "Echo", desc: "Warm, conversational" },
-  { id: "fable", label: "Fable", desc: "Expressive, dynamic" },
-  { id: "onyx", label: "Onyx", desc: "Deep, authoritative" },
-  { id: "nova", label: "Nova", desc: "Friendly, upbeat" },
-  { id: "shimmer", label: "Shimmer", desc: "Clear, professional" },
+  { id: "ash", label: "Ash", desc: "Clear, conversational" },
+  { id: "ballad", label: "Ballad", desc: "Expressive, dynamic" },
+  { id: "echo", label: "Echo", desc: "Warm, friendly" },
+  { id: "sage", label: "Sage", desc: "Calm, thoughtful" },
+  { id: "shimmer", label: "Shimmer", desc: "Bright, energetic" },
+  { id: "verse", label: "Verse", desc: "Articulate, precise" },
 ];
 
 const DEFAULT_SYSTEM_PROMPT = `You are a professional AI phone agent for {{company_name}}. You are calling {{contact_name}} regarding their account.

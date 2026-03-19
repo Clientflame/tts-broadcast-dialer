@@ -629,3 +629,4 @@
 - [x] Bug: Regular test calls "Extension does not exist" — was actually Voice AI calls misrouted as tts_only due to above bug
 - [x] Fix: Installer now writes voice-ai-handler dialplan inline into extensions_custom.conf (avoids #include file descriptor issues)
 - [x] Fix: Asterisk "Too many open files" caused dialplan reload to silently fail — resolved by fwconsole restart
+- [ ] Bug: Voice AI test calls connect but no audio / AI voice heard after re-running installer
