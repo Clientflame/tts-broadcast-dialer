@@ -608,3 +608,7 @@
 - [x] Fix: Variable name mismatch (camelCase vs UPPER_SNAKE_CASE) between dashboard and dialplan
 - [x] Fix: Campaign voice_ai calls used wrong context (tts-broadcast instead of voice-ai-handler)
 - [x] Fix: Installer now loads required ARI modules for ExternalMedia support
+- [x] Bug: Voice AI test call on mobile - no caller IDs or prompts showing in dropdowns
+- [x] Fix: Voice AI tabs now use 2-col grid on mobile, 4-col on desktop so Deploy tab is always visible
+- [x] Fix: SelectTrigger set to w-full, added loading states, fixed isActive Number() comparison
+- [x] Fix: Prompt editor tabs also responsive (2-col mobile, 4-col desktop)

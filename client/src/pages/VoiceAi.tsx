@@ -245,11 +245,11 @@ export default function VoiceAi() {
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
-            <TabsTrigger value="prompts" className="gap-1.5"><Brain className="h-4 w-4" />Prompts</TabsTrigger>
-            <TabsTrigger value="conversations" className="gap-1.5"><MessageSquare className="h-4 w-4" />Conversations</TabsTrigger>
-            <TabsTrigger value="analytics" className="gap-1.5"><BarChart3 className="h-4 w-4" />Analytics</TabsTrigger>
-            <TabsTrigger value="deploy" className="gap-1.5"><Rocket className="h-4 w-4" />Deploy & Manage</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto gap-1 p-1">
+            <TabsTrigger value="prompts" className="gap-1.5 text-xs sm:text-sm"><Brain className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Prompts</TabsTrigger>
+            <TabsTrigger value="conversations" className="gap-1.5 text-xs sm:text-sm"><MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Conversations</TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-1.5 text-xs sm:text-sm"><BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Analytics</TabsTrigger>
+            <TabsTrigger value="deploy" className="gap-1.5 text-xs sm:text-sm"><Rocket className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Deploy</TabsTrigger>
           </TabsList>
 
           {/* ─── Prompts Tab ─── */}
@@ -506,11 +506,11 @@ export default function VoiceAi() {
               <DialogTitle>{editingPromptId ? "Edit Voice AI Prompt" : "Create Voice AI Prompt"}</DialogTitle>
             </DialogHeader>
             <Tabs defaultValue="behavior" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="behavior">Behavior</TabsTrigger>
-                <TabsTrigger value="voice">Voice</TabsTrigger>
-                <TabsTrigger value="functions">Functions</TabsTrigger>
-                <TabsTrigger value="compliance">Compliance</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto gap-1 p-1">
+                <TabsTrigger value="behavior" className="text-xs sm:text-sm">Behavior</TabsTrigger>
+                <TabsTrigger value="voice" className="text-xs sm:text-sm">Voice</TabsTrigger>
+                <TabsTrigger value="functions" className="text-xs sm:text-sm">Functions</TabsTrigger>
+                <TabsTrigger value="compliance" className="text-xs sm:text-sm">Compliance</TabsTrigger>
               </TabsList>
 
               <TabsContent value="behavior" className="space-y-4 mt-4">
@@ -701,7 +701,7 @@ function DeployTab() {
   const testCallMut = trpc.voiceAi.testCall.useMutation();
   const prompts = trpc.voiceAi.listPrompts.useQuery();
   const callerIdsQuery = trpc.callerIds.list.useQuery();
-  const activeCallerIds = (callerIdsQuery.data || []).filter((c: any) => c.isActive === 1 && !c.autoDisabled);
+  const activeCallerIds = (callerIdsQuery.data || []).filter((c: any) => Number(c.isActive) === 1 && !Number(c.autoDisabled));
 
   const handleCopy = () => {
     if (installCmd.data?.command) {
@@ -896,48 +896,63 @@ function DeployTab() {
           <p className="text-sm text-muted-foreground">
             Send a test call to verify the Voice AI Bridge is working end-to-end. The AI will call the number and use the selected prompt.
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-col gap-3">
             <div>
-              <Label className="text-xs">Phone Number</Label>
+              <Label className="text-xs mb-1 block">Phone Number</Label>
               <Input
                 placeholder="e.g. 4071234567"
                 value={testPhone}
                 onChange={e => setTestPhone(e.target.value)}
+                className="w-full"
               />
             </div>
             <div>
-              <Label className="text-xs">Voice AI Prompt</Label>
-              <Select value={testPromptId} onValueChange={setTestPromptId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select prompt" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(prompts.data || []).map((p: any) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs mb-1 block">Voice AI Prompt</Label>
+              {prompts.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading prompts...
+                </div>
+              ) : (prompts.data || []).length === 0 ? (
+                <p className="text-xs text-amber-500 py-2">No prompts found. Create one in the Prompts tab first.</p>
+              ) : (
+                <Select value={testPromptId} onValueChange={setTestPromptId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select prompt" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {(prompts.data || []).map((p: any) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div>
-              <Label className="text-xs">Caller ID</Label>
-              <Select value={testCallerId?.toString() || "auto"} onValueChange={v => setTestCallerId(v === "auto" ? undefined : parseInt(v))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Auto (random)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Auto (random rotation)</SelectItem>
-                  {activeCallerIds.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>
-                      {c.phoneNumber}{c.label ? ` - ${c.label}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {activeCallerIds.length === 0 && (
+              <Label className="text-xs mb-1 block">Caller ID</Label>
+              {callerIdsQuery.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading caller IDs...
+                </div>
+              ) : (
+                <Select value={testCallerId?.toString() || "auto"} onValueChange={v => setTestCallerId(v === "auto" ? undefined : parseInt(v))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Auto (random)" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    <SelectItem value="auto">Auto (random rotation)</SelectItem>
+                    {activeCallerIds.map((c: any) => (
+                      <SelectItem key={c.id} value={c.id.toString()}>
+                        {c.phoneNumber}{c.label ? ` - ${c.label}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {!callerIdsQuery.isLoading && activeCallerIds.length === 0 && (
                 <p className="text-xs text-amber-500 mt-1">No active caller IDs found. Add one in Caller IDs page first.</p>
               )}
             </div>
-            <div className="flex items-end">
+            <div>
               <Button
                 onClick={handleTestCall}
                 disabled={testCallMut.isPending || !testPhone || !testPromptId}
