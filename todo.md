@@ -629,4 +629,6 @@
 - [x] Bug: Regular test calls "Extension does not exist" — was actually Voice AI calls misrouted as tts_only due to above bug
 - [x] Fix: Installer now writes voice-ai-handler dialplan inline into extensions_custom.conf (avoids #include file descriptor issues)
 - [x] Fix: Asterisk "Too many open files" caused dialplan reload to silently fail — resolved by fwconsole restart
-- [ ] Bug: Voice AI test calls connect but no audio / AI voice heard after re-running installer
+- [x] Bug: Voice AI test calls connect but no audio / AI voice heard — fixed: invalid voice (onyx), wrong audio format (16kHz→24kHz), bad session config format
+- [x] Bug: Voice AI test call still no AI voice after re-running installer with v2.1 fixes — fixed: switched ExternalMedia from slin to ulaw (G.711) to match PSTN codec natively, added ulaw encode/decode, RTP PT 0, 160-byte frames, 20ms pacing
+- [ ] Improve Voice AI audio quality: better resampling algorithm, low-pass anti-aliasing filter

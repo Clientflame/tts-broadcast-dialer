@@ -6,8 +6,8 @@ Full bidirectional audio streaming via ExternalMedia + RTP.
 Architecture:
   PSTN Call -> Asterisk -> Stasis(voice-ai-bridge)
     -> Mixing Bridge (caller + ExternalMedia)
-    -> ExternalMedia channel <-> RTP (slin16/16kHz) <-> UDP socket
-    -> This Bridge (resample 16kHz<->24kHz) <-> OpenAI Realtime API (WebSocket, pcm16/24kHz)
+    -> ExternalMedia channel <-> RTP (slin/8kHz) <-> UDP socket
+    -> This Bridge (resample 8kHz<->24kHz) <-> OpenAI Realtime API (WebSocket, pcm16/24kHz)
 
 The bridge:
 1. Listens for Stasis events from Asterisk via ARI HTTP long-poll
@@ -52,7 +52,7 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview")
 # RTP config
 UDP_BASE_PORT = 42000  # Base port for RTP UDP sockets
 RTP_VERSION = 2
-PT_SLIN16 = 118  # Dynamic payload type for slin16 in Asterisk
+PT_ULAW = 0  # G.711 mu-law payload type (matches PSTN codec natively)
 
 # Valid voices for OpenAI Realtime API (as of 2025+)
 VALID_REALTIME_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"}
@@ -76,38 +76,92 @@ class RtpState:
 def build_rtp(payload: bytes, st: RtpState) -> bytes:
     """Build RTP packet with 12-byte header + payload."""
     vpxcc = (RTP_VERSION << 6)
-    mpt = PT_SLIN16  # no marker bit for continuous audio
+    mpt = PT_ULAW  # no marker bit for continuous audio
     header = struct.pack("!BBHII", vpxcc, mpt, st.seq & 0xFFFF, st.ts & 0xFFFFFFFF, st.ssrc)
     st.seq = (st.seq + 1) & 0xFFFF
-    st.ts = (st.ts + 320) & 0xFFFFFFFF  # 16kHz * 0.02s = 320 samples per 20ms frame
+    st.ts = (st.ts + 160) & 0xFFFFFFFF  # 8kHz * 0.02s = 160 samples per 20ms frame
     return header + payload
 
 
-def resample_16k_to_24k(pcm16k: bytes) -> bytes:
-    """Upsample PCM16 audio from 16kHz to 24kHz using linear interpolation.
-    Each 16-bit LE sample is interpolated 3:2 (for every 2 input samples, produce 3 output samples)."""
+# ─── G.711 mu-law encoding/decoding ──────────────────────────────────────────
+def _pcm16_to_ulaw_sample(pcm: int) -> int:
+    """Convert a single 16-bit signed PCM sample to 8-bit mu-law."""
+    BIAS = 0x84
+    CLIP = 32635
+    sign = 0
+    if pcm < 0:
+        sign = 0x80
+        pcm = -pcm
+    if pcm > CLIP:
+        pcm = CLIP
+    pcm += BIAS
+    # Find the segment (exponent)
+    exponent = 7
+    mask = 0x4000
+    for _ in range(8):
+        if pcm & mask:
+            break
+        exponent -= 1
+        mask >>= 1
+    mantissa = (pcm >> (exponent + 3)) & 0x0F
+    ulaw_byte = ~(sign | (exponent << 4) | mantissa) & 0xFF
+    return ulaw_byte
+
+
+def _ulaw_to_pcm16_sample(ulaw: int) -> int:
+    """Convert a single 8-bit mu-law sample to 16-bit signed PCM."""
+    ulaw = ~ulaw & 0xFF
+    sign = ulaw & 0x80
+    exponent = (ulaw >> 4) & 0x07
+    mantissa = ulaw & 0x0F
+    sample = ((mantissa << 3) + 0x84) << exponent
+    sample -= 0x84
+    if sign:
+        sample = -sample
+    return max(-32768, min(32767, sample))
+
+
+def pcm16_to_ulaw(pcm_bytes: bytes) -> bytes:
+    """Convert 16-bit signed PCM bytes to G.711 mu-law bytes."""
+    import array
+    samples = array.array('h')
+    samples.frombytes(pcm_bytes)
+    return bytes(_pcm16_to_ulaw_sample(s) for s in samples)
+
+
+def ulaw_to_pcm16(ulaw_bytes: bytes) -> bytes:
+    """Convert G.711 mu-law bytes to 16-bit signed PCM bytes."""
+    import array
+    out = array.array('h')
+    for b in ulaw_bytes:
+        out.append(_ulaw_to_pcm16_sample(b))
+    return out.tobytes()
+
+
+def resample_8k_to_24k(pcm8k: bytes) -> bytes:
+    """Upsample PCM16 audio from 8kHz to 24kHz using linear interpolation.
+    Ratio 3:1 (for every 1 input sample, produce 3 output samples)."""
     import array
     samples_in = array.array('h')  # signed 16-bit
-    samples_in.frombytes(pcm16k)
+    samples_in.frombytes(pcm8k)
     n = len(samples_in)
     if n < 2:
-        return pcm16k
-    # 16kHz -> 24kHz = ratio 3/2: for every 2 input samples, output 3
+        return pcm8k
+    # 8kHz -> 24kHz = ratio 3:1: for every 1 input sample, produce 3 output samples
     out = array.array('h')
     for i in range(n - 1):
         s0 = samples_in[i]
         s1 = samples_in[i + 1]
-        out.append(s0)
-        # Interpolated sample at 1/3 and 2/3 between pairs
-        if i % 2 == 0:
-            out.append(int(s0 * 2 / 3 + s1 * 1 / 3))
-    out.append(samples_in[-1])
+        out.append(s0)  # original sample
+        out.append(int(s0 * 2 / 3 + s1 * 1 / 3))  # interpolated at 1/3
+        out.append(int(s0 * 1 / 3 + s1 * 2 / 3))  # interpolated at 2/3
+    out.append(samples_in[-1])  # last sample
     return out.tobytes()
 
 
-def resample_24k_to_16k(pcm24k: bytes) -> bytes:
-    """Downsample PCM16 audio from 24kHz to 16kHz by picking every 3rd sample out of 2.
-    Ratio 2/3: for every 3 input samples, output 2."""
+def resample_24k_to_8k(pcm24k: bytes) -> bytes:
+    """Downsample PCM16 audio from 24kHz to 8kHz by picking every 3rd sample.
+    Ratio 1:3 - take every 3rd sample."""
     import array
     samples_in = array.array('h')
     samples_in.frombytes(pcm24k)
@@ -115,14 +169,7 @@ def resample_24k_to_16k(pcm24k: bytes) -> bytes:
     if n < 3:
         return pcm24k
     out = array.array('h')
-    i = 0
-    while i + 2 < n:
-        out.append(samples_in[i])
-        # Interpolate between sample[1] and sample[2] of each triplet
-        out.append(int((samples_in[i + 1] + samples_in[i + 2]) / 2))
-        i += 3
-    # Handle remaining samples
-    if i < n:
+    for i in range(0, n, 3):
         out.append(samples_in[i])
     return out.tobytes()
 
@@ -162,7 +209,7 @@ class AriClient:
 
     async def create_bridge(self, bridge_id: str):
         """Create a mixing bridge."""
-        return await self._request("POST", "/bridges", type="mixing", bridgeId=bridge_id)
+        return await self._request("POST", "/bridges", type="mixing,proxy_media", bridgeId=bridge_id)
 
     async def add_to_bridge(self, bridge_id: str, channel_id: str):
         """Add a channel to a bridge."""
@@ -486,7 +533,7 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
 
             # Configure session: server-VAD + voice + PCM16 @ 24kHz
             # OpenAI Realtime API only supports 24kHz for PCM audio.
-            # We resample 16kHz (Asterisk slin16) <-> 24kHz (OpenAI) in the bridge.
+            # We resample 8kHz (Asterisk slin) <-> 24kHz (OpenAI) in the bridge.
             session_config = {
                 "type": "session.update",
                 "session": {
@@ -569,12 +616,13 @@ async def pump_rtp_to_openai(session: CallSession, ws):
         except (asyncio.CancelledError, OSError):
             break
 
-        pcm = parse_rtp(data)
-        if not pcm:
+        ulaw_payload = parse_rtp(data)
+        if not ulaw_payload:
             continue
 
-        # Resample 16kHz (Asterisk) -> 24kHz (OpenAI Realtime API)
-        pcm_24k = resample_16k_to_24k(pcm)
+        # Decode ulaw -> PCM16, then resample 8kHz -> 24kHz for OpenAI
+        pcm_8k = ulaw_to_pcm16(ulaw_payload)
+        pcm_24k = resample_8k_to_24k(pcm_8k)
 
         # Send to OpenAI as base64 PCM
         msg = json.dumps({
@@ -588,85 +636,136 @@ async def pump_rtp_to_openai(session: CallSession, ws):
             break
 
 
+async def _rtp_pacer(session: CallSession, rtp_queue: asyncio.Queue):
+    """Send RTP packets from queue at real-time pace (one every 20ms)."""
+    pkt_count = 0
+    next_send = None
+    while not session.stop_event.is_set():
+        try:
+            pkt, dest = await asyncio.wait_for(rtp_queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        except asyncio.CancelledError:
+            break
+
+        now = asyncio.get_event_loop().time()
+        if next_send is None:
+            next_send = now
+
+        # Wait until it's time to send this packet
+        delay = next_send - now
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        try:
+            session.udp_socket.sendto(pkt, dest)
+            pkt_count += 1
+            if pkt_count <= 3 or pkt_count % 200 == 0:
+                logger.info(f"RTP_PACED #{pkt_count}: {len(pkt)} bytes -> {dest[0]}:{dest[1]} for {session.channel_id}")
+        except Exception as e:
+            logger.error(f"RTP send error: {e}")
+
+        next_send += 0.020  # Schedule next packet 20ms later
+
+        # If we've fallen behind (queue backed up), catch up but don't skip
+        now2 = asyncio.get_event_loop().time()
+        if next_send < now2 - 0.5:
+            next_send = now2  # Reset if more than 500ms behind
+
+    logger.info(f"RTP pacer ended for {session.channel_id}, sent {pkt_count} packets")
+
+
 async def pump_openai_to_rtp(session: CallSession, ws):
     """Receive audio/events from OpenAI, send PCM back to Asterisk as RTP."""
     logger.info(f"OpenAI->RTP pump started for {session.channel_id} -> {session.asterisk_rtp_host}:{session.asterisk_rtp_port}")
 
-    while not session.stop_event.is_set():
-        try:
-            raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
-        except asyncio.TimeoutError:
-            continue
-        except (asyncio.CancelledError, Exception):
-            break
+    # Create a queue for RTP packets and a pacer task to send them at 20ms intervals
+    rtp_queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
+    pacer_task = asyncio.create_task(_rtp_pacer(session, rtp_queue))
 
-        if not isinstance(raw, (str, bytes)):
-            continue
-
-        try:
-            evt = json.loads(raw if isinstance(raw, str) else raw.decode())
-        except Exception:
-            continue
-
-        event_type = evt.get("type", "")
-
-        if event_type == "response.audio.delta":
-            # AI audio (24kHz from OpenAI) -> resample to 16kHz -> RTP -> Asterisk
-            audio_b64 = evt.get("delta", "")
-            if audio_b64 and session.udp_socket and session.asterisk_rtp_port:
-                pcm_24k = base64.b64decode(audio_b64)
-                # Resample 24kHz (OpenAI) -> 16kHz (Asterisk slin16)
-                pcm = resample_24k_to_16k(pcm_24k)
-                # Packetize into 20ms frames (640 bytes = 320 samples * 2 bytes @ 16kHz)
-                for i in range(0, len(pcm), 640):
-                    chunk = pcm[i:i + 640]
-                    if len(chunk) < 640:
-                        chunk = chunk + bytes(640 - len(chunk))  # pad last frame
-                    pkt = build_rtp(chunk, session.rtp_state)
-                    try:
-                        session.udp_socket.sendto(pkt, (session.asterisk_rtp_host, session.asterisk_rtp_port))
-                    except Exception as e:
-                        logger.error(f"RTP send error: {e}")
-                        break
-
-        elif event_type == "response.audio_transcript.done":
-            text = evt.get("transcript", "")
-            if text:
-                session.transcript.append({
-                    "role": "assistant",
-                    "text": text,
-                    "timestamp": time.time(),
-                })
-                logger.debug(f"AI said: {text[:80]}...")
-
-        elif event_type == "conversation.item.input_audio_transcription.completed":
-            text = evt.get("transcript", "")
-            if text:
-                session.transcript.append({
-                    "role": "user",
-                    "text": text,
-                    "timestamp": time.time(),
-                })
-                logger.debug(f"Caller said: {text[:80]}...")
-
-        elif event_type == "input_audio_buffer.speech_started":
-            logger.debug(f"Caller started speaking on {session.channel_id}")
-
-        elif event_type == "response.function_call_arguments.done":
-            await handle_function_call(session, evt)
-
-        elif event_type == "error":
-            error = evt.get("error", {})
-            logger.error(f"OpenAI error: {error}")
-            if error.get("code") == "session_expired":
-                session.end_reason = "session_expired"
+    try:
+        while not session.stop_event.is_set():
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            except (asyncio.CancelledError, Exception):
                 break
 
-        elif event_type == "session.created":
-            logger.info(f"OpenAI session created for {session.channel_id}")
+            if not isinstance(raw, (str, bytes)):
+                continue
 
-        elif event_type == "session.updated":
-            logger.info(f"OpenAI session configured for {session.channel_id}")
+            try:
+                evt = json.loads(raw if isinstance(raw, str) else raw.decode())
+            except Exception:
+                continue
+
+            event_type = evt.get("type", "")
+
+            if event_type == "response.audio.delta":
+                # AI audio (24kHz from OpenAI) -> resample to 8kHz -> RTP -> Asterisk
+                audio_b64 = evt.get("delta", "")
+                if audio_b64 and session.udp_socket and session.asterisk_rtp_port:
+                    pcm_24k = base64.b64decode(audio_b64)
+                    # Resample 24kHz (OpenAI) -> 8kHz PCM -> ulaw encode
+                    pcm_8k = resample_24k_to_8k(pcm_24k)
+                    ulaw_data = pcm16_to_ulaw(pcm_8k)
+                    # Packetize into 20ms frames (160 bytes = 160 samples * 1 byte @ 8kHz ulaw)
+                    dest = (session.asterisk_rtp_host, session.asterisk_rtp_port)
+                    for i in range(0, len(ulaw_data), 160):
+                        chunk = ulaw_data[i:i + 160]
+                        if len(chunk) < 160:
+                            chunk = chunk + b'\xff' * (160 - len(chunk))  # pad with ulaw silence (0xFF)
+                        pkt = build_rtp(chunk, session.rtp_state)
+                        try:
+                            rtp_queue.put_nowait((pkt, dest))
+                        except asyncio.QueueFull:
+                            logger.warning(f"RTP queue full, dropping packet for {session.channel_id}")
+
+            elif event_type == "response.audio_transcript.done":
+                text = evt.get("transcript", "")
+                if text:
+                    session.transcript.append({
+                        "role": "assistant",
+                        "text": text,
+                        "timestamp": time.time(),
+                    })
+                    logger.debug(f"AI said: {text[:80]}...")
+
+            elif event_type == "conversation.item.input_audio_transcription.completed":
+                text = evt.get("transcript", "")
+                if text:
+                    session.transcript.append({
+                        "role": "user",
+                        "text": text,
+                        "timestamp": time.time(),
+                    })
+                    logger.debug(f"Caller said: {text[:80]}...")
+
+            elif event_type == "input_audio_buffer.speech_started":
+                logger.debug(f"Caller started speaking on {session.channel_id}")
+
+            elif event_type == "response.function_call_arguments.done":
+                await handle_function_call(session, evt)
+
+            elif event_type == "error":
+                error = evt.get("error", {})
+                logger.error(f"OpenAI error: {error}")
+                if error.get("code") == "session_expired":
+                    session.end_reason = "session_expired"
+                    break
+
+            elif event_type == "session.created":
+                logger.info(f"OpenAI session created for {session.channel_id}")
+
+            elif event_type == "session.updated":
+                logger.info(f"OpenAI session configured for {session.channel_id}")
+    finally:
+        pacer_task.cancel()
+        try:
+            await pacer_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def handle_function_call(session: CallSession, data: dict):
@@ -825,7 +924,7 @@ async def handle_stasis_start(event: dict):
         em = await ari_client.create_external_media(
             session.ext_media_channel_id,
             host=f"127.0.0.1:{session.udp_port}",
-            fmt="slin16",
+            fmt="ulaw",
             direction="both",
         )
         em_actual_id = em.get("id", session.ext_media_channel_id) if isinstance(em, dict) else session.ext_media_channel_id
@@ -943,7 +1042,7 @@ async def main():
     global ari_client
 
     logger.info("=" * 60)
-    logger.info("  Voice AI Bridge v2.0.0")
+    logger.info("  Voice AI Bridge v2.1.0")
     logger.info(f"  ARI: {ARI_URL} (app: {ARI_APP})")
     logger.info(f"  OpenAI Model: {OPENAI_MODEL}")
     logger.info(f"  Health Port: {BRIDGE_PORT}")
