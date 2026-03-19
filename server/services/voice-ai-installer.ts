@@ -1,7 +1,11 @@
 /**
- * Voice AI Bridge Installer
+ * Voice AI Bridge Installer & API
  * 
- * Serves a bash installer script at /api/voice-ai/install?key=<api_key>
+ * Serves:
+ * - GET  /api/voice-ai/install?key=<api_key>     — Bash installer script
+ * - GET  /api/voice-ai/prompt/:id?key=<api_key>  — Fetch prompt config (for bridge)
+ * - POST /api/voice-ai/conversation?key=<api_key> — Report conversation results (from bridge)
+ * 
  * Same pattern as the PBX Agent installer — run on FreePBX via:
  *   curl -s 'https://your-domain/api/voice-ai/install?key=YOUR_KEY' | bash
  */
@@ -11,6 +15,142 @@ import * as db from "../db";
 export function createVoiceAiInstallerRouter(): Router {
   const router = Router();
 
+  // ─── Middleware: validate API key ──────────────────────────────────────────
+  async function validateApiKey(req: Request, res: Response): Promise<boolean> {
+    const apiKey = (req.query.key || req.headers["x-api-key"] || req.headers.authorization?.replace("Bearer ", "")) as string;
+    if (!apiKey) {
+      res.status(401).json({ error: "Missing API key" });
+      return false;
+    }
+    const agent = await db.getPbxAgentByApiKey(apiKey);
+    if (!agent) {
+      res.status(403).json({ error: "Invalid API key" });
+      return false;
+    }
+    return true;
+  }
+
+  // ─── GET /prompt/:id — Fetch prompt config for the bridge ─────────────────
+  router.get("/prompt/:id", async (req: Request, res: Response) => {
+    try {
+      if (!(await validateApiKey(req, res))) return;
+
+      const promptId = parseInt(req.params.id, 10);
+      if (isNaN(promptId)) {
+        res.status(400).json({ error: "Invalid prompt ID" });
+        return;
+      }
+
+      // Get the prompt — bridge needs it regardless of user ownership
+      // since the bridge runs on the PBX server and serves all users
+      const prompt = await db.getVoiceAiPromptById(promptId);
+      if (!prompt) {
+        res.status(404).json({ error: "Prompt not found" });
+        return;
+      }
+
+      // Parse enabledTools (stored as JSON string array of tool names)
+      let enabledTools: string[] = [];
+      try {
+        if (prompt.enabledTools) {
+          enabledTools = typeof prompt.enabledTools === "string" ? JSON.parse(prompt.enabledTools) : prompt.enabledTools;
+        }
+      } catch {
+        enabledTools = [];
+      }
+
+      res.json({
+        id: prompt.id,
+        name: prompt.name,
+        systemPrompt: prompt.systemPrompt,
+        openingMessage: prompt.openingMessage || "",
+        voice: prompt.voice || "alloy",
+        language: prompt.language || "en",
+        temperature: prompt.temperature || "0.7",
+        maxTurnDuration: prompt.maxTurnDuration || 120,
+        maxConversationDuration: prompt.maxConversationDuration || 300,
+        silenceTimeout: prompt.silenceTimeout || 10,
+        requireAiDisclosure: prompt.requireAiDisclosure,
+        requireMiniMiranda: prompt.requireMiniMiranda,
+        miniMirandaText: prompt.miniMirandaText || "",
+        escalateOnDtmf: prompt.escalateOnDtmf || "#",
+        escalateKeywords: prompt.escalateKeywords || [],
+        enabledTools,
+      });
+    } catch (e: any) {
+      console.error("[VoiceAI API] Error fetching prompt:", e);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ─── POST /conversation — Report conversation results from bridge ─────────
+  router.post("/conversation", async (req: Request, res: Response) => {
+    try {
+      if (!(await validateApiKey(req, res))) return;
+
+      const {
+        channelId,
+        promptId,
+        contactName,
+        contactPhone,
+        campaignName,
+        duration,
+        transcript,
+        disposition,
+        sentiment,
+        endReason,
+      } = req.body;
+
+      console.log(`[VoiceAI API] Conversation report: ${channelId} | Prompt: ${promptId} | Duration: ${duration}s | Disposition: ${disposition}`);
+
+      // Parse transcript into the expected typed array format
+      let parsedTranscript: Array<{ role: string; content: string; timestamp: number; functionCall?: { name: string; args: string; result?: string } }> = [];
+      try {
+        if (typeof transcript === "string") {
+          parsedTranscript = JSON.parse(transcript);
+        } else if (Array.isArray(transcript)) {
+          parsedTranscript = transcript;
+        }
+      } catch {
+        parsedTranscript = [];
+      }
+
+      // Look up the prompt to get the userId (required field)
+      let userId = 0;
+      const pId = parseInt(promptId, 10);
+      if (pId) {
+        const prompt = await db.getVoiceAiPromptById(pId);
+        if (prompt) userId = prompt.userId;
+      }
+
+      // Store conversation in the database
+      try {
+        await db.createVoiceAiConversation({
+          userId,
+          promptId: pId || undefined,
+          phoneNumber: contactPhone || "unknown",
+          contactName: contactName || "Unknown",
+          transcript: parsedTranscript,
+          duration: parseInt(duration, 10) || 0,
+          disposition: disposition || "completed",
+          sentiment: sentiment || "neutral",
+          status: "completed",
+          startedAt: Date.now() - ((parseInt(duration, 10) || 0) * 1000),
+          endedAt: Date.now(),
+        });
+      } catch (dbErr: any) {
+        // Log but don't fail — conversation table might not exist yet
+        console.warn("[VoiceAI API] Could not store conversation:", dbErr.message);
+      }
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[VoiceAI API] Error reporting conversation:", e);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ─── GET /install — Bash installer script ─────────────────────────────────
   router.get("/install", async (req: Request, res: Response) => {
     const apiKey = req.query.key as string;
     if (!apiKey) {
@@ -29,7 +169,8 @@ export function createVoiceAiInstallerRouter(): Router {
     const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host;
     const dashboardUrl = `${protocol}://${host}`;
-    const dashboardApiUrl = `${dashboardUrl}/api/pbx`;
+    // Point the bridge at the voice-ai API endpoints (not /api/pbx)
+    const dashboardApiUrl = `${dashboardUrl}/api/voice-ai`;
 
     // Get OpenAI key
     const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY || "";

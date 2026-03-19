@@ -612,3 +612,12 @@
 - [x] Fix: Voice AI tabs now use 2-col grid on mobile, 4-col on desktop so Deploy tab is always visible
 - [x] Fix: SelectTrigger set to w-full, added loading states, fixed isActive Number() comparison
 - [x] Fix: Prompt editor tabs also responsive (2-col mobile, 4-col desktop)
+- [x] Bug: Connection Status refresh button doesn't work — added visual spinner + toast feedback
+- [x] Bug: Voice AI test call connects then immediately hangs up — root cause: Voice AI Bridge not deployed
+- [x] Fix: Added REST API endpoints for bridge (GET /api/voice-ai/prompt/:id, POST /api/voice-ai/conversation)
+- [x] Fix: Fixed DASHBOARD_API_URL to point to /api/voice-ai instead of /api/pbx
+- [x] Fix: Fixed URL duplication in bridge (was /api/voice-ai/voice-ai/prompt)
+- [x] Fix: Added build_tool_definitions() to map enabledTools names to OpenAI function definitions
+- [x] Fix: Added openingMessage support — AI greets caller with configured message
+- [x] Fix: Updated dialplan with Stasis fallback — plays error message if bridge not running
+- [x] Fix: Added getVoiceAiPromptById() db helper for bridge API (no user filter needed)

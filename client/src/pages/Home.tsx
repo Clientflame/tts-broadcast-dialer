@@ -841,8 +841,8 @@ export default function Home() {
                   {amiStatus.data?.connected ? "Connected" : "Disconnected"}
                 </Badge>
               </div>
-              <Button variant="outline" size="sm" className="w-full mt-2" onClick={() => amiStatus.refetch()}>
-                <RefreshCw className="h-3.5 w-3.5 mr-2" />Refresh Status
+              <Button variant="outline" size="sm" className="w-full mt-2" disabled={amiStatus.isFetching} onClick={() => { amiStatus.refetch(); toast.info("Refreshing status..."); }}>
+                <RefreshCw className={`h-3.5 w-3.5 mr-2 ${amiStatus.isFetching ? "animate-spin" : ""}`} />Refresh Status
               </Button>
             </CardContent>
           </Card>

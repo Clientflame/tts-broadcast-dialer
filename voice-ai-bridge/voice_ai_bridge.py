@@ -254,12 +254,93 @@ class CallSession:
             self.udp_socket = None
 
 
+# ─── Tool Definitions ───────────────────────────────────────────────────────
+# Map tool name strings to OpenAI function tool definitions
+PREDEFINED_TOOLS = {
+    "account_lookup": {
+        "type": "function",
+        "name": "account_lookup",
+        "description": "Look up account information for the person on the call",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_number": {"type": "string", "description": "Account number or phone number"},
+            },
+            "required": [],
+        },
+    },
+    "schedule_callback": {
+        "type": "function",
+        "name": "schedule_callback",
+        "description": "Schedule a callback for the person at a specific date and time",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "date": {"type": "string", "description": "Callback date (YYYY-MM-DD)"},
+                "time": {"type": "string", "description": "Callback time (HH:MM)"},
+                "reason": {"type": "string", "description": "Reason for callback"},
+            },
+            "required": ["date", "time"],
+        },
+    },
+    "process_payment": {
+        "type": "function",
+        "name": "process_payment",
+        "description": "Process a payment from the person on the call",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "string", "description": "Payment amount"},
+                "method": {"type": "string", "description": "Payment method (card, bank, etc.)"},
+            },
+            "required": ["amount"],
+        },
+    },
+    "transfer_to_agent": {
+        "type": "function",
+        "name": "transfer_to_agent",
+        "description": "Transfer the call to a live human agent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "description": "Reason for transfer"},
+            },
+            "required": [],
+        },
+    },
+    "end_call": {
+        "type": "function",
+        "name": "end_call",
+        "description": "End the phone call politely",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "description": "Reason for ending the call"},
+                "disposition": {"type": "string", "description": "Call disposition/outcome"},
+            },
+            "required": [],
+        },
+    },
+}
+
+
+def build_tool_definitions(enabled_tool_names: list) -> list:
+    """Convert a list of tool name strings to OpenAI function tool definitions."""
+    definitions = []
+    for name in enabled_tool_names:
+        if name in PREDEFINED_TOOLS:
+            definitions.append(PREDEFINED_TOOLS[name])
+        else:
+            logger.warning(f"Unknown tool name: {name}")
+    return definitions
+
+
 # ─── Dashboard API Helpers ──────────────────────────────────────────────────
 async def fetch_prompt(prompt_id: str) -> Optional[dict]:
     """Fetch the AI prompt configuration from the dashboard API."""
     try:
         import aiohttp
-        url = f"{DASHBOARD_API_URL}/voice-ai/prompt/{prompt_id}"
+        url = f"{DASHBOARD_API_URL}/prompt/{prompt_id}"
         headers = {"Authorization": f"Bearer {DASHBOARD_API_KEY}"}
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
@@ -276,7 +357,7 @@ async def report_conversation(session: CallSession):
     """Report conversation results back to the dashboard."""
     try:
         import aiohttp
-        url = f"{DASHBOARD_API_URL}/voice-ai/conversation"
+        url = f"{DASHBOARD_API_URL}/conversation"
         headers = {
             "Authorization": f"Bearer {DASHBOARD_API_KEY}",
             "Content-Type": "application/json",
@@ -315,9 +396,12 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
         import websockets
 
         system_prompt = prompt_config.get("systemPrompt", "You are a helpful assistant on a phone call.")
+        opening_message = prompt_config.get("openingMessage", "")
         voice = prompt_config.get("voice", "alloy")
         temperature = float(prompt_config.get("temperature", "0.7"))
-        tools = prompt_config.get("tools", [])
+        enabled_tools = prompt_config.get("enabledTools", [])
+        max_duration = int(prompt_config.get("maxConversationDuration", 300))
+        silence_timeout = int(prompt_config.get("silenceTimeout", 10))
 
         # Connect to OpenAI Realtime
         headers = {
@@ -352,17 +436,12 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
                 },
             }
 
-            # Add function tools if configured
-            if tools:
-                session_config["session"]["tools"] = [
-                    {
-                        "type": "function",
-                        "name": tool["name"],
-                        "description": tool.get("description", ""),
-                        "parameters": tool.get("parameters", {"type": "object", "properties": {}}),
-                    }
-                    for tool in tools
-                ]
+            # Add function tools if configured (enabledTools is a list of tool name strings)
+            # Map tool names to predefined tool definitions
+            if enabled_tools:
+                tool_definitions = build_tool_definitions(enabled_tools)
+                if tool_definitions:
+                    session_config["session"]["tools"] = tool_definitions
 
             await ws.send(json.dumps(session_config))
 
@@ -372,6 +451,19 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
                 "type": "input_audio_buffer.append",
                 "audio": base64.b64encode(silence).decode(),
             }))
+
+            # If there's an opening message, have the AI speak it first
+            if opening_message:
+                await ws.send(json.dumps({
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": f"[System: The call has just connected. Greet the caller with this opening message: {opening_message}]"}],
+                    },
+                }))
+                await ws.send(json.dumps({"type": "response.create"}))
+                logger.info(f"Sent opening message prompt for {session.channel_id}")
 
             # Run bidirectional pumps
             recv_task = asyncio.create_task(pump_openai_to_rtp(session, ws))
@@ -675,9 +767,12 @@ async def handle_stasis_start(event: dict):
             logger.warning(f"Using default prompt for {channel_id}")
             prompt_config = {
                 "systemPrompt": "You are a professional assistant on a phone call. Be helpful and concise.",
+                "openingMessage": "",
                 "voice": "alloy",
                 "temperature": "0.7",
-                "tools": [],
+                "enabledTools": [],
+                "maxConversationDuration": 300,
+                "silenceTimeout": 10,
             }
 
         # 9. Start the audio bridge (RTP <-> OpenAI Realtime)

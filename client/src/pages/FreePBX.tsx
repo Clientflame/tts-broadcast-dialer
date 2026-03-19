@@ -529,9 +529,10 @@ export default function FreePBX() {
                 variant="outline"
                 size="sm"
                 className="w-full mt-3"
-                onClick={() => { amiStatus.refetch(); agents.refetch(); queueStats.refetch(); }}
+                disabled={amiStatus.isFetching}
+                onClick={() => { amiStatus.refetch(); agents.refetch(); queueStats.refetch(); toast.info("Refreshing connection status..."); }}
               >
-                <RefreshCw className="h-3 w-3 mr-2" />Refresh
+                <RefreshCw className={`h-3 w-3 mr-2 ${amiStatus.isFetching ? "animate-spin" : ""}`} />Refresh
               </Button>
             </CardContent>
           </Card>

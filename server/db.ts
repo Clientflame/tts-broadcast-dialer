@@ -2557,6 +2557,14 @@ export async function getVoiceAiPrompt(id: number, userId: number) {
   return row ?? null;
 }
 
+/** Get prompt by ID only (no user filter) — used by Voice AI Bridge API */
+export async function getVoiceAiPromptById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db.select().from(voiceAiPrompts).where(eq(voiceAiPrompts.id, id));
+  return row ?? null;
+}
+
 export async function createVoiceAiPrompt(data: InsertVoiceAiPrompt) {
   const db = await getDb();
   if (!db) return null;
