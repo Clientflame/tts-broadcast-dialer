@@ -155,8 +155,8 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         ivrPaymentAmount: (campaign as any)?.ivrPaymentAmount || 0,
         // Call Recording (from campaign settings)
         recordingEnabled: !!(campaign as any)?.recordingEnabled,
-        // Routing mode (from campaign settings)
-        routingMode: (campaign as any)?.routingMode || "tts_only",
+        // Routing mode: check queue variables first (for test calls), then campaign settings
+        routingMode: (c.variables as any)?.routingMode || (campaign as any)?.routingMode || "tts_only",
         transferExtension: (c as any).transferExtension || null,
       };
     }));

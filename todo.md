@@ -625,3 +625,5 @@
 - [x] Bug: websockets v16 API change — extra_headers renamed to additional_headers, crashes OpenAI connection
 - [x] Bug: ExternalMedia channels trigger new StasisStart events, causing infinite cascade of bridges
 - [x] Bug: Prompt fetch URL returns HTML — added empty ID check and content-type validation
+- [x] Bug: Voice AI test call sends routing=tts_only instead of voice_ai — poll endpoint now checks variables.routingMode first
+- [x] Bug: Regular test calls "Extension does not exist" — was actually Voice AI calls misrouted as tts_only due to above bug
