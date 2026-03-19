@@ -423,10 +423,11 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
 
         logger.info(f"Connecting to OpenAI Realtime for {session.channel_id}...")
 
-        # websockets v16 renamed extra_headers to additional_headers
-        try:
+        # websockets v16+ renamed extra_headers to additional_headers
+        ws_version = tuple(int(x) for x in websockets.__version__.split(".")[:2])
+        if ws_version >= (14, 0):
             ws_conn = websockets.connect(url, additional_headers=headers, max_size=10 * 1024 * 1024)
-        except TypeError:
+        else:
             ws_conn = websockets.connect(url, extra_headers=headers, max_size=10 * 1024 * 1024)
         async with ws_conn as ws:
             session.openai_ws = ws
