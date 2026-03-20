@@ -10,7 +10,7 @@ import {
   Settings as SettingsIcon, Key, Eye, EyeOff, CheckCircle2, XCircle,
   Loader2, ExternalLink, Save, Server, FlaskConical, ShieldCheck, ShieldAlert,
   PlugZap, Unplug, Wifi, Terminal, RotateCcw, AlertTriangle, Bell, BellOff,
-  Mail,
+  Mail, MessageSquare, Phone, Send, Smartphone, Hash,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
@@ -74,6 +74,7 @@ export default function Settings() {
             <TTSApiKeysSection />
             <FreePBXSettingsSection />
             <SmtpSettingsSection />
+            <NotificationChannelsSection />
             <NotificationPreferencesSection />
           </>
         ) : (
@@ -946,6 +947,276 @@ function NotificationPreferencesSection() {
         {types.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-4">No notification types configured.</p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NotificationChannelsSection() {
+  const channelsQuery = trpc.appSettings.getNotificationChannels.useQuery();
+  const updateChannel = trpc.appSettings.updateNotificationChannel.useMutation();
+  const testEmail = trpc.appSettings.testEmailChannel.useMutation();
+  const testSms = trpc.appSettings.testSmsChannel.useMutation();
+  const utils = trpc.useUtils();
+
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailRecipients, setEmailRecipients] = useState("");
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [smsRecipients, setSmsRecipients] = useState("");
+  const [twilioSid, setTwilioSid] = useState("");
+  const [twilioToken, setTwilioToken] = useState("");
+  const [twilioFrom, setTwilioFrom] = useState("");
+  const [showTwilioToken, setShowTwilioToken] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (channelsQuery.data && !initialized) {
+      setEmailEnabled(channelsQuery.data.email.enabled);
+      setEmailRecipients(channelsQuery.data.email.recipients.join(", "));
+      setSmsEnabled(channelsQuery.data.sms.enabled);
+      setSmsRecipients(channelsQuery.data.sms.recipients.join(", "));
+      setTwilioFrom(channelsQuery.data.sms.fromNumber);
+      setInitialized(true);
+    }
+  }, [channelsQuery.data, initialized]);
+
+  const markDirty = () => setIsDirty(true);
+
+  const handleSave = async () => {
+    try {
+      await updateChannel.mutateAsync({
+        settings: [
+          { key: "notification_email_enabled", value: emailEnabled ? "1" : "0", isSecret: 0 },
+          { key: "notification_email_recipients", value: emailRecipients.trim() || null, isSecret: 0 },
+          { key: "notification_sms_enabled", value: smsEnabled ? "1" : "0", isSecret: 0 },
+          { key: "notification_sms_recipients", value: smsRecipients.trim() || null, isSecret: 0 },
+          { key: "twilio_account_sid", value: twilioSid.trim() || null, isSecret: 0 },
+          ...(twilioToken.trim() ? [{ key: "twilio_auth_token", value: twilioToken.trim(), isSecret: 1 }] : []),
+          { key: "twilio_from_number", value: twilioFrom.trim() || null, isSecret: 0 },
+        ],
+      });
+      await utils.appSettings.getNotificationChannels.invalidate();
+      setIsDirty(false);
+      setInitialized(false); // re-fetch
+      toast.success("Notification channels saved");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save notification channels");
+    }
+  };
+
+  const handleTestEmail = async () => {
+    try {
+      const result = await testEmail.mutateAsync();
+      if (result.success) {
+        toast.success("Test email sent successfully! Check your inbox.");
+      } else {
+        toast.error(`Email test failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Email test failed");
+    }
+  };
+
+  const handleTestSms = async () => {
+    try {
+      const result = await testSms.mutateAsync();
+      if (result.success) {
+        toast.success("Test SMS sent successfully! Check your phone.");
+      } else {
+        toast.error(`SMS test failed: ${result.error}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "SMS test failed");
+    }
+  };
+
+  if (channelsQuery.isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 flex items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const data = channelsQuery.data;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Send className="h-5 w-5" />
+          Notification Channels
+        </CardTitle>
+        <CardDescription>
+          Configure additional notification channels beyond the built-in Manus notifications.
+          When enabled, alerts will be sent to all active channels simultaneously.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Channel Status Overview */}
+        <div className="flex flex-wrap gap-4 p-4 bg-muted/50 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>Manus: Always active</span>
+          </div>
+          <div className={`flex items-center gap-2 text-sm ${emailEnabled && data?.email.smtpConfigured ? "text-green-600" : "text-muted-foreground"}`}>
+            {emailEnabled && data?.email.smtpConfigured ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            <span>Email: {emailEnabled ? (data?.email.smtpConfigured ? "Active" : "SMTP not configured") : "Disabled"}</span>
+          </div>
+          <div className={`flex items-center gap-2 text-sm ${smsEnabled && data?.sms.twilioConfigured ? "text-green-600" : "text-muted-foreground"}`}>
+            {smsEnabled && data?.sms.twilioConfigured ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+            <span>SMS: {smsEnabled ? (data?.sms.twilioConfigured ? "Active" : "Twilio not configured") : "Disabled"}</span>
+          </div>
+        </div>
+
+        {/* Email Channel */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-blue-500" />
+              <Label className="text-sm font-semibold">Email Notifications</Label>
+            </div>
+            <Switch
+              checked={emailEnabled}
+              onCheckedChange={(checked) => { setEmailEnabled(checked); markDirty(); }}
+            />
+          </div>
+          {emailEnabled && (
+            <div className="ml-6 space-y-3">
+              {!data?.email.smtpConfigured && (
+                <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-500/10 p-3 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>SMTP must be configured above before email notifications will work.</span>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-sm">Email Recipients</Label>
+                <Input
+                  placeholder="admin@example.com, manager@example.com"
+                  value={emailRecipients}
+                  onChange={(e) => { setEmailRecipients(e.target.value); markDirty(); }}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Comma-separated email addresses that will receive alert notifications.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestEmail}
+                disabled={testEmail.isPending || !data?.email.smtpConfigured}
+                className="gap-1.5"
+              >
+                {testEmail.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
+                Send Test Email
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* SMS Channel */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Smartphone className="h-4 w-4 text-green-500" />
+              <Label className="text-sm font-semibold">SMS Notifications (Twilio)</Label>
+            </div>
+            <Switch
+              checked={smsEnabled}
+              onCheckedChange={(checked) => { setSmsEnabled(checked); markDirty(); }}
+            />
+          </div>
+          {smsEnabled && (
+            <div className="ml-6 space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Twilio Account SID</Label>
+                <Input
+                  placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  value={twilioSid}
+                  onChange={(e) => { setTwilioSid(e.target.value); markDirty(); }}
+                  className="font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Twilio Auth Token</Label>
+                <div className="relative">
+                  <Input
+                    type={showTwilioToken ? "text" : "password"}
+                    placeholder="Enter Twilio auth token"
+                    value={twilioToken}
+                    onChange={(e) => { setTwilioToken(e.target.value); markDirty(); }}
+                    className="font-mono text-sm pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTwilioToken(!showTwilioToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showTwilioToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Twilio From Number</Label>
+                <Input
+                  placeholder="+15551234567"
+                  value={twilioFrom}
+                  onChange={(e) => { setTwilioFrom(e.target.value); markDirty(); }}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Your Twilio phone number in E.164 format (e.g., +15551234567).</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm">SMS Recipients</Label>
+                <Input
+                  placeholder="+15551234567, +15559876543"
+                  value={smsRecipients}
+                  onChange={(e) => { setSmsRecipients(e.target.value); markDirty(); }}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">Comma-separated phone numbers in E.164 format that will receive SMS alerts.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://console.twilio.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-500 hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Twilio Console
+                </a>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestSms}
+                disabled={testSms.isPending || !data?.sms.twilioConfigured}
+                className="gap-1.5"
+              >
+                {testSms.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
+                Send Test SMS
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <Separator />
+
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSave}
+            disabled={!isDirty || updateChannel.isPending}
+            className="gap-2"
+          >
+            {updateChannel.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Channel Settings
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

@@ -17,6 +17,7 @@ import { sdk } from "./_core/sdk";
 import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
 import { validatePassword } from "../shared/passwordValidation";
 import { liveAgentRouter } from "./routers/live-agents";
+import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL_SETTINGS_KEYS } from "./services/notification-dispatcher";
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
@@ -2179,6 +2180,46 @@ Return ONLY the message text, nothing else.`;
         await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "freepbx.restart", resource: "freepbx", details: { success: result.success, error: result.error } });
         return result;
       });
+    }),
+
+    /** Get notification channel configuration */
+    getNotificationChannels: protectedProcedure.query(async () => {
+      return getNotificationChannelConfig();
+    }),
+
+    /** Update notification channel settings (admin only) */
+    updateNotificationChannel: adminProcedure.input(z.object({
+      settings: z.array(z.object({
+        key: z.string().min(1),
+        value: z.string().nullable(),
+        isSecret: z.number().default(0),
+      })),
+    })).mutation(async ({ ctx, input }) => {
+      for (const setting of input.settings) {
+        await db.upsertAppSetting(setting.key, setting.value, `Notification channel: ${setting.key}`, setting.isSecret, ctx.user.id);
+      }
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "notificationChannels.update",
+        resource: "notificationChannel",
+        details: { keys: input.settings.map(s => s.key) },
+      });
+      return { success: true };
+    }),
+
+    /** Test email notification channel (admin only) */
+    testEmailChannel: adminProcedure.input(z.object({
+      testRecipient: z.string().email().optional(),
+    }).optional()).mutation(async ({ input }) => {
+      return testEmailChannel(input?.testRecipient);
+    }),
+
+    /** Test SMS notification channel (admin only) */
+    testSmsChannel: adminProcedure.input(z.object({
+      testRecipient: z.string().optional(),
+    }).optional()).mutation(async ({ input }) => {
+      return testSmsChannel(input?.testRecipient);
     }),
 
     /** Get FreePBX connection settings status */

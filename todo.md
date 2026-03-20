@@ -664,3 +664,10 @@
 - [x] Reinstall/Update button on Voice AI Bridge card (visible even when bridge is connected)
 - [x] Notification preferences toggles for bridge offline/online alerts in Settings > Notifications
 - [x] Health check history log for Voice AI Bridge - track uptime/downtime events over time with UI
+- [x] Add notification_channels config via app_settings (email recipients, SMS recipients, Twilio credentials)
+- [x] Add email notification channel using existing SMTP/nodemailer infrastructure
+- [x] Add SMS notification channel using Twilio API
+- [x] Create unified notification dispatcher that routes to all enabled channels (Manus + email + SMS)
+- [x] Build Settings > Notification Channels UI for configuring email/SMS recipients and Twilio credentials
+- [x] Write vitest tests for notification channels (26 tests)
+- [x] Replace all direct notifyOwner() calls with unified dispatcher across pbx-api, dialer, auto-throttle, ivr-payment

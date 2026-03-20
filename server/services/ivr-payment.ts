@@ -16,6 +16,7 @@
 
 import * as db from "../db";
 import { notifyOwner } from "../_core/notification";
+import { dispatchNotification } from "./notification-dispatcher";
 
 export interface PaymentRequest {
   userId: number;
@@ -108,10 +109,10 @@ export async function updatePaymentStatus(
         // Notify owner of successful payment
         db.isNotificationEnabled("notify_payment_received").then(enabled => {
           if (enabled) {
-            notifyOwner({
+            dispatchNotification({
               title: `Payment Received: $${(payment.amount / 100).toFixed(2)}`,
               content: `Payment of $${(payment.amount / 100).toFixed(2)} received from ${payment.phoneNumber} via IVR.\n\nCampaign: #${payment.campaignId}\nPayment ID: ${payment.id}`,
-            }).catch(err => console.warn("[IVR Payment] Failed to send notification:", err));
+            }).catch(err => console.warn("[IVR Payment] Failed to dispatch notification:", err));
           }
         }).catch(() => {});
       }

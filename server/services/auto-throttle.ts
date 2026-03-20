@@ -13,6 +13,7 @@
 
 import * as db from "../db";
 import { notifyOwner } from "../_core/notification";
+import { dispatchNotification } from "./notification-dispatcher";
 
 // Log throttle events to the database
 async function logThrottleEvent(agentId: string, eventType: "throttle_triggered" | "ramp_up" | "full_recovery" | "manual_reset", data: { previousMaxCalls?: number; newMaxCalls?: number; carrierErrors?: number; reason?: string; agentName?: string }) {
@@ -140,10 +141,10 @@ async function applyThrottle(agentId: string, state: AgentThrottleState): Promis
         state.notifiedAt = now;
         db.isNotificationEnabled("notify_auto_throttle").then(enabled => {
           if (enabled) {
-            notifyOwner({
+            dispatchNotification({
               title: `PBX Agent Auto-Throttled: ${agent.name || agentId}`,
               content: `Agent "${agent.name || agentId}" has been auto-throttled due to carrier errors.\n\nConcurrent calls reduced: ${currentEffective} → ${newEffective}\nErrors in last 60s: ${state.recentErrors.length}\n\nThe system will automatically ramp back up when errors subside. You can also manually reset the throttle from the FreePBX page.`,
-            }).catch(err => console.warn("[AutoThrottle] Failed to send notification:", err));
+            }).catch(err => console.warn("[AutoThrottle] Failed to dispatch notification:", err));
           }
         }).catch(() => {});
       }

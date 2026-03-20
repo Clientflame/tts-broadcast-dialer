@@ -1,6 +1,7 @@
 import { generatePersonalizedTTS, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./tts";
 import { generateScriptAudio } from "./script-audio";
 import { notifyOwner } from "../_core/notification";
+import { dispatchNotification } from "./notification-dispatcher";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
 import { registerPacingConfig, unregisterPacingConfig } from "./pbx-api";
 import { isContactCallable, getTimezoneForPhone } from "../../shared/area-code-tz";
@@ -654,10 +655,10 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
   const campaignName = campaignInfo?.name || `Campaign #${campaignId}`;
   db.isNotificationEnabled("notify_campaign_complete").then(enabled => {
     if (enabled) {
-      notifyOwner({
+      dispatchNotification({
         title: `Campaign Completed: ${campaignName}`,
         content: `Campaign "${campaignName}" has finished.\n\nResults:\n- Total: ${stats.total}\n- Answered: ${stats.answered}\n- Failed: ${stats.failed}\n- Busy: ${stats.busy}\n- No Answer: ${stats.noAnswer}\n\nAnswer Rate: ${stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0}%`,
-      }).catch(err => console.warn("[Dialer] Failed to send completion notification:", err));
+      }).catch(err => console.warn("[Dialer] Failed to dispatch completion notification:", err));
     }
   }).catch(() => {});
 }
@@ -874,10 +875,10 @@ export async function recoverStaleCampaigns(): Promise<void> {
         console.log(`[Dialer Recovery] Campaign ${campaign.id} auto-completed (all calls finished)`);
         db.isNotificationEnabled("notify_campaign_auto_complete").then(enabled => {
           if (enabled) {
-            notifyOwner({
+            dispatchNotification({
               title: `Campaign Auto-Completed: #${campaign.id}`,
               content: `Campaign #${campaign.id} was auto-completed after server restart.\n\nResults: ${stats.answered} answered, ${stats.failed + stats.busy + stats.noAnswer} failed out of ${stats.total} total calls.`,
-            }).catch(err => console.warn("[Dialer Recovery] Failed to send notification:", err));
+            }).catch(err => console.warn("[Dialer Recovery] Failed to dispatch notification:", err));
           }
         }).catch(() => {});
       } else {
