@@ -496,6 +496,8 @@ function startAgentOfflineMonitor() {
                     }).catch(err => console.warn("[PBX-API] Failed to send bridge online notification:", err));
                   }
                 }).catch(() => {});
+                // Log bridge online event
+                db.createBridgeEvent({ agentId: agent.agentId, agentName: agent.name || agent.agentId, eventType: "online", details: "Bridge came online (detected via heartbeat capabilities)" }).catch(err => console.warn("[PBX-API] Failed to log bridge online event:", err));
                 console.log(`[PBX-API] Voice AI bridge on ${agent.name} is back online — notification sent`);
               }
             }
@@ -514,6 +516,8 @@ function startAgentOfflineMonitor() {
                     }).catch(err => console.warn("[PBX-API] Failed to send bridge offline notification:", err));
                   }
                 }).catch(() => {});
+                // Log bridge offline event
+                db.createBridgeEvent({ agentId: agent.agentId, agentName: agent.name || agent.agentId, eventType: "offline", details: "Bridge went offline (capabilities.voiceAiBridge no longer reported)" }).catch(err => console.warn("[PBX-API] Failed to log bridge offline event:", err));
                 console.log(`[PBX-API] Voice AI bridge on ${agent.name} went offline — notification sent`);
               }
             }

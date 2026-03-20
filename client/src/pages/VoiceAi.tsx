@@ -18,6 +18,7 @@ import {
   BarChart3, Clock, Phone, PhoneOff, Zap, Settings, Loader2,
   ChevronDown, ChevronUp, Mic, Volume2, Brain, Shield, ArrowRight,
   Rocket, RefreshCw, CheckCircle2, XCircle, Terminal, Upload, Server,
+  Activity, ArrowUpCircle, ArrowDownCircle, AlertTriangle, History,
 } from "lucide-react";
 
 const OPENAI_VOICES = [
@@ -249,11 +250,12 @@ export default function VoiceAi() {
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto gap-1 p-1">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 h-auto gap-1 p-1">
             <TabsTrigger value="prompts" className="gap-1.5 text-xs sm:text-sm"><Brain className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Prompts</TabsTrigger>
             <TabsTrigger value="conversations" className="gap-1.5 text-xs sm:text-sm"><MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Conversations</TabsTrigger>
             <TabsTrigger value="analytics" className="gap-1.5 text-xs sm:text-sm"><BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Analytics</TabsTrigger>
             <TabsTrigger value="deploy" className="gap-1.5 text-xs sm:text-sm"><Rocket className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Deploy</TabsTrigger>
+            <TabsTrigger value="history" className="gap-1.5 text-xs sm:text-sm"><Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />Bridge Log</TabsTrigger>
           </TabsList>
 
           {/* ─── Prompts Tab ─── */}
@@ -501,6 +503,9 @@ export default function VoiceAi() {
 
           {/* ─── Deploy & Manage Tab ─── */}
           <DeployTab />
+
+          {/* ─── Bridge History Tab ─── */}
+          <BridgeHistoryTab />
         </Tabs>
 
         {/* ─── Prompt Create/Edit Dialog ─── */}
@@ -787,6 +792,7 @@ function DeployTab() {
   return (
     <TabsContent value="deploy" className="mt-4 space-y-4">
       {/* Prerequisites Card */}
+
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -1097,6 +1103,156 @@ function DeployTab() {
               <li>Test thoroughly before running production campaigns</li>
             </ul>
           </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
+  );
+}
+
+// ─── Bridge History Tab Component ───────────────────────────────────────────
+
+function BridgeHistoryTab() {
+  const eventsQuery = trpc.voiceAi.getBridgeEvents.useQuery({ limit: 100 });
+  const statsQuery = trpc.voiceAi.getBridgeEventStats.useQuery();
+
+  const eventTypeConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    online: { label: "Online", color: "text-green-500 bg-green-500/10 border-green-500/20", icon: <ArrowUpCircle className="h-4 w-4 text-green-500" /> },
+    offline: { label: "Offline", color: "text-red-500 bg-red-500/10 border-red-500/20", icon: <ArrowDownCircle className="h-4 w-4 text-red-500" /> },
+    installed: { label: "Installed", color: "text-blue-500 bg-blue-500/10 border-blue-500/20", icon: <CheckCircle2 className="h-4 w-4 text-blue-500" /> },
+    install_failed: { label: "Install Failed", color: "text-amber-500 bg-amber-500/10 border-amber-500/20", icon: <AlertTriangle className="h-4 w-4 text-amber-500" /> },
+    updated: { label: "Updated", color: "text-purple-500 bg-purple-500/10 border-purple-500/20", icon: <RefreshCw className="h-4 w-4 text-purple-500" /> },
+  };
+
+  const formatDate = (dateStr: string | Date) => {
+    const d = new Date(dateStr);
+    return d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const stats = statsQuery.data;
+  const events = eventsQuery.data || [];
+
+  return (
+    <TabsContent value="history" className="mt-4 space-y-4">
+      {/* Stats Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="border-green-500/20">
+          <CardContent className="p-4 text-center">
+            <ArrowUpCircle className="h-5 w-5 text-green-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-green-500">{stats?.onlineEvents ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Online Events</p>
+          </CardContent>
+        </Card>
+        <Card className="border-red-500/20">
+          <CardContent className="p-4 text-center">
+            <ArrowDownCircle className="h-5 w-5 text-red-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-red-500">{stats?.offlineEvents ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Offline Events</p>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-500/20">
+          <CardContent className="p-4 text-center">
+            <CheckCircle2 className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-blue-500">{stats?.installEvents ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Install/Update Events</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <Activity className="h-5 w-5 text-primary mx-auto mb-1" />
+            <p className="text-2xl font-bold">{stats?.totalEvents ?? 0}</p>
+            <p className="text-xs text-muted-foreground">Total Events</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Last Known Timestamps */}
+      {(stats?.lastOnline || stats?.lastOffline) && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-wrap gap-6 text-sm">
+              {stats?.lastOnline && (
+                <div className="flex items-center gap-2">
+                  <ArrowUpCircle className="h-4 w-4 text-green-500" />
+                  <span className="text-muted-foreground">Last online:</span>
+                  <span className="font-medium">{formatDate(stats.lastOnline)}</span>
+                </div>
+              )}
+              {stats?.lastOffline && (
+                <div className="flex items-center gap-2">
+                  <ArrowDownCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-muted-foreground">Last offline:</span>
+                  <span className="font-medium">{formatDate(stats.lastOffline)}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Event Timeline */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="h-5 w-5 text-primary" />
+              Bridge Event Log
+            </CardTitle>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { eventsQuery.refetch(); statsQuery.refetch(); }}>
+              <RefreshCw className={`h-3.5 w-3.5 ${eventsQuery.isFetching ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {eventsQuery.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : events.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No bridge events recorded yet.</p>
+              <p className="text-xs mt-1">Events will appear here when the bridge goes online, offline, or is installed/updated.</p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {events.map((event: any, idx: number) => {
+                const config = eventTypeConfig[event.eventType] || eventTypeConfig.online;
+                const isLast = idx === events.length - 1;
+                return (
+                  <div key={event.id} className="flex gap-3">
+                    {/* Timeline line + dot */}
+                    <div className="flex flex-col items-center">
+                      <div className={`flex-shrink-0 h-8 w-8 rounded-full border flex items-center justify-center ${config.color}`}>
+                        {config.icon}
+                      </div>
+                      {!isLast && <div className="w-px flex-1 bg-border min-h-[16px]" />}
+                    </div>
+                    {/* Content */}
+                    <div className={`flex-1 pb-4 ${isLast ? "" : ""}`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={`text-xs ${config.color}`}>
+                          {config.label}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{event.agentName || event.agentId}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{formatDate(event.createdAt)}</span>
+                      </div>
+                      {event.details && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{event.details}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </TabsContent>

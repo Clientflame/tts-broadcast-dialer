@@ -661,3 +661,6 @@
 - [x] Enhance Voice AI bridge installer to target active PBX agent (Agent HD)
 - [x] Add auto-install button on System Health card when Voice AI Bridge shows "Not installed"
 - [x] Add notification alerts when Voice AI Bridge goes offline or PBX agent disconnects unexpectedly
+- [x] Reinstall/Update button on Voice AI Bridge card (visible even when bridge is connected)
+- [x] Notification preferences toggles for bridge offline/online alerts in Settings > Notifications
+- [x] Health check history log for Voice AI Bridge - track uptime/downtime events over time with UI

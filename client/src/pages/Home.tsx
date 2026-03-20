@@ -253,6 +253,7 @@ function SystemHealthWidget() {
           {services.map(svc => {
             const Icon = svc.icon;
             const showInstallBtn = svc.key === "voiceai" && bridgeStatus.data?.status === "not_installed";
+            const showUpdateBtn = svc.key === "voiceai" && (bridgeStatus.data?.status === "online" || bridgeStatus.data?.status === "offline");
             return (
               <div
                 key={svc.key}
@@ -301,6 +302,26 @@ function SystemHealthWidget() {
                       <><Loader2 className="h-3 w-3 animate-spin" />Installing...</>
                     ) : (
                       <><Zap className="h-3 w-3" />Auto-Install</>
+                    )}
+                  </Button>
+                )}
+                {showUpdateBtn && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-2 h-7 text-xs gap-1.5 border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
+                    disabled={installing}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInstalling(true);
+                      setInstallOutput(null);
+                      installBridge.mutate({ origin: window.location.origin });
+                    }}
+                  >
+                    {installing ? (
+                      <><Loader2 className="h-3 w-3 animate-spin" />Updating...</>
+                    ) : (
+                      <><RefreshCw className="h-3 w-3" />Reinstall / Update</>
                     )}
                   </Button>
                 )}

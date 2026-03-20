@@ -29,6 +29,7 @@ import {
   assistSessions, InsertAssistSession,
   assistSuggestions, InsertAssistSuggestion,
   agentCallLog,
+  bridgeEvents, InsertBridgeEvent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3010,4 +3011,51 @@ export async function getAllLiveAgentsForLinking() {
     email: liveAgents.email,
     status: liveAgents.status,
   }).from(liveAgents).orderBy(liveAgents.name);
+}
+
+// ─── Bridge Events (Uptime/Downtime History) ────────────────────────────────
+
+export async function createBridgeEvent(data: Omit<InsertBridgeEvent, "id">): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(bridgeEvents).values(data);
+  return result[0].insertId;
+}
+
+export async function getBridgeEvents(opts?: { agentId?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (opts?.agentId) conditions.push(eq(bridgeEvents.agentId, opts.agentId));
+  return db.select().from(bridgeEvents)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(bridgeEvents.createdAt))
+    .limit(opts?.limit ?? 100)
+    .offset(opts?.offset ?? 0);
+}
+
+export async function getBridgeEventStats() {
+  const db = await getDb();
+  if (!db) return { totalEvents: 0, onlineEvents: 0, offlineEvents: 0, installEvents: 0, lastOnline: null as string | null, lastOffline: null as string | null };
+  const [stats] = await db.select({
+    totalEvents: count(),
+    onlineEvents: sql<number>`SUM(CASE WHEN ${bridgeEvents.eventType} = 'online' THEN 1 ELSE 0 END)`,
+    offlineEvents: sql<number>`SUM(CASE WHEN ${bridgeEvents.eventType} = 'offline' THEN 1 ELSE 0 END)`,
+    installEvents: sql<number>`SUM(CASE WHEN ${bridgeEvents.eventType} IN ('installed', 'updated') THEN 1 ELSE 0 END)`,
+  }).from(bridgeEvents);
+
+  // Get last online/offline timestamps
+  const [lastOnlineRow] = await db.select({ createdAt: bridgeEvents.createdAt }).from(bridgeEvents)
+    .where(eq(bridgeEvents.eventType, "online")).orderBy(desc(bridgeEvents.createdAt)).limit(1);
+  const [lastOfflineRow] = await db.select({ createdAt: bridgeEvents.createdAt }).from(bridgeEvents)
+    .where(eq(bridgeEvents.eventType, "offline")).orderBy(desc(bridgeEvents.createdAt)).limit(1);
+
+  return {
+    totalEvents: Number(stats?.totalEvents) || 0,
+    onlineEvents: Number(stats?.onlineEvents) || 0,
+    offlineEvents: Number(stats?.offlineEvents) || 0,
+    installEvents: Number(stats?.installEvents) || 0,
+    lastOnline: lastOnlineRow?.createdAt?.toISOString() ?? null,
+    lastOffline: lastOfflineRow?.createdAt?.toISOString() ?? null,
+  };
 }

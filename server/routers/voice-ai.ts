@@ -369,6 +369,20 @@ QUESTIONS:
         details: { success: result.success, host, agentName: activeAgent.name, error: result.error },
       });
 
+      // 5. Log bridge event
+      try {
+        await db.createBridgeEvent({
+          agentId: activeAgent.agentId,
+          agentName: activeAgent.name || activeAgent.agentId,
+          eventType: result.success ? "installed" : "install_failed",
+          details: result.success
+            ? `Bridge installed/updated via SSH by ${ctx.user.name || "admin"}. Output: ${result.output.slice(-500)}`
+            : `Install failed: ${result.error || "Unknown error"}. Output: ${result.output.slice(-500)}`,
+        });
+      } catch (e) {
+        console.warn("[VoiceAI] Failed to log bridge event:", e);
+      }
+
       return result;
     }),
 
@@ -499,6 +513,29 @@ QUESTIONS:
         hasBridge: !!hasBridge,
       };
     }),
+
+  // ─── Bridge Event History ─────────────────────────────────────────────
+
+  /** Get bridge event history (uptime/downtime log) */
+  getBridgeEvents: protectedProcedure
+    .input(z.object({
+      agentId: z.string().optional(),
+      limit: z.number().min(1).max(500).default(100),
+      offset: z.number().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const events = await db.getBridgeEvents({
+        agentId: input?.agentId,
+        limit: input?.limit ?? 100,
+        offset: input?.offset ?? 0,
+      });
+      return events;
+    }),
+
+  /** Get bridge event stats (summary) */
+  getBridgeEventStats: protectedProcedure.query(async () => {
+    return db.getBridgeEventStats();
+  }),
 
   /** Poll call queue status — used by UI to show real-time call result after queuing */
   getCallStatus: protectedProcedure

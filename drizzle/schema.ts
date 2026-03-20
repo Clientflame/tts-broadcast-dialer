@@ -858,3 +858,16 @@ export const assistSuggestions = mysqlTable("assist_suggestions", {
 });
 export type AssistSuggestion = typeof assistSuggestions.$inferSelect;
 export type InsertAssistSuggestion = typeof assistSuggestions.$inferInsert;
+
+// ─── Voice AI Bridge Events (Uptime/Downtime History) ───────────────────────
+export const bridgeEvents = mysqlTable("bridge_events", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: varchar("agentId", { length: 100 }).notNull(),
+  agentName: varchar("agentName", { length: 255 }),
+  eventType: mysqlEnum("eventType", ["online", "offline", "installed", "install_failed", "updated"]).notNull(),
+  details: text("details"), // additional context (e.g., install output, error message)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BridgeEvent = typeof bridgeEvents.$inferSelect;
+export type InsertBridgeEvent = typeof bridgeEvents.$inferInsert;
