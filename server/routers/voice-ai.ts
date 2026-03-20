@@ -282,6 +282,96 @@ QUESTIONS:
 
   // ─── Installer-Based Deploy ──────────────────────────────────────────
 
+  /** Install Voice AI Bridge on FreePBX server via SSH */
+  installBridgeViaSSH: protectedProcedure
+    .input(z.object({ origin: z.string().url() }))
+    .mutation(async ({ ctx, input }) => {
+      // 1. Validate prerequisites
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      if (!host || !sshUser || !sshPassword) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "SSH credentials not configured. Go to Settings > FreePBX to configure SSH access." });
+      }
+
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      if (!openaiKey) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OpenAI API key not configured. Go to Settings to add your API key." });
+      }
+
+      const agents = await db.getPbxAgents();
+      const activeAgent = agents.find((a: any) => a.lastHeartbeat) || agents[0];
+      if (!activeAgent) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No PBX agent registered. Register a PBX agent first on the FreePBX Integration page." });
+      }
+
+      // 2. Build the install URL
+      const installUrl = `${input.origin}/api/voice-ai/install?key=${activeAgent.apiKey}`;
+      const installCommand = `curl -s '${installUrl}' | bash`;
+
+      // 3. SSH into FreePBX and run the installer
+      const { Client: SSHClient } = await import("ssh2");
+      const result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => {
+          conn.end();
+          resolve({ success: false, output: "", error: "SSH connection timed out after 120 seconds" });
+        }, 120000); // 2 minute timeout for full install
+
+        conn.on("ready", () => {
+          conn.exec(installCommand, (err, stream) => {
+            if (err) {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: false, output: "", error: err.message });
+              return;
+            }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", (code: number) => {
+              clearTimeout(timeout);
+              conn.end();
+              const isSuccess = code === 0 || code === null || output.includes("Installation Complete");
+              resolve({
+                success: isSuccess,
+                output: output.trim().slice(-3000), // Last 3000 chars of output
+                error: !isSuccess ? `Exit code: ${code}` : undefined,
+              });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          let errorMsg = err.message;
+          if (errorMsg.includes("Authentication")) errorMsg = "SSH authentication failed — check SSH credentials in Settings";
+          else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "SSH connection refused — is SSH running on the FreePBX server?";
+          else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "SSH connection timed out — check FreePBX host address";
+          resolve({ success: false, output: "", error: errorMsg });
+        });
+
+        conn.connect({
+          host,
+          port: 22,
+          username: sshUser,
+          password: sshPassword,
+          readyTimeout: 15000,
+        });
+      });
+
+      // 4. Audit log
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "voiceai.installBridge",
+        resource: "voice-ai-bridge",
+        details: { success: result.success, host, agentName: activeAgent.name, error: result.error },
+      });
+
+      return result;
+    }),
+
   /** Check deployment prerequisites */
   getDeployStatus: protectedProcedure.query(async () => {
     const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;

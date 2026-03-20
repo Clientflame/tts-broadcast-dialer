@@ -438,6 +438,8 @@ pbxRouter.post("/health-check-result", async (req: Request, res: Response) => {
 // Periodically check for agents that haven't sent a heartbeat in 2+ minutes
 let offlineCheckInterval: ReturnType<typeof setInterval> | null = null;
 const notifiedOfflineAgents = new Set<string>();
+const notifiedBridgeOfflineAgents = new Set<string>();
+const knownBridgeOnlineAgents = new Set<string>();
 
 function startAgentOfflineMonitor() {
   if (offlineCheckInterval) return;
@@ -448,7 +450,10 @@ function startAgentOfflineMonitor() {
       for (const agent of agents) {
         const lastSeen = agent.lastHeartbeat ? new Date(agent.lastHeartbeat).getTime() : 0;
         const offlineThreshold = 120000; // 2 minutes
-        if (now - lastSeen > offlineThreshold && agent.status === "online") {
+        const isOnline = now - lastSeen <= offlineThreshold;
+
+        // ─── PBX Agent Offline Detection ──────────────────────────────
+        if (!isOnline && agent.status === "online") {
           if (!notifiedOfflineAgents.has(agent.agentId)) {
             notifiedOfflineAgents.add(agent.agentId);
             db.isNotificationEnabled("notify_agent_offline").then(enabled => {
@@ -460,10 +465,59 @@ function startAgentOfflineMonitor() {
               }
             }).catch(() => {});
             console.log(`[PBX-API] Agent ${agent.name} (${agent.agentId}) appears offline — notification sent`);
+            // If agent goes offline, bridge is also offline
+            if (knownBridgeOnlineAgents.has(agent.agentId)) {
+              knownBridgeOnlineAgents.delete(agent.agentId);
+              notifiedBridgeOfflineAgents.delete(agent.agentId);
+            }
           }
-        } else if (now - lastSeen <= offlineThreshold) {
+        } else if (isOnline) {
           // Agent is back online — clear the notification flag
-          notifiedOfflineAgents.delete(agent.agentId);
+          if (notifiedOfflineAgents.has(agent.agentId)) {
+            notifiedOfflineAgents.delete(agent.agentId);
+          }
+
+          // ─── Voice AI Bridge Status Detection ────────────────────────
+          const capabilities = (agent as any).capabilities;
+          const hasBridge = capabilities && typeof capabilities === "object" && (capabilities as any).voiceAiBridge;
+
+          if (hasBridge) {
+            // Bridge is online
+            if (!knownBridgeOnlineAgents.has(agent.agentId)) {
+              knownBridgeOnlineAgents.add(agent.agentId);
+              // Send "bridge online" notification if it was previously offline
+              if (notifiedBridgeOfflineAgents.has(agent.agentId)) {
+                notifiedBridgeOfflineAgents.delete(agent.agentId);
+                db.isNotificationEnabled("notify_bridge_online").then(enabled => {
+                  if (enabled) {
+                    notifyOwner({
+                      title: `Voice AI Bridge Online: ${agent.name}`,
+                      content: `The Voice AI bridge on PBX agent "${agent.name}" is now online and ready to handle Voice AI calls.`,
+                    }).catch(err => console.warn("[PBX-API] Failed to send bridge online notification:", err));
+                  }
+                }).catch(() => {});
+                console.log(`[PBX-API] Voice AI bridge on ${agent.name} is back online — notification sent`);
+              }
+            }
+          } else {
+            // Bridge is not running on this agent
+            if (knownBridgeOnlineAgents.has(agent.agentId)) {
+              // Bridge was previously online, now it's gone
+              knownBridgeOnlineAgents.delete(agent.agentId);
+              if (!notifiedBridgeOfflineAgents.has(agent.agentId)) {
+                notifiedBridgeOfflineAgents.add(agent.agentId);
+                db.isNotificationEnabled("notify_bridge_offline").then(enabled => {
+                  if (enabled) {
+                    notifyOwner({
+                      title: `Voice AI Bridge Offline: ${agent.name}`,
+                      content: `The Voice AI bridge on PBX agent "${agent.name}" has gone offline.\n\nVoice AI calls will not work until the bridge is restarted.\n\nTo restart: SSH into your FreePBX server and run:\n  systemctl restart voice-ai-bridge\n\nOr use the auto-install button on the System Health dashboard.`,
+                    }).catch(err => console.warn("[PBX-API] Failed to send bridge offline notification:", err));
+                  }
+                }).catch(() => {});
+                console.log(`[PBX-API] Voice AI bridge on ${agent.name} went offline — notification sent`);
+              }
+            }
+          }
         }
       }
     } catch (err) {

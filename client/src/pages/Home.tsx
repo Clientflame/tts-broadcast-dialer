@@ -114,6 +114,8 @@ function getStatusConfig(status: string, result: string | null) {
 function SystemHealthWidget() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const [installing, setInstalling] = useState(false);
+  const [installOutput, setInstallOutput] = useState<string | null>(null);
   const health = trpc.dashboard.systemHealth.useQuery(undefined, {
     enabled: !!user,
     refetchInterval: 30000,
@@ -121,6 +123,22 @@ function SystemHealthWidget() {
   const bridgeStatus = trpc.voiceAi.getBridgeStatus.useQuery(undefined, {
     enabled: !!user,
     refetchInterval: 30000,
+  });
+  const installBridge = trpc.voiceAi.installBridgeViaSSH.useMutation({
+    onSuccess: (data) => {
+      setInstalling(false);
+      if (data.success) {
+        toast.success("Voice AI Bridge installed successfully!");
+        bridgeStatus.refetch();
+      } else {
+        toast.error(`Installation failed: ${data.error || "Unknown error"}`);
+      }
+      setInstallOutput(data.output || data.error || null);
+    },
+    onError: (err) => {
+      setInstalling(false);
+      toast.error(err.message);
+    },
   });
 
   if (health.isLoading) {
@@ -234,37 +252,76 @@ function SystemHealthWidget() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {services.map(svc => {
             const Icon = svc.icon;
+            const showInstallBtn = svc.key === "voiceai" && bridgeStatus.data?.status === "not_installed";
             return (
-              <button
+              <div
                 key={svc.key}
-                onClick={() => svc.key === "voiceai" ? setLocation("/voice-ai") : svc.key !== "database" && setLocation("/settings")}
-                className={`rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 ${
+                className={`rounded-lg border p-3 text-left transition-colors ${
                   svc.ok
                     ? "border-green-500/20 bg-green-500/5"
                     : "border-amber-500/20 bg-amber-500/5"
                 }`}
               >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Icon className={`h-4 w-4 ${svc.ok ? "text-green-500" : "text-amber-500"}`} />
-                  <span className="text-xs font-medium truncate">{svc.label}</span>
-                </div>
-                <div className={`text-xs ${svc.ok ? "text-green-600" : "text-amber-600"}`}>
-                  {svc.ok ? (
-                    <span className="flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{svc.detail}</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{svc.detail}</span>
-                    </span>
-                  )}
-                </div>
-              </button>
+                <button
+                  onClick={() => svc.key === "voiceai" ? setLocation("/voice-ai") : svc.key !== "database" && setLocation("/settings")}
+                  className="w-full text-left hover:opacity-80 transition-opacity"
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Icon className={`h-4 w-4 ${svc.ok ? "text-green-500" : "text-amber-500"}`} />
+                    <span className="text-xs font-medium truncate">{svc.label}</span>
+                  </div>
+                  <div className={`text-xs ${svc.ok ? "text-green-600" : "text-amber-600"}`}>
+                    {svc.ok ? (
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{svc.detail}</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate">{svc.detail}</span>
+                      </span>
+                    )}
+                  </div>
+                </button>
+                {showInstallBtn && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full mt-2 h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                    disabled={installing}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setInstalling(true);
+                      setInstallOutput(null);
+                      installBridge.mutate({ origin: window.location.origin });
+                    }}
+                  >
+                    {installing ? (
+                      <><Loader2 className="h-3 w-3 animate-spin" />Installing...</>
+                    ) : (
+                      <><Zap className="h-3 w-3" />Auto-Install</>
+                    )}
+                  </Button>
+                )}
+              </div>
             );
           })}
         </div>
+        {/* Install output display */}
+        {installOutput && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-muted-foreground">Installation Output</span>
+              <Button variant="ghost" size="sm" className="h-5 text-xs px-1" onClick={() => setInstallOutput(null)}>
+                <XCircle className="h-3 w-3" />
+              </Button>
+            </div>
+            <pre className="bg-zinc-950 text-green-400 rounded-lg p-3 text-xs font-mono max-h-40 overflow-auto whitespace-pre-wrap">
+              {installOutput}
+            </pre>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -2418,6 +2418,8 @@ export const NOTIFICATION_TYPES = [
   { key: "notify_campaign_auto_complete", label: "Campaign Auto-Completed", description: "When a campaign is auto-completed after server restart" },
   { key: "notify_agent_offline", label: "PBX Agent Offline", description: "When a PBX agent stops sending heartbeats" },
   { key: "notify_auto_throttle", label: "Auto-Throttle", description: "When an agent is auto-throttled due to carrier errors" },
+  { key: "notify_bridge_offline", label: "Voice AI Bridge Offline", description: "When the Voice AI bridge service goes offline on a PBX agent" },
+  { key: "notify_bridge_online", label: "Voice AI Bridge Online", description: "When the Voice AI bridge service comes online on a PBX agent" },
 ] as const;
 
 export async function getNotificationPreferences(): Promise<Record<string, boolean>> {

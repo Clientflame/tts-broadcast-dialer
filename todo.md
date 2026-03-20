@@ -658,3 +658,6 @@
 - [x] Ensure calls flow regardless of which PBX agent picks them up (no agent-name dependency)
 - [x] Show call queue failure details in call logs and toast messages
 - [x] Add Voice AI Bridge connection status (connected/not connected) to Deployment Prerequisites on dashboard
+- [x] Enhance Voice AI bridge installer to target active PBX agent (Agent HD)
+- [x] Add auto-install button on System Health card when Voice AI Bridge shows "Not installed"
+- [x] Add notification alerts when Voice AI Bridge goes offline or PBX agent disconnects unexpectedly
