@@ -1,0 +1,21 @@
+{
+  "query": "SELECT id, agentId, name, status, activeCalls, maxCalls, effectiveMaxCalls, lastHeartbeat, throttleReason FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, agentId, name, status, activeCalls, maxCalls, effectiveMaxCalls, lastHeartbeat, throttleReason FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "60014",
+      "agentId": "agent-6e59b17c",
+      "name": "Agent HD",
+      "status": "online",
+      "activeCalls": "0",
+      "maxCalls": "5",
+      "effectiveMaxCalls": "NULL",
+      "lastHeartbeat": "1774035773106",
+      "throttleReason": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tagentId\tname\tstatus\tactiveCalls\tmaxCalls\teffectiveMaxCalls\tlastHeartbeat\tthrottleReason\n60014\tagent-6e59b17c\tAgent HD\tonline\t0\t5\tNULL\t1774035773106\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

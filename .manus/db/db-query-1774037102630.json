@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'pending' AND (audioName = 'health-check' OR context = 'health-check')",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT COUNT(*) as cnt FROM call_queue WHERE status = 'pending' AND (audioName = 'health-check' OR context = 'health-check')",
+  "rows": [
+    {
+      "cnt": "191"
+    }
+  ],
+  "messages": [],
+  "stdout": "cnt\n191\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

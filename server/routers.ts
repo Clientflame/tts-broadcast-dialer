@@ -1112,6 +1112,19 @@ Return ONLY the message text, nothing else.`;
       audioFileId: z.number(),
       callerIdId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
+      // ─── Pre-flight check: ensure PBX agent is online ─────────────
+      const agents = await db.getPbxAgents();
+      const onlineAgent = agents.find((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - Number(a.lastHeartbeat) < 60000;
+      });
+      if (!onlineAgent) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No PBX agent is currently online. Make sure your FreePBX agent service is running and connected.",
+        });
+      }
+
       const audioFile = await db.getAudioFile(input.audioFileId);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
 
@@ -1140,7 +1153,7 @@ Return ONLY the message text, nothing else.`;
 
       console.log(`[QuickTest] Enqueuing call to ${phoneNumber} with audio URL: ${audioFile.s3Url.substring(0, 80)}...${callerIdStr ? ` CallerID: ${callerIdStr}` : ''}`);
 
-      await db.enqueueCall({
+      const queueResult = await db.enqueueCall({
         userId: ctx.user.id,
         phoneNumber,
         channel,
@@ -1158,8 +1171,38 @@ Return ONLY the message text, nothing else.`;
       });
 
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "quickTest.call", resource: "audioFile", resourceId: input.audioFileId, details: { phoneNumber: input.phoneNumber } });
-      return { success: true, message: "Call queued - PBX agent will dial shortly" };
+      return { success: true, message: `Call queued to ${phoneNumber} (Agent: ${onlineAgent.name})`, queueId: queueResult?.id };
     }),
+    /** Poll call queue status — used by UI to show real-time call result */
+    getCallStatus: protectedProcedure
+      .input(z.object({ queueId: z.number() }))
+      .query(async ({ input }) => {
+        const item = await db.getCallQueueItem(input.queueId);
+        if (!item) return { status: "not_found" as const, message: "Call not found", failureReason: "", duration: 0, claimedBy: null };
+        const result = item.result as string | null;
+        const details = (item.resultDetails || {}) as Record<string, any>;
+        const status = item.status as string;
+        let failureReason = "";
+        if (status === "failed" || result === "failed") {
+          if (details.error) failureReason = details.error;
+          else if (details.reason) {
+            const map: Record<string, string> = {
+              "0": "Call could not be originated — check SIP trunk and dialplan on PBX",
+              "1": "Unallocated number", "17": "User busy", "18": "No user responding",
+              "19": "No answer", "21": "Call rejected", "27": "Destination out of order",
+              "28": "Invalid number format", "31": "Normal, unspecified",
+            };
+            failureReason = map[String(details.reason)] || `Hangup cause: ${details.reason}`;
+          } else failureReason = "Call failed — no specific reason from PBX agent";
+        }
+        return {
+          status: status as "pending" | "claimed" | "dialing" | "completed" | "failed" | "not_found",
+          result: result || null,
+          duration: details.duration || 0,
+          failureReason,
+          claimedBy: (item as any).claimedBy || null,
+        };
+      }),
   }),
 
   reports: router({

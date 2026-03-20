@@ -326,6 +326,27 @@ QUESTIONS:
       callerIdId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // ─── Pre-flight checks ─────────────────────────────────────────
+      // 1. Check PBX agent is online
+      const agents = await db.getPbxAgents();
+      const onlineAgent = agents.find((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return Date.now() - Number(a.lastHeartbeat) < 60000;
+      });
+      if (!onlineAgent) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "No PBX agent is currently online. Make sure your FreePBX agent service is running and connected.",
+        });
+      }
+
+      // 2. Check Voice AI bridge capability (warn but don't block — bridge may be running but not reporting yet)
+      const capabilities = (onlineAgent as any).capabilities;
+      const hasBridge = capabilities && typeof capabilities === "object" && (capabilities as any).voiceAiBridge;
+      if (!hasBridge) {
+        console.warn(`[VoiceAI TestCall] PBX agent "${onlineAgent.name}" does not report Voice AI bridge capability. Call may fail if bridge is not installed.`);
+      }
+
       // Queue a test call with voice_ai routing
       const prompt = await db.getVoiceAiPrompt(input.promptId);
       if (!prompt) throw new TRPCError({ code: "NOT_FOUND", message: "Prompt not found" });
@@ -379,10 +400,78 @@ QUESTIONS:
         details: { phoneNumber, promptId: input.promptId, callerId: callerIdStr },
       });
 
+      const bridgeWarning = !hasBridge ? " Warning: Voice AI bridge not detected on PBX agent. If the call fails, install the bridge first." : "";
       return {
         success: true,
-        message: `Test call queued to ${phoneNumber} using prompt "${prompt.name}" (Caller ID: ${callerIdStr})`,
+        message: `Test call queued to ${phoneNumber} using prompt "${prompt.name}" (Caller ID: ${callerIdStr}, Agent: ${onlineAgent.name}).${bridgeWarning}`,
         queueId: result?.id,
+        agentName: onlineAgent.name,
+        hasBridge: !!hasBridge,
+      };
+    }),
+
+  /** Poll call queue status — used by UI to show real-time call result after queuing */
+  getCallStatus: protectedProcedure
+    .input(z.object({ queueId: z.number() }))
+    .query(async ({ input }) => {
+      const item = await db.getCallQueueItem(input.queueId);
+      if (!item) {
+        return { status: "not_found" as const, message: "Call not found in queue" };
+      }
+      const result = item.result as string | null;
+      const details = (item.resultDetails || {}) as Record<string, any>;
+      const status = item.status as string;
+
+      // Build a human-readable failure reason
+      let failureReason = "";
+      if (status === "failed" || result === "failed") {
+        if (details.error) {
+          failureReason = details.error;
+        } else if (details.reason) {
+          const reasonMap: Record<string, string> = {
+            "0": "Call could not be originated — check SIP trunk configuration and dialplan on the PBX server",
+            "1": "Unallocated number",
+            "16": "Normal call clearing",
+            "17": "User busy",
+            "18": "No user responding",
+            "19": "No answer from user",
+            "20": "Subscriber absent",
+            "21": "Call rejected",
+            "27": "Destination out of order",
+            "28": "Invalid number format",
+            "31": "Normal, unspecified",
+            "34": "No circuit/channel available",
+            "38": "Network out of order",
+            "41": "Temporary failure",
+            "42": "Switching equipment congestion",
+            "44": "Requested channel not available",
+            "47": "Resource unavailable",
+            "50": "Facility not subscribed",
+            "52": "Outgoing calls barred",
+            "54": "Incoming calls barred",
+            "57": "Bearer capability not authorized",
+            "58": "Bearer capability not available",
+            "63": "Service or option not available",
+            "65": "Bearer capability not implemented",
+            "79": "Service not implemented",
+            "88": "Incompatible destination",
+            "102": "Recovery on timer expiry",
+            "111": "Protocol error",
+            "127": "Interworking, unspecified",
+          };
+          failureReason = reasonMap[String(details.reason)] || `Hangup cause: ${details.reason}`;
+        } else {
+          failureReason = "Call failed — no specific reason reported by PBX agent";
+        }
+      }
+
+      return {
+        status: status as "pending" | "claimed" | "dialing" | "completed" | "failed",
+        result: result || null,
+        duration: details.duration || 0,
+        failureReason,
+        claimedBy: (item as any).claimedBy || null,
+        createdAt: (item as any).createdAt ? Number((item as any).createdAt) : null,
       };
     }),
 });

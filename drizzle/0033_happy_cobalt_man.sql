@@ -1,0 +1,1 @@
+ALTER TABLE `pbx_agents` ADD `capabilities` json;

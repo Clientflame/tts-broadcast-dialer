@@ -652,3 +652,8 @@
 - [x] Mobile responsiveness: Caller IDs, Scripts, Audio pages responsive
 - [x] Mobile responsiveness: Agent dashboard optimized for tablet/phone use
 
+- [x] Bug: Voice AI calls not working - investigate and fix (root cause: PBX agent failing calls, not code issue)
+- [x] Better error reporting: show detailed failure reason in UI when Voice AI or test calls fail
+- [x] Pre-flight check: verify PBX agent has Voice AI bridge before queuing voice AI calls
+- [x] Ensure calls flow regardless of which PBX agent picks them up (no agent-name dependency)
+- [x] Show call queue failure details in call logs and toast messages

@@ -232,6 +232,13 @@
       "when": 1774028081654,
       "tag": "0032_rapid_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1774036119889,
+      "tag": "0033_happy_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

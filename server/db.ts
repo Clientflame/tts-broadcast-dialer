@@ -1623,11 +1623,12 @@ export async function getPbxAgentByApiKey(apiKey: string) {
   return result[0];
 }
 
-export async function updatePbxAgentHeartbeat(agentId: string, activeCalls?: number) {
+export async function updatePbxAgentHeartbeat(agentId: string, activeCalls?: number, capabilities?: Record<string, any>) {
   const db = await getDb();
   if (!db) return;
   const data: Partial<InsertPbxAgent> = { lastHeartbeat: Date.now(), status: "online" };
   if (activeCalls !== undefined) data.activeCalls = activeCalls;
+  if (capabilities !== undefined) data.capabilities = capabilities as any;
   await db.update(pbxAgents).set(data).where(eq(pbxAgents.agentId, agentId));
 }
 

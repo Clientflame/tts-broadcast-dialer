@@ -1,0 +1,120 @@
+{
+  "query": "SELECT id, phoneNumber, context, status, priority, claimedBy, result, variables, createdAt FROM call_queue ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, context, status, priority, claimedBy, result, variables, createdAt FROM call_queue ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "63514",
+      "phoneNumber": "4074551177",
+      "context": "tts-broadcast",
+      "status": "failed",
+      "priority": "0",
+      "claimedBy": "agent-6e59b17c",
+      "result": "failed",
+      "variables": "{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"9504324934\"}",
+      "createdAt": "2026-03-20 19:41:34"
+    },
+    {
+      "id": "63513",
+      "phoneNumber": "4074551177",
+      "context": "tts-broadcast",
+      "status": "failed",
+      "priority": "0",
+      "claimedBy": "agent-6e59b17c",
+      "result": "failed",
+      "variables": "{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"9503210336\"}",
+      "createdAt": "2026-03-20 19:27:44"
+    },
+    {
+      "id": "63512",
+      "phoneNumber": "4074551177",
+      "context": "tts-broadcast",
+      "status": "failed",
+      "priority": "0",
+      "claimedBy": "agent-6e59b17c",
+      "result": "failed",
+      "variables": "{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"5550554928\"}",
+      "createdAt": "2026-03-20 19:25:30"
+    },
+    {
+      "id": "63511",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "failed",
+      "priority": "0",
+      "claimedBy": "agent-6e59b17c",
+      "result": "failed",
+      "variables": "{\"CALLER_ID\": \"5552113491\", \"CAMPAIGN_NAME\": \"test\", \"CONTACT_NAME\": \"Test Call\", \"CONTACT_PHONE\": \"4074551177\", \"VOICE_AI_PROMPT_ID\": \"2\", \"routingMode\": \"voice_ai\"}",
+      "createdAt": "2026-03-20 19:24:14"
+    },
+    {
+      "id": "63510",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"8339254115\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"2\", \"healthCheckDID\": \"8339254115\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    },
+    {
+      "id": "63509",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"8339254116\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"3\", \"healthCheckDID\": \"8339254116\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    },
+    {
+      "id": "63508",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"8339254117\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"4\", \"healthCheckDID\": \"8339254117\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    },
+    {
+      "id": "63507",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"8339254113\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"1\", \"healthCheckDID\": \"8339254113\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    },
+    {
+      "id": "63506",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"9515550002\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"17\", \"healthCheckDID\": \"9515550002\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    },
+    {
+      "id": "63505",
+      "phoneNumber": "*43",
+      "context": "tts-broadcast",
+      "status": "completed",
+      "priority": "10",
+      "claimedBy": "agent-af70f756",
+      "result": "answered",
+      "variables": "{\"CALLER_ID\": \"9520060150\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"29\", \"healthCheckDID\": \"9520060150\"}",
+      "createdAt": "2026-03-20 18:55:16"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tcontext\tstatus\tpriority\tclaimedBy\tresult\tvariables\tcreatedAt\n63514\t4074551177\ttts-broadcast\tfailed\t0\tagent-6e59b17c\tfailed\t{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"9504324934\"}\t2026-03-20 19:41:34\n63513\t4074551177\ttts-broadcast\tfailed\t0\tagent-6e59b17c\tfailed\t{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"9503210336\"}\t2026-03-20 19:27:44\n63512\t4074551177\ttts-broadcast\tfailed\t0\tagent-6e59b17c\tfailed\t{\"AUDIO_NAME\": \"quicktest_30002\", \"AUDIO_URL\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663328121958/QaP68Z2AATogwpccsoDAFH/tts-audio/H-FmrRTvBH0x3T0zFUb9z-Crucial_Response.mp3\", \"CALLER_ID\": \"5550554928\"}\t2026-03-20 19:25:30\n63511\t4074551177\tvoice-ai-handler\tfailed\t0\tagent-6e59b17c\tfailed\t{\"CALLER_ID\": \"5552113491\", \"CAMPAIGN_NAME\": \"test\", \"CONTACT_NAME\": \"Test Call\", \"CONTACT_PHONE\": \"4074551177\", \"VOICE_AI_PROMPT_ID\": \"2\", \"routingMode\": \"voice_ai\"}\t2026-03-20 19:24:14\n63510\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"8339254115\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"2\", \"healthCheckDID\": \"8339254115\"}\t2026-03-20 18:55:16\n63509\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"8339254116\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"3\", \"healthCheckDID\": \"8339254116\"}\t2026-03-20 18:55:16\n63508\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"8339254117\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"4\", \"healthCheckDID\": \"8339254117\"}\t2026-03-20 18:55:16\n63507\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"8339254113\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"1\", \"healthCheckDID\": \"8339254113\"}\t2026-03-20 18:55:16\n63506\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"9515550002\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"17\", \"healthCheckDID\": \"9515550002\"}\t2026-03-20 18:55:16\n63505\t*43\ttts-broadcast\tcompleted\t10\tagent-af70f756\tanswered\t{\"CALLER_ID\": \"9520060150\", \"healthCheck\": \"true\", \"healthCheckCallerIdId\": \"29\", \"healthCheckDID\": \"9520060150\"}\t2026-03-20 18:55:16\n",
+  "stderr": "",
+  "execution_time_ms": 981
+}

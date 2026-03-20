@@ -418,6 +418,7 @@ export const pbxAgents = mysqlTable("pbx_agents", {
   cpsLimit: int("cpsLimit").default(3),  // Calls per second rate limit (1-10)
   cpsPacingMs: int("cpsPacingMs").default(1000),  // Milliseconds between calls (1000=1/s, 2000=1/2s, 3000=1/3s)
   ipAddress: varchar("ipAddress", { length: 45 }),
+  capabilities: json("capabilities").$type<{ voiceAiBridge?: boolean; ariConnected?: boolean; [key: string]: any }>(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

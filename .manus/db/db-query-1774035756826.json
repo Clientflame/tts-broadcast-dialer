@@ -1,0 +1,65 @@
+{
+  "query": "SELECT id, phoneNumber, context, status, result, resultDetails, claimedBy, claimedAt, createdAt FROM call_queue WHERE context = 'voice-ai-handler' ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, context, status, result, resultDetails, claimedBy, claimedAt, createdAt FROM call_queue WHERE context = 'voice-ai-handler' ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "63511",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "failed",
+      "result": "failed",
+      "resultDetails": "{\"duration\": 16, \"reason\": \"0\"}",
+      "claimedBy": "agent-6e59b17c",
+      "claimedAt": "1774034657802",
+      "createdAt": "2026-03-20 19:24:14"
+    },
+    {
+      "id": "61837",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "completed",
+      "result": "answered",
+      "resultDetails": "{\"answeredAt\": 1774019492195, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000022\", \"duration\": 97, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}",
+      "claimedBy": "agent-af70f756",
+      "claimedAt": "1774019488728",
+      "createdAt": "2026-03-20 15:11:25"
+    },
+    {
+      "id": "61836",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "completed",
+      "result": "answered",
+      "resultDetails": "{\"answeredAt\": 1774019472989, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000021\", \"duration\": 17, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}",
+      "claimedBy": "agent-af70f756",
+      "claimedAt": "1774019466740",
+      "createdAt": "2026-03-20 15:11:06"
+    },
+    {
+      "id": "61835",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "completed",
+      "result": "answered",
+      "resultDetails": "{\"answeredAt\": 1774019359379, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000020\", \"duration\": 8, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}",
+      "claimedBy": "agent-af70f756",
+      "claimedAt": "1774019356305",
+      "createdAt": "2026-03-20 15:09:14"
+    },
+    {
+      "id": "61834",
+      "phoneNumber": "4074551177",
+      "context": "voice-ai-handler",
+      "status": "completed",
+      "result": "answered",
+      "resultDetails": "{\"answeredAt\": 1774019331435, \"asteriskChannel\": \"PJSIP/vitel-outbound-0000001f\", \"duration\": 10, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}",
+      "claimedBy": "agent-af70f756",
+      "claimedAt": "1774019327901",
+      "createdAt": "2026-03-20 15:08:46"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tcontext\tstatus\tresult\tresultDetails\tclaimedBy\tclaimedAt\tcreatedAt\n63511\t4074551177\tvoice-ai-handler\tfailed\tfailed\t{\"duration\": 16, \"reason\": \"0\"}\tagent-6e59b17c\t1774034657802\t2026-03-20 19:24:14\n61837\t4074551177\tvoice-ai-handler\tcompleted\tanswered\t{\"answeredAt\": 1774019492195, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000022\", \"duration\": 97, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}\tagent-af70f756\t1774019488728\t2026-03-20 15:11:25\n61836\t4074551177\tvoice-ai-handler\tcompleted\tanswered\t{\"answeredAt\": 1774019472989, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000021\", \"duration\": 17, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}\tagent-af70f756\t1774019466740\t2026-03-20 15:11:06\n61835\t4074551177\tvoice-ai-handler\tcompleted\tanswered\t{\"answeredAt\": 1774019359379, \"asteriskChannel\": \"PJSIP/vitel-outbound-00000020\", \"duration\": 8, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}\tagent-af70f756\t1774019356305\t2026-03-20 15:09:14\n61834\t4074551177\tvoice-ai-handler\tcompleted\tanswered\t{\"answeredAt\": 1774019331435, \"asteriskChannel\": \"PJSIP/vitel-outbound-0000001f\", \"duration\": 10, \"hangupCause\": \"16\", \"hangupCauseText\": \"Normal Clearing\"}\tagent-af70f756\t1774019327901\t2026-03-20 15:08:46\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

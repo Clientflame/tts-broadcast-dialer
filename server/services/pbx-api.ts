@@ -93,8 +93,8 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     // Claim pending calls
     const calls = await db.claimPendingCalls(agent.agentId, limit);
 
-    // Update agent heartbeat
-    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
+    // Update agent heartbeat (also pass capabilities if provided)
+    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, req.body.capabilities || undefined);
 
     // Determine CPS limit: campaign-level overrides agent-level
     const agentCps = agent.cpsLimit ?? 1;
@@ -189,11 +189,24 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
       return;
     }
 
+    // Log detailed call result for debugging
+    const agent = (req as any).pbxAgent;
+    if (result === "failed" || result === "congestion") {
+      const reason = details?.reason || details?.error || "unknown";
+      console.warn(`[PBX-API] Call ${queueId} FAILED on agent ${agent?.name || "unknown"}: result=${result}, reason=${reason}, details=${JSON.stringify(details || {})}`);
+    } else {
+      console.log(`[PBX-API] Call ${queueId} result: ${result} (agent: ${agent?.name || "unknown"}, duration: ${details?.duration || 0}s)`);
+    }
+
     // Update queue item
     const queueUpdate: any = {
       status: result === "answered" || result === "completed" ? "completed" : "failed",
       result,
-      resultDetails: details || {},
+      resultDetails: {
+        ...(details || {}),
+        agentName: agent?.name || "unknown",
+        reportedAt: Date.now(),
+      },
     };
     // Store call duration on the queue item for the activity feed
     if (details?.duration && typeof details.duration === "number" && details.duration > 0) {
@@ -318,7 +331,9 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
 pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
   try {
     const agent = (req as any).pbxAgent;
-    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0);
+    // Accept capabilities from PBX agent (e.g., voiceAiBridge: true)
+    const capabilities = req.body.capabilities || undefined;
+    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, capabilities);
     // Attempt auto-throttle ramp-up on each heartbeat
     await attemptRampUp(agent.agentId);
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;

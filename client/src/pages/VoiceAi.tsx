@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -716,11 +716,51 @@ function DeployTab() {
     }
   };
 
+  const [callPollingId, setCallPollingId] = useState<number | null>(null);
+  const [callStatusMsg, setCallStatusMsg] = useState<string>("");
+
+  // Poll for call status after queuing
+  const callStatusQuery = trpc.voiceAi.getCallStatus.useQuery(
+    { queueId: callPollingId! },
+    {
+      enabled: !!callPollingId,
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!data) return 2000;
+        if (data.status === "completed" || data.status === "failed" || data.status === "not_found") return false;
+        return 2000; // Poll every 2s while pending/claimed/dialing
+      },
+    }
+  );
+
+  // React to call status changes
+  React.useEffect(() => {
+    if (!callStatusQuery.data || !callPollingId) return;
+    const { status, result, failureReason, duration } = callStatusQuery.data;
+    if (status === "completed" || (result === "answered")) {
+      const dur = duration ? ` (${duration}s)` : "";
+      toast.success(`Call completed successfully${dur}`);
+      setCallStatusMsg(`Call answered${dur}`);
+      setCallPollingId(null);
+    } else if (status === "failed") {
+      const reason = failureReason || "Unknown failure";
+      toast.error(`Call failed: ${reason}`);
+      setCallStatusMsg(`Failed: ${reason}`);
+      setCallPollingId(null);
+    } else if (status === "claimed") {
+      setCallStatusMsg("Call claimed by PBX agent, dialing...");
+    } else if (status === "dialing") {
+      setCallStatusMsg("Ringing...");
+    }
+  }, [callStatusQuery.data, callPollingId]);
+
   const handleTestCall = async () => {
     if (!testPhone || !testPromptId) {
       toast.error("Enter a phone number and select a prompt");
       return;
     }
+    setCallStatusMsg("");
+    setCallPollingId(null);
     try {
       const result = await testCallMut.mutateAsync({
         phoneNumber: testPhone,
@@ -729,9 +769,14 @@ function DeployTab() {
       });
       if (result.success) {
         toast.success(result.message);
+        if (result.queueId) {
+          setCallPollingId(result.queueId);
+          setCallStatusMsg("Queued, waiting for PBX agent to pick up...");
+        }
       }
     } catch (e: any) {
       toast.error(e.message);
+      setCallStatusMsg(`Error: ${e.message}`);
     }
   };
 
@@ -959,12 +1004,24 @@ function DeployTab() {
             <div>
               <Button
                 onClick={handleTestCall}
-                disabled={testCallMut.isPending || !testPhone || !testPromptId}
+                disabled={testCallMut.isPending || !!callPollingId || !testPhone || !testPromptId}
                 className="gap-2 w-full"
               >
-                {testCallMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
-                Send Test Call
+                {(testCallMut.isPending || !!callPollingId) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                {callPollingId ? "Call in progress..." : "Send Test Call"}
               </Button>
+              {/* Call status feedback */}
+              {callStatusMsg && (
+                <div className={`mt-2 p-2 rounded text-xs font-medium ${
+                  callStatusMsg.startsWith("Failed") || callStatusMsg.startsWith("Error")
+                    ? "bg-red-500/10 text-red-400 border border-red-500/20"
+                    : callStatusMsg.startsWith("Call answered") || callStatusMsg.startsWith("Call completed")
+                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                    : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                }`}>
+                  {callStatusMsg}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

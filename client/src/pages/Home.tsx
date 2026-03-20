@@ -394,6 +394,8 @@ function TestCallWidget() {
   const [testPhone, setTestPhone] = useState("");
   const [testAudioId, setTestAudioId] = useState<number | null>(null);
   const [testCallerId, setTestCallerId] = useState<number | undefined>(undefined);
+  const [callPollingId, setCallPollingId] = useState<number | null>(null);
+  const [callStatusMsg, setCallStatusMsg] = useState("");
 
   // Fetch audio files and caller IDs
   const audioFiles = trpc.audio.list.useQuery(undefined, { enabled: !!user });
@@ -402,16 +404,54 @@ function TestCallWidget() {
   const readyFiles = (audioFiles.data ?? []).filter((f: any) => f.s3Url);
   const activeCallerIds = (callerIds.data ?? []).filter((c: any) => c.isActive);
 
+  // Poll for call status
+  const callStatusQuery = trpc.quickTest.getCallStatus.useQuery(
+    { queueId: callPollingId! },
+    {
+      enabled: !!callPollingId,
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!data) return 2000;
+        if (data.status === "completed" || data.status === "failed" || data.status === "not_found") return false;
+        return 2000;
+      },
+    }
+  );
+
+  // React to call status changes
+  useEffect(() => {
+    if (!callStatusQuery.data || !callPollingId) return;
+    const { status, result, failureReason, duration } = callStatusQuery.data;
+    if (status === "completed" || result === "answered") {
+      const dur = duration ? ` (${duration}s)` : "";
+      toast.success(`Call completed successfully${dur}`);
+      setCallStatusMsg(`Call answered${dur}`);
+      setCallPollingId(null);
+    } else if (status === "failed") {
+      toast.error(`Call failed: ${failureReason || "Unknown"}`);
+      setCallStatusMsg(`Failed: ${failureReason || "Unknown"}`);
+      setCallPollingId(null);
+    } else if (status === "claimed") {
+      setCallStatusMsg("PBX agent dialing...");
+    }
+  }, [callStatusQuery.data, callPollingId]);
+
   const quickTestMut = trpc.quickTest.dial.useMutation({
     onSuccess: (r) => {
       if (r.success) {
-        toast.success("Test call initiated! Your phone should ring shortly.");
-        setTestPhone("");
+        toast.success(r.message || "Test call initiated!");
+        if (r.queueId) {
+          setCallPollingId(r.queueId);
+          setCallStatusMsg("Queued, waiting for PBX agent...");
+        }
       } else {
         toast.error(r.message || "Failed to initiate call");
       }
     },
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      toast.error(e.message);
+      setCallStatusMsg(`Error: ${e.message}`);
+    },
   });
 
   const canDial = testPhone.replace(/\D/g, "").length >= 10 && testAudioId;
@@ -481,9 +521,11 @@ function TestCallWidget() {
         <Button
           className="w-full"
           size="sm"
-          disabled={!canDial || quickTestMut.isPending}
+          disabled={!canDial || quickTestMut.isPending || !!callPollingId}
           onClick={() => {
             if (testAudioId && testPhone) {
+              setCallStatusMsg("");
+              setCallPollingId(null);
               quickTestMut.mutate({
                 phoneNumber: testPhone,
                 audioFileId: testAudioId,
@@ -492,12 +534,23 @@ function TestCallWidget() {
             }
           }}
         >
-          {quickTestMut.isPending ? (
-            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Calling...</>
+          {(quickTestMut.isPending || !!callPollingId) ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{callPollingId ? "Call in progress..." : "Calling..."}</>
           ) : (
             <><PhoneCall className="h-4 w-4 mr-2" />Dial Test Call</>
           )}
         </Button>
+        {callStatusMsg && (
+          <div className={`mt-2 p-2 rounded text-xs font-medium ${
+            callStatusMsg.startsWith("Failed") || callStatusMsg.startsWith("Error")
+              ? "bg-red-500/10 text-red-400 border border-red-500/20"
+              : callStatusMsg.startsWith("Call answered") || callStatusMsg.startsWith("Call completed")
+              ? "bg-green-500/10 text-green-400 border border-green-500/20"
+              : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+          }`}>
+            {callStatusMsg}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
