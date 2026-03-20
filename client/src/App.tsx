@@ -33,6 +33,7 @@ import Wallboard from "./pages/Wallboard";
 import Recordings from "./pages/Recordings";
 import VoiceAi from "./pages/VoiceAi";
 import AgentAssist from "./pages/AgentAssist";
+import AgentDashboard from "./pages/AgentDashboard";
 
 function Router() {
   return (
@@ -64,6 +65,7 @@ function Router() {
       <Route path={"/recordings"} component={Recordings} />
       <Route path={"/voice-ai"} component={VoiceAi} />
       <Route path={"/agent-assist"} component={AgentAssist} />
+      <Route path={"/agent"} component={AgentDashboard} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />

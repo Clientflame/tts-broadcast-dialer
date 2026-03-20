@@ -28,6 +28,7 @@ import {
   coachingTemplates, InsertCoachingTemplate,
   assistSessions, InsertAssistSession,
   assistSuggestions, InsertAssistSuggestion,
+  agentCallLog,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2919,4 +2920,91 @@ export async function getSentimentDistribution() {
     ORDER BY FIELD(sentimentLabel, 'very_negative', 'negative', 'neutral', 'positive', 'very_positive')
   `);
   return (rows as any)[0] || [];
+}
+
+
+// ─── Agent-User Linking & Agent Dashboard ─────────────────────────────────
+
+export async function getLinkedAgentForUser(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user?.linkedAgentId) return undefined;
+  const [agent] = await db.select().from(liveAgents).where(eq(liveAgents.id, user.linkedAgentId)).limit(1);
+  return agent;
+}
+
+export async function linkUserToAgent(userId: number, agentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(users).set({ linkedAgentId: agentId }).where(eq(users.id, userId));
+}
+
+export async function unlinkUserFromAgent(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(users).set({ linkedAgentId: null }).where(eq(users.id, userId));
+}
+
+export async function getAgentCallHistory(agentId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(agentCallLog)
+    .where(eq(agentCallLog.agentId, agentId))
+    .orderBy(desc(agentCallLog.createdAt))
+    .limit(limit);
+}
+
+export async function getAgentPerformanceStats(agentId: number) {
+  const db = await getDb();
+  if (!db) return { totalCalls: 0, answeredCalls: 0, avgTalkTime: 0, totalTalkTime: 0, dispositions: {} };
+
+  const calls = await db.select().from(agentCallLog)
+    .where(eq(agentCallLog.agentId, agentId));
+
+  const totalCalls = calls.length;
+  const answeredCalls = calls.filter(c => c.talkDuration && c.talkDuration > 0).length;
+  const totalTalkTime = calls.reduce((sum, c) => sum + (c.talkDuration || 0), 0);
+  const avgTalkTime = answeredCalls > 0 ? Math.round(totalTalkTime / answeredCalls) : 0;
+
+  const dispositions: Record<string, number> = {};
+  for (const c of calls) {
+    const d = c.disposition || "other";
+    dispositions[d] = (dispositions[d] || 0) + 1;
+  }
+
+  return { totalCalls, answeredCalls, avgTalkTime, totalTalkTime, dispositions };
+}
+
+export async function getAgentTodayStats(agentId: number) {
+  const db = await getDb();
+  if (!db) return { callsToday: 0, talkTimeToday: 0, avgTalkTimeToday: 0 };
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const calls = await db.select().from(agentCallLog)
+    .where(and(
+      eq(agentCallLog.agentId, agentId),
+      gte(agentCallLog.createdAt, startOfDay)
+    ));
+
+  const callsToday = calls.length;
+  const talkTimeToday = calls.reduce((sum, c) => sum + (c.talkDuration || 0), 0);
+  const answeredToday = calls.filter(c => c.talkDuration && c.talkDuration > 0).length;
+  const avgTalkTimeToday = answeredToday > 0 ? Math.round(talkTimeToday / answeredToday) : 0;
+
+  return { callsToday, talkTimeToday, avgTalkTimeToday };
+}
+
+export async function getAllLiveAgentsForLinking() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: liveAgents.id,
+    name: liveAgents.name,
+    sipExtension: liveAgents.sipExtension,
+    email: liveAgents.email,
+    status: liveAgents.status,
+  }).from(liveAgents).orderBy(liveAgents.name);
 }

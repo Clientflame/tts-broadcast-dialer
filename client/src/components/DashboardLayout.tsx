@@ -26,8 +26,10 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
 
-const menuItems = [
+// Full admin menu items
+const adminMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Megaphone, label: "Campaigns", path: "/campaigns" },
   { icon: Users, label: "Contacts", path: "/contacts" },
@@ -53,6 +55,14 @@ const menuItems = [
   { icon: Phone, label: "FreePBX", path: "/freepbx" },
   { icon: Settings, label: "Settings", path: "/settings" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
+];
+
+// Focused agent menu items — only what phone agents need
+const agentMenuItems = [
+  { icon: LayoutDashboard, label: "My Dashboard", path: "/agent" },
+  { icon: Monitor, label: "Wallboard", path: "/wallboard" },
+  { icon: ScrollText, label: "Call Scripts", path: "/scripts" },
+  { icon: Mic, label: "Recordings", path: "/recordings" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -127,8 +137,12 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+
+  // Determine menu based on user role
+  const isAdmin = user?.role === "admin";
+  const menuItems = isAdmin ? adminMenuItems : agentMenuItems;
+  const activeMenuItem = menuItems.find(item => item.path === location);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -195,9 +209,6 @@ function DashboardLayoutContent({
               )}
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
-                  {import.meta.env.VITE_APP_LOGO && (
-                    <img src={import.meta.env.VITE_APP_LOGO} alt="Logo" className="h-6 w-6 rounded object-contain hidden" />
-                  )}
                   <span className="font-semibold tracking-tight truncate">
                     {import.meta.env.VITE_APP_TITLE || "TTS Dialer"}
                   </span>
@@ -239,9 +250,14 @@ function DashboardLayoutContent({
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
-                      {user?.name || "-"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate leading-none">
+                        {user?.name || "-"}
+                      </p>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${isAdmin ? "border-amber-500/50 text-amber-500" : "border-blue-500/50 text-blue-500"}`}>
+                        {isAdmin ? "Admin" : "Agent"}
+                      </Badge>
+                    </div>
                     <p className="text-xs text-muted-foreground truncate mt-1.5">
                       {user?.email || "-"}
                     </p>

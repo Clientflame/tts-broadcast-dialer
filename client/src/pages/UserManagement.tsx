@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useState, useMemo } from "react";
-import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal } from "lucide-react";
+import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal, Headphones, Link2, Unlink } from "lucide-react";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
 import { validatePassword } from "../../../shared/passwordValidation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -64,7 +64,17 @@ export default function UserManagement() {
 
   const usersQuery = trpc.userManagement.list.useQuery();
   const groupsQuery = trpc.groups.list.useQuery();
+  const availableAgents = trpc.agentDashboard.availableAgents.useQuery();
   const utils = trpc.useUtils();
+
+  const linkAgent = trpc.agentDashboard.linkAgent.useMutation({
+    onSuccess: () => { toast.success("Agent linked"); utils.userManagement.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const unlinkAgent = trpc.agentDashboard.unlinkAgent.useMutation({
+    onSuccess: () => { toast.success("Agent unlinked"); utils.userManagement.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createUser = trpc.userManagement.createWithPassword.useMutation({
     onSuccess: () => {
@@ -290,6 +300,7 @@ export default function UserManagement() {
                     <th className="text-left p-3 text-sm font-medium">Login Method</th>
                     <th className="text-left p-3 text-sm font-medium">Role</th>
                     <th className="text-left p-3 text-sm font-medium">Groups</th>
+                    <th className="text-left p-3 text-sm font-medium">Linked Agent</th>
                     <th className="text-left p-3 text-sm font-medium">Last Login</th>
                     <th className="text-left p-3 text-sm font-medium">Actions</th>
                   </tr>
@@ -362,6 +373,44 @@ export default function UserManagement() {
                           )}
                         </div>
                       </td>
+                      <td className="p-3">
+                        {u.linkedAgentId ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="secondary" className="text-xs">
+                              <Headphones className="h-3 w-3 mr-1" />
+                              {availableAgents.data?.find(a => a.id === u.linkedAgentId)?.name || `Agent #${u.linkedAgentId}`}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => unlinkAgent.mutate({ userId: u.id })}
+                              title="Unlink agent"
+                            >
+                              <Unlink className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Select onValueChange={(v) => linkAgent.mutate({ userId: u.id, agentId: parseInt(v) })}>
+                            <SelectTrigger className="h-7 w-32 text-xs">
+                              <SelectValue placeholder="Link agent..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableAgents.data?.map(a => (
+                                <SelectItem key={a.id} value={String(a.id)}>
+                                  <div className="flex items-center gap-1">
+                                    <Headphones className="h-3 w-3" />
+                                    {a.name} (Ext. {a.sipExtension})
+                                  </div>
+                                </SelectItem>
+                              ))}
+                              {(!availableAgents.data || availableAgents.data.length === 0) && (
+                                <SelectItem value="none" disabled>No agents available</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </td>
                       <td className="p-3 text-sm text-muted-foreground">
                         {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleDateString() : "-"}
                       </td>
@@ -408,7 +457,7 @@ export default function UserManagement() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No users found</td></tr>
+                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No users found</td></tr>
                   )}
                 </tbody>
               </table>

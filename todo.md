@@ -634,7 +634,20 @@
 - [ ] Improve Voice AI audio quality: better resampling algorithm, low-pass anti-aliasing filter
 - [ ] Upgrade Voice AI audio from ulaw (8kHz) to G.722 (16kHz wideband) for better quality
 - [x] Bug: User jamar.christian@gmail.com can't access prompts, caller IDs, or make test calls
-- [ ] Improve mobile responsiveness for users and admin
+- [x] Improve mobile responsiveness for users and admin
 - [x] Convert to single-tenant model: remove userId filtering from shared resources (caller IDs, prompts, campaigns, contacts, audio files)
 - [x] Keep userId as "created by" for audit trail only
-- [ ] Agent/user role: focused view for phone agents (queue, active calls, call history)
+- [x] Agent/user role: focused view for phone agents (queue, active calls, call history)
+- [x] Agent role view: create AgentDashboard page with focused interface for phone agents
+- [x] Agent role view: show agent's call queue, active calls, recent call history
+- [x] Agent role view: agent status controls (available, on break, offline)
+- [x] Agent role view: simplified sidebar with only agent-relevant pages
+- [x] Agent role view: role-based routing in DashboardLayout (admin sees full menu, agent sees focused menu)
+- [x] Agent role view: agent can see their own performance stats (calls handled, avg talk time, dispositions)
+- [x] Mobile responsiveness: DashboardLayout sidebar collapses properly on mobile
+- [x] Mobile responsiveness: Dashboard cards stack vertically on small screens
+- [x] Mobile responsiveness: Campaign list/table becomes card-based on mobile
+- [x] Mobile responsiveness: Contact tables scroll horizontally or become card layout on mobile
+- [x] Mobile responsiveness: Dialogs and forms are full-width on mobile
+- [x] Mobile responsiveness: Caller IDs, Scripts, Audio pages responsive
+- [x] Mobile responsiveness: Agent dashboard optimized for tablet/phone use

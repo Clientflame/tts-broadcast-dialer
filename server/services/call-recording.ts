@@ -11,7 +11,6 @@ import { nanoid } from "nanoid";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface StartRecordingParams {
-  userId: number;
   campaignId?: number;
   callLogId?: number;
   callQueueId?: number;
@@ -31,7 +30,6 @@ export interface UploadRecordingParams {
 }
 
 export interface RecordingFilter {
-  userId: number;
   campaignId?: number;
   agentId?: number;
   phoneNumber?: string;
@@ -50,10 +48,10 @@ export async function startRecording(params: StartRecordingParams) {
   const now = Date.now();
   const fileId = nanoid(12);
   const fileName = `recording-${fileId}.wav`;
-  const s3Key = `recordings/${params.userId}/${params.campaignId || "quick"}/${fileName}`;
+  const s3Key = `recordings/shared/${params.campaignId || "quick"}/${fileName}`;
 
   const [result] = await db.insert(callRecordings).values({
-    userId: params.userId,
+    userId: 0, // single-tenant: not used for filtering
     campaignId: params.campaignId || null,
     callLogId: params.callLogId || null,
     callQueueId: params.callQueueId || null,
@@ -177,7 +175,7 @@ export async function failRecording(recordingId: number, errorMessage: string) {
 
 export async function listRecordings(filter: RecordingFilter) {
   const db = (await getDb())!;
-  const conditions: any[] = [eq(callRecordings.userId, filter.userId)];
+  const conditions: any[] = [];
 
   if (filter.campaignId) {
     conditions.push(eq(callRecordings.campaignId, filter.campaignId));
@@ -253,7 +251,7 @@ export async function deleteRecording(recordingId: number) {
 
 // ─── Get Recording Stats ────────────────────────────────────────────────────
 
-export async function getRecordingStats(userId: number) {
+export async function getRecordingStats() {
   const db = (await getDb())!;
 
   const [stats] = await db
@@ -267,7 +265,6 @@ export async function getRecordingStats(userId: number) {
     .from(callRecordings)
     .where(
       and(
-        eq(callRecordings.userId, userId),
         sql`${callRecordings.status} != 'deleted'`
       )
     );
@@ -283,7 +280,7 @@ export async function getRecordingStats(userId: number) {
 
 // ─── Apply Retention Policy ─────────────────────────────────────────────────
 
-export async function applyRetentionPolicy(userId: number) {
+export async function applyRetentionPolicy() {
   const db = (await getDb())!;
   const now = Date.now();
 
@@ -293,7 +290,6 @@ export async function applyRetentionPolicy(userId: number) {
     .from(callRecordings)
     .where(
       and(
-        eq(callRecordings.userId, userId),
         eq(callRecordings.status, "ready"),
         sql`${callRecordings.retainUntil} IS NOT NULL AND ${callRecordings.retainUntil} <= ${now}`
       )

@@ -177,7 +177,7 @@ function SegmentEditor({
           )}
 
           {/* Voice & Speed */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs">Provider</Label>
               <Select value={segment.provider || "openai"} onValueChange={v => {

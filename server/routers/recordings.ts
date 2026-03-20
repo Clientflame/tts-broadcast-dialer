@@ -43,7 +43,6 @@ export const recordingsRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return listRecordings({
-        userId: ctx.user.id,
         ...input,
       });
     }),
@@ -53,7 +52,7 @@ export const recordingsRouter = router({
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const recording = await getRecording(input.id);
-      if (!recording || recording.userId !== ctx.user.id) {
+      if (!recording) {
         return null;
       }
       return recording;
@@ -64,7 +63,7 @@ export const recordingsRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const recording = await getRecording(input.id);
-      if (!recording || recording.userId !== ctx.user.id) {
+      if (!recording) {
         throw new Error("Recording not found");
       }
       await deleteRecording(input.id);
@@ -73,12 +72,12 @@ export const recordingsRouter = router({
 
   // Get recording stats
   stats: protectedProcedure.query(async ({ ctx }) => {
-    return getRecordingStats(ctx.user.id);
+    return getRecordingStats();
   }),
 
   // Apply retention policy
   applyRetention: protectedProcedure.mutation(async ({ ctx }) => {
-    return applyRetentionPolicy(ctx.user.id);
+    return applyRetentionPolicy();
   }),
 });
 
@@ -88,7 +87,6 @@ export const wallboardRouter = router({
   // Real-time wallboard data — all stats in one query for efficiency
   liveStats: protectedProcedure.query(async ({ ctx }) => {
     const db = (await getDb())!;
-    const userId = ctx.user.id;
     const now = Date.now();
     const oneHourAgo = now - 3600000;
     const fiveMinAgo = now - 300000;
@@ -111,7 +109,6 @@ export const wallboardRouter = router({
       .from(campaigns)
       .where(
         and(
-          eq(campaigns.userId, userId),
           eq(campaigns.status, "running")
         )
       );
@@ -124,8 +121,7 @@ export const wallboardRouter = router({
         completed: sql<number>`sum(case when status = 'completed' then 1 else 0 end)`,
         failed: sql<number>`sum(case when status = 'failed' then 1 else 0 end)`,
       })
-      .from(callQueue)
-      .where(eq(callQueue.userId, userId));
+      .from(callQueue);
 
     // 3. Live agents status
     const agents = await db
@@ -144,7 +140,6 @@ export const wallboardRouter = router({
       .from(liveAgents)
       .where(
         and(
-          eq(liveAgents.userId, userId),
           eq(liveAgents.isActive, 1)
         )
       );
@@ -157,7 +152,6 @@ export const wallboardRouter = router({
       .from(callLogs)
       .where(
         and(
-          eq(callLogs.userId, userId),
           gte(callLogs.startedAt, fiveMinAgo)
         )
       );
@@ -176,7 +170,6 @@ export const wallboardRouter = router({
       .from(callLogs)
       .where(
         and(
-          eq(callLogs.userId, userId),
           gte(callLogs.startedAt, oneHourAgo)
         )
       );
@@ -218,7 +211,6 @@ export const wallboardRouter = router({
       .from(callRecordings)
       .where(
         and(
-          eq(callRecordings.userId, userId),
           gte(callRecordings.recordingStartedAt, todayStart.getTime())
         )
       );
@@ -267,7 +259,6 @@ export const wallboardRouter = router({
     )
     .query(async ({ ctx, input }) => {
       const db = (await getDb())!;
-      const userId = ctx.user.id;
       const cutoff = Date.now() - input.hours * 3600000;
 
       // Get hourly call counts using raw SQL to avoid only_full_group_by issues
@@ -283,7 +274,6 @@ export const wallboardRouter = router({
         .from(callLogs)
         .where(
           and(
-            eq(callLogs.userId, userId),
             gte(callLogs.startedAt, cutoff)
           )
         )

@@ -500,7 +500,7 @@ export default function PredictiveDialer() {
                         <StatGauge value={d.pacing?.currentConcurrent || 0} max={d.pacing?.currentConcurrent ? d.pacing.currentConcurrent * 2 : 10} label="Concurrent" color="#8b5cf6" size={100} />
                       </div>
                     </div>
-                    <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
                       <div className="p-2 rounded bg-muted/50 text-center">
                         <div className="text-muted-foreground text-xs">Active</div>
                         <div className="font-bold text-lg">{d.activeCalls || 0}</div>

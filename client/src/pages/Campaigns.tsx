@@ -261,7 +261,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
       )}
 
       <Tabs defaultValue="basic" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5">
           <TabsTrigger value="basic">Basic</TabsTrigger>
           <TabsTrigger value="dialing">Dialing</TabsTrigger>
           <TabsTrigger value="ivr">IVR</TabsTrigger>
@@ -287,7 +287,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
           {/* Routing Mode */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Routing Mode</Label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {[
                 { value: "broadcast", label: "Broadcast", desc: "Play TTS/audio" },
                 { value: "live_agent", label: "Live Agent", desc: "Transfer to agent" },
@@ -320,7 +320,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
           {/* Audio Mode Selection */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Audio Source</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button type="button" onClick={() => setForm(p => ({ ...p, usePersonalizedTTS: false, scriptId: 0 }))}
                 className={`p-3 rounded-lg border text-left transition-colors ${!form.usePersonalizedTTS && !form.scriptId ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'hover:bg-muted/50'}`}>
                 <div className="text-sm font-medium">Static Audio</div>
@@ -564,7 +564,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               <Label className="text-base font-semibold">Call Pacing Mode</Label>
               <p className="text-xs text-muted-foreground">Controls how concurrent call volume is managed during the campaign</p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(["fixed", "adaptive", "predictive"] as const).map(mode => (
                 <button
                   key={mode}

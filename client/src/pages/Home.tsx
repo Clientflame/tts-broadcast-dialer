@@ -599,10 +599,18 @@ export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const estClock = useESTClock();
-  const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user, refetchInterval: 10000 });
+
+  // Redirect non-admin users to agent dashboard
+  useEffect(() => {
+    if (user && user.role !== "admin") {
+      setLocation("/agent");
+    }
+  }, [user, setLocation]);
+
+  const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user && user?.role === "admin", refetchInterval: 10000 });
 
   // Auto-redirect to onboarding if setup is incomplete and not dismissed
-  const onboardingStatus = trpc.onboarding.status.useQuery(undefined, { enabled: !!user });
+  const onboardingStatus = trpc.onboarding.status.useQuery(undefined, { enabled: !!user && user?.role === "admin" });
   useEffect(() => {
     if (
       onboardingStatus.data &&

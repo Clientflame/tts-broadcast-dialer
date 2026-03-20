@@ -225,6 +225,13 @@
       "when": 1773869439709,
       "tag": "0031_lame_doomsday",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1774028081654,
+      "tag": "0032_rapid_gambit",
+      "breakpoints": true
     }
   ]
 }

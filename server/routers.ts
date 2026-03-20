@@ -2165,6 +2165,60 @@ Return ONLY the message text, nothing else.`;
   supervisor: supervisorRouter,
   agentAssist: agentAssistRouter,
 
+  // ─── Agent Dashboard (for agent role users) ────────────────────────────
+  agentDashboard: router({
+    /** Get the linked agent for the current user */
+    myAgent: protectedProcedure.query(async ({ ctx }) => {
+      const agent = await db.getLinkedAgentForUser(ctx.user.id);
+      return agent || null;
+    }),
+
+    /** Get today's stats for the linked agent */
+    todayStats: protectedProcedure.query(async ({ ctx }) => {
+      const agent = await db.getLinkedAgentForUser(ctx.user.id);
+      if (!agent) return null;
+      return db.getAgentTodayStats(agent.id);
+    }),
+
+    /** Get performance stats for the linked agent */
+    performance: protectedProcedure.query(async ({ ctx }) => {
+      const agent = await db.getLinkedAgentForUser(ctx.user.id);
+      if (!agent) return null;
+      return db.getAgentPerformanceStats(agent.id);
+    }),
+
+    /** Get call history for the linked agent */
+    callHistory: protectedProcedure.input(z.object({ limit: z.number().min(1).max(200).default(50) }).optional()).query(async ({ ctx, input }) => {
+      const agent = await db.getLinkedAgentForUser(ctx.user.id);
+      if (!agent) return [];
+      return db.getAgentCallHistory(agent.id, input?.limit ?? 50);
+    }),
+
+    /** Get all live agents for admin linking */
+    availableAgents: protectedProcedure.query(async () => {
+      return db.getAllLiveAgentsForLinking();
+    }),
+
+    /** Admin: link a user to an agent */
+    linkAgent: adminProcedure.input(z.object({
+      userId: z.number(),
+      agentId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.linkUserToAgent(input.userId, input.agentId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.linkAgent", resource: "user", resourceId: input.userId, details: { agentId: input.agentId } });
+      return { success: true };
+    }),
+
+    /** Admin: unlink a user from an agent */
+    unlinkAgent: adminProcedure.input(z.object({
+      userId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.unlinkUserFromAgent(input.userId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "user.unlinkAgent", resource: "user", resourceId: input.userId });
+      return { success: true };
+    }),
+  }),
+
   onboarding: router({
     /** Get onboarding status — checks which setup steps are completed */
     status: protectedProcedure.query(async ({ ctx }) => {
