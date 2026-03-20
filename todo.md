@@ -651,3 +651,4 @@
 - [x] Mobile responsiveness: Dialogs and forms are full-width on mobile
 - [x] Mobile responsiveness: Caller IDs, Scripts, Audio pages responsive
 - [x] Mobile responsiveness: Agent dashboard optimized for tablet/phone use
+
