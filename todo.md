@@ -657,3 +657,4 @@
 - [x] Pre-flight check: verify PBX agent has Voice AI bridge before queuing voice AI calls
 - [x] Ensure calls flow regardless of which PBX agent picks them up (no agent-name dependency)
 - [x] Show call queue failure details in call logs and toast messages
+- [x] Add Voice AI Bridge connection status (connected/not connected) to Deployment Prerequisites on dashboard

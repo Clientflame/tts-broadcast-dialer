@@ -18,7 +18,7 @@ import {
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings, Volume2,
+  Settings, Volume2, Bot,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -118,6 +118,10 @@ function SystemHealthWidget() {
     enabled: !!user,
     refetchInterval: 30000,
   });
+  const bridgeStatus = trpc.voiceAi.getBridgeStatus.useQuery(undefined, {
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
 
   if (health.isLoading) {
     return (
@@ -129,8 +133,8 @@ function SystemHealthWidget() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {[1,2,3,4,5].map(i => (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {[1,2,3,4,5,6].map(i => (
               <div key={i} className="h-20 rounded-lg bg-muted/30 animate-pulse" />
             ))}
           </div>
@@ -183,6 +187,20 @@ function SystemHealthWidget() {
       detail: data.database.detail,
       ok: data.database.status === "connected",
     },
+    {
+      key: "voiceai",
+      label: "Voice AI Bridge",
+      icon: Bot,
+      status: bridgeStatus.data?.status ?? "unknown",
+      detail: bridgeStatus.data?.status === "online"
+        ? "Connected"
+        : bridgeStatus.data?.status === "not_installed"
+        ? "Not installed"
+        : bridgeStatus.data?.status === "offline"
+        ? "PBX agent offline"
+        : "Checking...",
+      ok: bridgeStatus.data?.status === "online",
+    },
   ];
 
   const allOk = services.every(s => s.ok);
@@ -213,13 +231,13 @@ function SystemHealthWidget() {
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {services.map(svc => {
             const Icon = svc.icon;
             return (
               <button
                 key={svc.key}
-                onClick={() => svc.key !== "database" && setLocation("/settings")}
+                onClick={() => svc.key === "voiceai" ? setLocation("/voice-ai") : svc.key !== "database" && setLocation("/settings")}
                 className={`rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 ${
                   svc.ok
                     ? "border-green-500/20 bg-green-500/5"
