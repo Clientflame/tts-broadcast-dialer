@@ -33,7 +33,6 @@ export const liveAgentRouter = router({
     const agents = await dbInst
       .select()
       .from(liveAgents)
-      .where(eq(liveAgents.userId, ctx.user.id))
       .orderBy(desc(liveAgents.createdAt));
 
     // Merge with in-memory states for real-time status
@@ -64,7 +63,7 @@ export const liveAgentRouter = router({
       const [agent] = await dbInst
         .select()
         .from(liveAgents)
-        .where(and(eq(liveAgents.id, input.id), eq(liveAgents.userId, ctx.user.id)));
+        .where(eq(liveAgents.id, input.id));
 
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
 
@@ -141,7 +140,7 @@ export const liveAgentRouter = router({
       const { id, ...updates } = input;
       await dbInst.update(liveAgents)
         .set(updates)
-        .where(and(eq(liveAgents.id, id), eq(liveAgents.userId, ctx.user.id)));
+        .where(eq(liveAgents.id, id));
 
       await initAgentTracker();
       return { success: true };
@@ -157,7 +156,7 @@ export const liveAgentRouter = router({
       // Soft delete — mark as inactive
       await dbInst.update(liveAgents)
         .set({ isActive: 0, status: "offline" })
-        .where(and(eq(liveAgents.id, input.id), eq(liveAgents.userId, ctx.user.id)));
+        .where(eq(liveAgents.id, input.id));
 
       await initAgentTracker();
       return { success: true };
@@ -236,7 +235,7 @@ export const liveAgentRouter = router({
       };
 
       // Get dialer live stats
-      const dialerStats = await getDialerLiveStats(ctx.user.id);
+      const dialerStats = await getDialerLiveStats();
 
       // Agent utilization = (onCall + wrapUp) / (total - offline - onBreak)
       const activeAgents = agentSummary.total - agentSummary.offline - agentSummary.onBreak;
@@ -276,7 +275,6 @@ export const liveAgentRouter = router({
         .select()
         .from(liveAgents)
         .where(and(
-          eq(liveAgents.userId, ctx.user.id),
           eq(liveAgents.isActive, 1),
           ...(input.agentId ? [eq(liveAgents.id, input.agentId)] : []),
         ));

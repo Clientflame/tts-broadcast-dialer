@@ -632,3 +632,9 @@
 - [x] Bug: Voice AI test calls connect but no audio / AI voice heard — fixed: invalid voice (onyx), wrong audio format (16kHz→24kHz), bad session config format
 - [x] Bug: Voice AI test call still no AI voice after re-running installer with v2.1 fixes — fixed: switched ExternalMedia from slin to ulaw (G.711) to match PSTN codec natively, added ulaw encode/decode, RTP PT 0, 160-byte frames, 20ms pacing
 - [ ] Improve Voice AI audio quality: better resampling algorithm, low-pass anti-aliasing filter
+- [ ] Upgrade Voice AI audio from ulaw (8kHz) to G.722 (16kHz wideband) for better quality
+- [x] Bug: User jamar.christian@gmail.com can't access prompts, caller IDs, or make test calls
+- [ ] Improve mobile responsiveness for users and admin
+- [x] Convert to single-tenant model: remove userId filtering from shared resources (caller IDs, prompts, campaigns, contacts, audio files)
+- [x] Keep userId as "created by" for audit trail only
+- [ ] Agent/user role: focused view for phone agents (queue, active calls, call history)

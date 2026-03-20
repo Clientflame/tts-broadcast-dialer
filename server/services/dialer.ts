@@ -52,7 +52,7 @@ export function isCampaignActive(campaignId: number): boolean {
   return activeCampaigns.has(campaignId);
 }
 
-export async function getDialerLiveStats(userId: number) {
+export async function getDialerLiveStats() {
   const activeIds = getActiveCampaignIds();
   let activeCalls = 0;
   let leadsInHopper = 0;
@@ -106,7 +106,7 @@ export async function getDialerLiveStats(userId: number) {
 }
 
 export async function startCampaign(campaignId: number, userId: number): Promise<void> {
-  const campaign = await db.getCampaign(campaignId, userId);
+  const campaign = await db.getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status === "running") throw new Error("Campaign is already running");
 
@@ -114,7 +114,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   let audioS3Url: string | null = null;
   let audioName: string | null = null;
   if (campaign.audioFileId) {
-    const audioFile = await db.getAudioFile(campaign.audioFileId, userId);
+    const audioFile = await db.getAudioFile(campaign.audioFileId);
     if (!audioFile || !audioFile.s3Url) throw new Error("Audio file not ready");
     audioS3Url = audioFile.s3Url;
     audioName = `campaign_${campaignId}_${audioFile.id}`;
@@ -125,8 +125,8 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const allContacts = await db.getActiveContactsForCampaign(campaign.contactListId);
   if (allContacts.length === 0) throw new Error("No active contacts in the list");
 
-  const dncNumbers = await db.getDncPhoneNumbers(userId);
-  const recentlyCalled = await db.getRecentlyCalledPhoneNumbers(userId, DEDUP_HOURS);
+  const dncNumbers = await db.getDncPhoneNumbers();
+  const recentlyCalled = await db.getRecentlyCalledPhoneNumbers(DEDUP_HOURS);
 
   let dncFiltered = 0;
   let dedupSkipped = 0;
@@ -167,7 +167,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   await db.bulkCreateCallLogs(callLogData);
   console.log(`[Dialer] Hopper: loaded ${firstBatch.length} of ${contactsList.length} eligible contacts (${remainingContacts.length} remaining)`);
 
-  await db.updateCampaign(campaignId, userId, {
+  await db.updateCampaign(campaignId, {
     status: "running",
     totalContacts: contactsList.length,
     startedAt: Date.now(),
@@ -176,13 +176,13 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     failedCalls: 0,
   });
 
-  const updatedCampaign = await db.getCampaign(campaignId, userId);
+  const updatedCampaign = await db.getCampaign(campaignId);
   if (!updatedCampaign) throw new Error("Campaign not found after update");
 
   // Load caller IDs for DID rotation
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
-    callerIdPool = await db.getActiveCallerIds(userId);
+    callerIdPool = await db.getActiveCallerIds();
     if (callerIdPool.length > 0) {
       console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs`);
     }
@@ -257,7 +257,7 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
   const active = activeCampaigns.get(campaignId);
   if (!active) return;
 
-  const campaign = await db.getCampaign(campaignId, userId);
+  const campaign = await db.getCampaign(campaignId);
   if (!campaign || campaign.status !== "running") {
     stopCampaignInternal(campaignId);
     return;
@@ -384,7 +384,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   if (active.callerIds.length > 0) {
     // Refresh the active caller ID pool from DB to pick up any disabled/flagged changes
     try {
-      const freshPool = await db.getActiveCallerIds(userId);
+      const freshPool = await db.getActiveCallerIds();
       if (freshPool.length > 0) {
         active.callerIds = freshPool;
       } else {
@@ -432,7 +432,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   // Priority 1: Script-based campaigns (mixed TTS + recorded segments)
   if (active.scriptSegments && active.scriptSegments.length > 0) {
     try {
-      const contact = await db.getContact(callLog.contactId, userId);
+      const contact = await db.getContact(callLog.contactId);
       console.log(`[Dialer] Generating script audio for contact ${callLog.contactId} (${active.scriptSegments.length} segments)`);
 
       const scriptResult = await generateScriptAudio({
@@ -475,7 +475,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   // Priority 2: Personalized TTS (single message template)
   else if (active.usePersonalizedTTS && active.campaign.messageText) {
     try {
-      const contact = await db.getContact(callLog.contactId, userId);
+      const contact = await db.getContact(callLog.contactId);
       const speed = parseFloat(active.campaign.ttsSpeed || "1.0");
 
       console.log(`[Dialer] Generating personalized TTS for contact ${callLog.contactId}`);
@@ -529,7 +529,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
     const vmAudioFileId = (active.campaign as any).voicemailAudioFileId;
     if (vmAudioFileId) {
       try {
-        const vmAudio = await db.getAudioFile(vmAudioFileId, userId);
+        const vmAudio = await db.getAudioFile(vmAudioFileId);
         if (vmAudio?.s3Url) {
           variables.VOICEMAIL_AUDIO_URL = vmAudio.s3Url;
           variables.VOICEMAIL_AUDIO_NAME = `vm_${callLog.campaignId}_${vmAudio.id}`;
@@ -633,7 +633,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 async function completeCampaign(campaignId: number, userId: number): Promise<void> {
   stopCampaignInternal(campaignId);
   const stats = await db.getCampaignStats(campaignId);
-  await db.updateCampaign(campaignId, userId, {
+  await db.updateCampaign(campaignId, {
     status: "completed",
     completedAt: Date.now(),
     completedCalls: stats.completed,
@@ -650,7 +650,7 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
   });
 
   // Notify owner
-  const campaignInfo = await db.getCampaign(campaignId, userId);
+  const campaignInfo = await db.getCampaign(campaignId);
   const campaignName = campaignInfo?.name || `Campaign #${campaignId}`;
   db.isNotificationEnabled("notify_campaign_complete").then(enabled => {
     if (enabled) {
@@ -664,7 +664,7 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
 
 async function updateCampaignCounts(campaignId: number, userId: number): Promise<void> {
   const stats = await db.getCampaignStats(campaignId);
-  await db.updateCampaign(campaignId, userId, {
+  await db.updateCampaign(campaignId, {
     completedCalls: stats.completed,
     answeredCalls: stats.answered,
     failedCalls: stats.failed + stats.busy + stats.noAnswer,
@@ -683,13 +683,13 @@ function stopCampaignInternal(campaignId: number): void {
 
 export async function pauseCampaign(campaignId: number, userId: number): Promise<void> {
   stopCampaignInternal(campaignId);
-  await db.updateCampaign(campaignId, userId, { status: "paused" });
+  await db.updateCampaign(campaignId, { status: "paused" });
   await db.createAuditLog({ userId, action: "campaign.pause", resource: "campaign", resourceId: campaignId });
 }
 
 export async function cancelCampaign(campaignId: number, userId: number): Promise<void> {
   stopCampaignInternal(campaignId);
-  await db.updateCampaign(campaignId, userId, { status: "cancelled", completedAt: Date.now() });
+  await db.updateCampaign(campaignId, { status: "cancelled", completedAt: Date.now() });
   await db.createAuditLog({ userId, action: "campaign.cancel", resource: "campaign", resourceId: campaignId });
 }
 
@@ -715,7 +715,7 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
  * it just restores the dialer loop so existing pending call_logs/queue items get processed.
  */
 export async function resumeCampaignAfterRestart(campaignId: number, userId: number): Promise<void> {
-  const campaign = await db.getCampaign(campaignId, userId);
+  const campaign = await db.getCampaign(campaignId);
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status !== "running") throw new Error(`Campaign status is '${campaign.status}', expected 'running'`);
 
@@ -730,7 +730,7 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
   let audioName: string | null = null;
   if (campaign.audioFileId) {
     try {
-      const audioFile = await db.getAudioFile(campaign.audioFileId, userId);
+      const audioFile = await db.getAudioFile(campaign.audioFileId);
       if (audioFile?.s3Url) {
         audioS3Url = audioFile.s3Url;
         audioName = `campaign_${campaignId}_${audioFile.id}`;
@@ -744,7 +744,7 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
     try {
-      callerIdPool = await db.getActiveCallerIds(userId);
+      callerIdPool = await db.getActiveCallerIds();
     } catch (err) {
       console.warn(`[Dialer Recovery] Could not load caller IDs for campaign ${campaignId}:`, err);
     }
@@ -864,7 +864,7 @@ export async function recoverStaleCampaigns(): Promise<void> {
       if (pendingLogCount === 0 && pendingQueueCount === 0) {
         // All calls are done — mark campaign as completed
         const stats = await db.getCampaignStats(campaign.id);
-        await db.updateCampaign(campaign.id, campaign.userId, {
+        await db.updateCampaign(campaign.id, {
           status: "completed",
           completedAt: Date.now(),
           completedCalls: stats.completed,
@@ -911,7 +911,7 @@ export async function recoverStaleCampaigns(): Promise<void> {
         } catch (resumeErr) {
           console.error(`[Dialer Recovery] Failed to resume campaign ${campaign.id}:`, resumeErr);
           // If resume fails, pause the campaign so user can manually restart
-          await db.updateCampaign(campaign.id, campaign.userId, { status: "paused" });
+          await db.updateCampaign(campaign.id, { status: "paused" });
           console.log(`[Dialer Recovery] Campaign ${campaign.id} paused due to resume failure — user can restart manually`);
         }
       }

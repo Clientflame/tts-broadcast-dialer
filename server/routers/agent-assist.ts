@@ -172,13 +172,13 @@ async function analyzeSentiment(transcript: string): Promise<{ score: string; la
 export const agentAssistRouter = router({
   // ─── Coaching Templates CRUD ───────────────────────────────────────────────
   listTemplates: protectedProcedure.query(async ({ ctx }) => {
-    return getCoachingTemplates(ctx.user.id);
+    return getCoachingTemplates();
   }),
 
   getTemplate: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const template = await getCoachingTemplate(input.id, ctx.user.id);
+      const template = await getCoachingTemplate(input.id);
       if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
       return template;
     }),
@@ -222,14 +222,14 @@ export const agentAssistRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await updateCoachingTemplate(id, ctx.user.id, data);
+      await updateCoachingTemplate(id, data);
       return { success: true };
     }),
 
   deleteTemplate: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await deleteCoachingTemplate(input.id, ctx.user.id);
+      await deleteCoachingTemplate(input.id);
       return { success: true };
     }),
 
@@ -263,7 +263,7 @@ export const agentAssistRouter = router({
       });
 
       // Generate initial suggestions based on greeting stage
-      const templates = await getActiveCoachingTemplates(ctx.user.id);
+      const templates = await getActiveCoachingTemplates();
       const suggestions = await generateAiSuggestions({
         callStage: "greeting",
         sentimentLabel: "neutral",
@@ -354,7 +354,7 @@ export const agentAssistRouter = router({
       await expirePendingSuggestions(input.sessionId);
 
       // Get coaching templates
-      const templates = await getActiveCoachingTemplates(ctx.user.id);
+      const templates = await getActiveCoachingTemplates();
 
       // Check for template trigger matches
       const matchedTemplates: number[] = [];
@@ -439,12 +439,12 @@ export const agentAssistRouter = router({
 
   // ─── Stats ────────────────────────────────────────────────────────────────
   stats: protectedProcedure.query(async ({ ctx }) => {
-    return getAssistStats(ctx.user.id);
+    return getAssistStats();
   }),
 
   // ─── Seed Starter Templates ──────────────────────────────────────────────
   seedStarterTemplates: protectedProcedure.mutation(async ({ ctx }) => {
-    const existing = await getCoachingTemplates(ctx.user.id);
+    const existing = await getCoachingTemplates();
     if (existing.length > 0) {
       return { seeded: 0, message: "Templates already exist. Delete existing templates first to re-seed." };
     }
@@ -627,12 +627,12 @@ export const agentAssistRouter = router({
   // ─── Coaching Reports ────────────────────────────────────────────────────
   coachingReport: protectedProcedure.query(async ({ ctx }) => {
     const [agentPerformance, templateEffectiveness, suggestionTypes, trainingGaps, dailyTrend, sentimentDist] = await Promise.all([
-      getAgentCoachingPerformance(ctx.user.id),
-      getTemplateEffectiveness(ctx.user.id),
-      getSuggestionTypeBreakdown(ctx.user.id),
-      getTrainingGaps(ctx.user.id),
+      getAgentCoachingPerformance(),
+      getTemplateEffectiveness(),
+      getSuggestionTypeBreakdown(),
+      getTrainingGaps(),
       getCoachingDailyTrend(ctx.user.id),
-      getSentimentDistribution(ctx.user.id),
+      getSentimentDistribution(),
     ]);
     return { agentPerformance, templateEffectiveness, suggestionTypes, trainingGaps, dailyTrend, sentimentDist };
   }),

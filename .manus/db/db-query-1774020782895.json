@@ -1,0 +1,16 @@
+{
+  "query": "SELECT ugm.userId, ugm.groupId, ug.name, ug.permissions FROM user_group_memberships ugm JOIN user_groups ug ON ug.id = ugm.groupId WHERE ugm.userId IN (37444, 42228);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT ugm.userId, ugm.groupId, ug.name, ug.permissions FROM user_group_memberships ugm JOIN user_groups ug ON ug.id = ugm.groupId WHERE ugm.userId IN (37444, 42228);",
+  "rows": [
+    {
+      "userId": "37444",
+      "groupId": "1",
+      "name": "Manager",
+      "permissions": "{\"audio.create\": true, \"audio.view\": true, \"callerIds.view\": true, \"campaigns.create\": true, \"campaigns.edit\": true, \"campaigns.start\": true, \"campaigns.view\": true, \"contacts.view\": true, \"reports.view\": true}"
+    }
+  ],
+  "messages": [],
+  "stdout": "userId\tgroupId\tname\tpermissions\n37444\t1\tManager\t{\"audio.create\": true, \"audio.view\": true, \"callerIds.view\": true, \"campaigns.create\": true, \"campaigns.edit\": true, \"campaigns.start\": true, \"campaigns.view\": true, \"contacts.view\": true, \"reports.view\": true}\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

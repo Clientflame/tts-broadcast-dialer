@@ -232,7 +232,7 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
       if (queueItem.campaignId) {
         const stats = await db.getCampaignStats(queueItem.campaignId);
         // Find the userId from the queue item
-        await db.updateCampaign(queueItem.campaignId, queueItem.userId, {
+        await db.updateCampaign(queueItem.campaignId, {
           completedCalls: stats.completed,
           answeredCalls: stats.answered,
           failedCalls: stats.failed + stats.busy + stats.noAnswer,
@@ -259,7 +259,7 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
         // Feed DID health monitoring - track per-DID failure rates
         if (queueItem.callerIdStr) {
           try {
-            const didResult = await db.recordDidCallResultByNumber(queueItem.callerIdStr, queueItem.userId, result);
+            const didResult = await db.recordDidCallResultByNumber(queueItem.callerIdStr, result);
             if (didResult.flagged && 'phoneNumber' in didResult) {
               console.log(`[PBX-API] DID ${didResult.phoneNumber} auto-flagged: ${didResult.failureRate}% failure rate`);
               // Check notification preference before sending
@@ -283,9 +283,9 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
         const queueStats = await getQueueStatsForCampaign(queueItem.campaignId);
         if (pending.length === 0 && activeCount === 0 && queueStats.pending === 0 && queueStats.claimed === 0) {
           // Campaign complete
-          const campaign = await db.getCampaign(queueItem.campaignId, queueItem.userId);
+          const campaign = await db.getCampaign(queueItem.campaignId);
           if (campaign && campaign.status === "running") {
-            await db.updateCampaign(queueItem.campaignId, queueItem.userId, {
+            await db.updateCampaign(queueItem.campaignId, {
               status: "completed",
               completedAt: Date.now(),
             });

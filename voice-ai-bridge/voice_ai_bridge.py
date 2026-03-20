@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Voice AI Bridge v2.1 - Connects Asterisk ARI to OpenAI Realtime API
+Voice AI Bridge v2.2 - Connects Asterisk ARI to OpenAI Realtime API
 Full bidirectional audio streaming via ExternalMedia + RTP.
 
 Architecture:
   PSTN Call -> Asterisk -> Stasis(voice-ai-bridge)
     -> Mixing Bridge (caller + ExternalMedia)
-    -> ExternalMedia channel <-> RTP (slin/8kHz) <-> UDP socket
-    -> This Bridge (resample 8kHz<->24kHz) <-> OpenAI Realtime API (WebSocket, pcm16/24kHz)
+    -> ExternalMedia channel <-> RTP (G.722/16kHz) <-> UDP socket
+    -> This Bridge (resample 16kHz<->24kHz) <-> OpenAI Realtime API (WebSocket, pcm16/24kHz)
 
 The bridge:
 1. Listens for Stasis events from Asterisk via ARI HTTP long-poll
@@ -52,7 +52,7 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-realtime-preview")
 # RTP config
 UDP_BASE_PORT = 42000  # Base port for RTP UDP sockets
 RTP_VERSION = 2
-PT_ULAW = 0  # G.711 mu-law payload type (matches PSTN codec natively)
+PT_ULAW = 0  # G.711 mu-law payload type (8kHz, standard PSTN)
 
 # Valid voices for OpenAI Realtime API (as of 2025+)
 VALID_REALTIME_VOICES = {"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"}
@@ -79,98 +79,60 @@ def build_rtp(payload: bytes, st: RtpState) -> bytes:
     mpt = PT_ULAW  # no marker bit for continuous audio
     header = struct.pack("!BBHII", vpxcc, mpt, st.seq & 0xFFFF, st.ts & 0xFFFFFFFF, st.ssrc)
     st.seq = (st.seq + 1) & 0xFFFF
-    st.ts = (st.ts + 160) & 0xFFFFFFFF  # 8kHz * 0.02s = 160 samples per 20ms frame
+    st.ts = (st.ts + 160) & 0xFFFFFFFF  # 8000 Hz * 0.02s = 160 samples per 20ms frame
     return header + payload
 
 
-# ─── G.711 mu-law encoding/decoding ──────────────────────────────────────────
-def _pcm16_to_ulaw_sample(pcm: int) -> int:
-    """Convert a single 16-bit signed PCM sample to 8-bit mu-law."""
-    BIAS = 0x84
-    CLIP = 32635
-    sign = 0
-    if pcm < 0:
-        sign = 0x80
-        pcm = -pcm
-    if pcm > CLIP:
-        pcm = CLIP
-    pcm += BIAS
-    # Find the segment (exponent)
-    exponent = 7
-    mask = 0x4000
-    for _ in range(8):
-        if pcm & mask:
-            break
-        exponent -= 1
-        mask >>= 1
-    mantissa = (pcm >> (exponent + 3)) & 0x0F
-    ulaw_byte = ~(sign | (exponent << 4) | mantissa) & 0xFF
-    return ulaw_byte
+# ─── ulaw codec + resampling ────────────────────────────────────────────────────────
+import array
+import audioop
 
-
-def _ulaw_to_pcm16_sample(ulaw: int) -> int:
-    """Convert a single 8-bit mu-law sample to 16-bit signed PCM."""
-    ulaw = ~ulaw & 0xFF
-    sign = ulaw & 0x80
-    exponent = (ulaw >> 4) & 0x07
-    mantissa = ulaw & 0x0F
-    sample = ((mantissa << 3) + 0x84) << exponent
-    sample -= 0x84
-    if sign:
-        sample = -sample
-    return max(-32768, min(32767, sample))
-
-
-def pcm16_to_ulaw(pcm_bytes: bytes) -> bytes:
-    """Convert 16-bit signed PCM bytes to G.711 mu-law bytes."""
-    import array
-    samples = array.array('h')
-    samples.frombytes(pcm_bytes)
-    return bytes(_pcm16_to_ulaw_sample(s) for s in samples)
-
-
-def ulaw_to_pcm16(ulaw_bytes: bytes) -> bytes:
-    """Convert G.711 mu-law bytes to 16-bit signed PCM bytes."""
-    import array
-    out = array.array('h')
-    for b in ulaw_bytes:
-        out.append(_ulaw_to_pcm16_sample(b))
-    return out.tobytes()
+# Volume gain for output audio (applied after resampling)
+OUTPUT_GAIN = 2.5  # 2.5x = ~8dB boost
 
 
 def resample_8k_to_24k(pcm8k: bytes) -> bytes:
-    """Upsample PCM16 audio from 8kHz to 24kHz using linear interpolation.
-    Ratio 3:1 (for every 1 input sample, produce 3 output samples)."""
-    import array
-    samples_in = array.array('h')  # signed 16-bit
+    """Upsample PCM16 from 8kHz to 24kHz using linear interpolation (3x expansion).
+    Deterministic: always produces exactly 3x the input samples."""
+    samples_in = array.array('h')
     samples_in.frombytes(pcm8k)
     n = len(samples_in)
-    if n < 2:
-        return pcm8k
-    # 8kHz -> 24kHz = ratio 3:1: for every 1 input sample, produce 3 output samples
-    out = array.array('h')
+    if n == 0:
+        return b''
+    out = array.array('h', [0]) * (n * 3)
     for i in range(n - 1):
         s0 = samples_in[i]
         s1 = samples_in[i + 1]
-        out.append(s0)  # original sample
-        out.append(int(s0 * 2 / 3 + s1 * 1 / 3))  # interpolated at 1/3
-        out.append(int(s0 * 1 / 3 + s1 * 2 / 3))  # interpolated at 2/3
-    out.append(samples_in[-1])  # last sample
+        out[i * 3] = s0
+        out[i * 3 + 1] = int(s0 + (s1 - s0) / 3)
+        out[i * 3 + 2] = int(s0 + 2 * (s1 - s0) / 3)
+    # Last sample: repeat
+    out[(n - 1) * 3] = samples_in[-1]
+    out[(n - 1) * 3 + 1] = samples_in[-1]
+    out[(n - 1) * 3 + 2] = samples_in[-1]
     return out.tobytes()
 
 
 def resample_24k_to_8k(pcm24k: bytes) -> bytes:
-    """Downsample PCM16 audio from 24kHz to 8kHz by picking every 3rd sample.
-    Ratio 1:3 - take every 3rd sample."""
-    import array
+    """Downsample PCM16 from 24kHz to 8kHz by averaging groups of 3 samples, then apply gain.
+    Deterministic: always produces exactly 1/3 the input samples."""
     samples_in = array.array('h')
     samples_in.frombytes(pcm24k)
     n = len(samples_in)
-    if n < 3:
-        return pcm24k
-    out = array.array('h')
-    for i in range(0, n, 3):
-        out.append(samples_in[i])
+    out_len = n // 3
+    if out_len == 0:
+        return b''
+    out = array.array('h', [0]) * out_len
+    for i in range(out_len):
+        j = i * 3
+        avg = (samples_in[j] + samples_in[j + 1] + samples_in[j + 2]) // 3
+        # Apply gain and clamp to int16 range
+        val = int(avg * OUTPUT_GAIN)
+        if val > 32767:
+            val = 32767
+        elif val < -32768:
+            val = -32768
+        out[i] = val
     return out.tobytes()
 
 
@@ -316,6 +278,11 @@ class CallSession:
         self.asterisk_rtp_host: str = ""
         self.asterisk_rtp_port: int = 0
         self.rtp_state = RtpState()
+
+        # Audio residual buffer for frame alignment (carries partial frames across OpenAI chunks)
+        self.ulaw_residual: bytes = b''
+        # Residual for input (RTP->OpenAI) PCM24k alignment
+        self.pcm24k_residual: bytes = b''
 
         # ARI resources
         self.bridge_id: str = ""
@@ -533,7 +500,7 @@ async def run_audio_bridge(session: CallSession, prompt_config: dict):
 
             # Configure session: server-VAD + voice + PCM16 @ 24kHz
             # OpenAI Realtime API only supports 24kHz for PCM audio.
-            # We resample 8kHz (Asterisk slin) <-> 24kHz (OpenAI) in the bridge.
+            # We resample 16kHz (G.722) <-> 24kHz (OpenAI) in the bridge.
             session_config = {
                 "type": "session.update",
                 "session": {
@@ -620,8 +587,8 @@ async def pump_rtp_to_openai(session: CallSession, ws):
         if not ulaw_payload:
             continue
 
-        # Decode ulaw -> PCM16, then resample 8kHz -> 24kHz for OpenAI
-        pcm_8k = ulaw_to_pcm16(ulaw_payload)
+        # Decode ulaw -> PCM16 (8kHz), then resample 8kHz -> 24kHz for OpenAI
+        pcm_8k = audioop.ulaw2lin(ulaw_payload, 2)
         pcm_24k = resample_8k_to_24k(pcm_8k)
 
         # Send to OpenAI as base64 PCM
@@ -707,20 +674,33 @@ async def pump_openai_to_rtp(session: CallSession, ws):
                 audio_b64 = evt.get("delta", "")
                 if audio_b64 and session.udp_socket and session.asterisk_rtp_port:
                     pcm_24k = base64.b64decode(audio_b64)
+                    # Ensure even byte count for PCM16 (2 bytes per sample)
+                    if len(pcm_24k) % 2 != 0:
+                        pcm_24k = pcm_24k[:-1]
+                    # Ensure sample count is divisible by 3 for clean 24k->8k downsampling
+                    samples_24k = len(pcm_24k) // 2
+                    trim = samples_24k % 3
+                    if trim:
+                        pcm_24k = pcm_24k[:-(trim * 2)]
+                    if not pcm_24k:
+                        continue
                     # Resample 24kHz (OpenAI) -> 8kHz PCM -> ulaw encode
                     pcm_8k = resample_24k_to_8k(pcm_24k)
-                    ulaw_data = pcm16_to_ulaw(pcm_8k)
-                    # Packetize into 20ms frames (160 bytes = 160 samples * 1 byte @ 8kHz ulaw)
+                    ulaw_data = audioop.lin2ulaw(pcm_8k, 2)
+                    # Prepend any residual from previous chunk
+                    ulaw_data = session.ulaw_residual + ulaw_data
+                    # Packetize into 20ms frames (160 bytes ulaw = 8000 samples/s * 0.02s * 1 byte)
                     dest = (session.asterisk_rtp_host, session.asterisk_rtp_port)
-                    for i in range(0, len(ulaw_data), 160):
-                        chunk = ulaw_data[i:i + 160]
-                        if len(chunk) < 160:
-                            chunk = chunk + b'\xff' * (160 - len(chunk))  # pad with ulaw silence (0xFF)
+                    full_frames = len(ulaw_data) // 160
+                    for i in range(full_frames):
+                        chunk = ulaw_data[i * 160:(i + 1) * 160]
                         pkt = build_rtp(chunk, session.rtp_state)
                         try:
                             rtp_queue.put_nowait((pkt, dest))
                         except asyncio.QueueFull:
                             logger.warning(f"RTP queue full, dropping packet for {session.channel_id}")
+                    # Save leftover bytes for next chunk (no silence padding!)
+                    session.ulaw_residual = ulaw_data[full_frames * 160:]
 
             elif event_type == "response.audio_transcript.done":
                 text = evt.get("transcript", "")

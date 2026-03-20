@@ -192,7 +192,7 @@ export const appRouter = router({
 
   dashboard: router({
     stats: protectedProcedure.query(async ({ ctx }) => {
-      return db.getDashboardStats(ctx.user.id);
+      return db.getDashboardStats();
     }),
     amiStatus: protectedProcedure.query(async () => {
       const agents = await db.getPbxAgents();
@@ -214,13 +214,13 @@ export const appRouter = router({
       return { ids: getActiveCampaignIds() };
     }),
     dialerLive: protectedProcedure.query(async ({ ctx }) => {
-      return getDialerLiveStats(ctx.user.id);
+      return getDialerLiveStats();
     }),
     callActivity: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional()).query(async ({ ctx, input }) => {
-      return db.getRecentCallActivity(ctx.user.id, input?.limit ?? 50);
+      return db.getRecentCallActivity(input?.limit ?? 50);
     }),
     areaCodeDistribution: protectedProcedure.input(z.object({ campaignId: z.number().optional(), hours: z.number().min(1).max(168).default(24) }).optional()).query(async ({ ctx, input }) => {
-      return db.getAreaCodeDistribution(ctx.user.id, input?.campaignId, input?.hours ?? 24);
+      return db.getAreaCodeDistribution(input?.campaignId, input?.hours ?? 24);
     }),
 
     /** System health check — returns status of all integrations at a glance */
@@ -274,10 +274,10 @@ export const appRouter = router({
 
   contactLists: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getContactLists(ctx.user.id);
+      return db.getContactLists();
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const list = await db.getContactList(input.id, ctx.user.id);
+      const list = await db.getContactList(input.id);
       if (!list) throw new TRPCError({ code: "NOT_FOUND", message: "Contact list not found" });
       return list;
     }),
@@ -295,11 +295,11 @@ export const appRouter = router({
       description: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateContactList(id, ctx.user.id, data);
+      await db.updateContactList(id, data);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.deleteContactList(input.id, ctx.user.id);
+      await db.deleteContactList(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.delete", resource: "contactList", resourceId: input.id });
       return { success: true };
     }),
@@ -307,7 +307,7 @@ export const appRouter = router({
       let deleted = 0;
       for (const id of input.ids) {
         try {
-          await db.deleteContactList(id, ctx.user.id);
+          await db.deleteContactList(id);
           deleted++;
         } catch (_) { /* skip lists that don't exist or aren't owned */ }
       }
@@ -318,7 +318,7 @@ export const appRouter = router({
 
   contacts: router({
     list: protectedProcedure.input(z.object({ listId: z.number() })).query(async ({ ctx, input }) => {
-      return db.getContacts(input.listId, ctx.user.id);
+      return db.getContacts(input.listId);
     }),
     create: protectedProcedure.input(z.object({
       listId: z.number(),
@@ -344,11 +344,11 @@ export const appRouter = router({
       customFields: z.record(z.string(), z.string()).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateContact(id, ctx.user.id, data as any);
+      await db.updateContact(id, data as any);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
-      await db.deleteContacts(input.ids, ctx.user.id);
+      await db.deleteContacts(input.ids);
       return { success: true };
     }),
     import: protectedProcedure.input(z.object({
@@ -377,16 +377,16 @@ export const appRouter = router({
       phoneNumbers: z.array(z.string()).min(1).max(50000),
       skipDupeCheck: z.boolean().optional(),
     })).mutation(async ({ ctx, input }) => {
-      return db.previewImport(input.phoneNumbers, ctx.user.id, input.listId, { skipDupeCheck: input.skipDupeCheck });
+      return db.previewImport(input.phoneNumbers, input.listId, { skipDupeCheck: input.skipDupeCheck });
     }),
   }),
 
   audio: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getAudioFiles(ctx.user.id);
+      return db.getAudioFiles();
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const file = await db.getAudioFile(input.id, ctx.user.id);
+      const file = await db.getAudioFile(input.id);
       if (!file) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
       return file;
     }),
@@ -416,7 +416,7 @@ export const appRouter = router({
       return record;
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.deleteAudioFile(input.id, ctx.user.id);
+      await db.deleteAudioFile(input.id);
       return { success: true };
     }),
     voices: publicProcedure.query(() => ({ openai: TTS_VOICES, google: GOOGLE_TTS_VOICES })),
@@ -435,10 +435,10 @@ export const appRouter = router({
 
   campaigns: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getCampaigns(ctx.user.id);
+      return db.getCampaigns();
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
       return campaign;
     }),
@@ -556,16 +556,16 @@ export const appRouter = router({
       voiceAiPromptId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      const campaign = await db.getCampaign(id, ctx.user.id);
+      const campaign = await db.getCampaign(id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot update a running campaign" });
-      await db.updateCampaign(id, ctx.user.id, data);
+      await db.updateCampaign(id, data);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (campaign?.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Stop the campaign before deleting" });
-      await db.deleteCampaign(input.id, ctx.user.id);
+      await db.deleteCampaign(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.delete", resource: "campaign", resourceId: input.id });
       return { success: true };
     }),
@@ -573,33 +573,33 @@ export const appRouter = router({
       let deleted = 0;
       const skipped: number[] = [];
       for (const id of input.ids) {
-        const campaign = await db.getCampaign(id, ctx.user.id);
+        const campaign = await db.getCampaign(id);
         if (campaign?.status === "running") { skipped.push(id); continue; }
-        await db.deleteCampaign(id, ctx.user.id);
+        await db.deleteCampaign(id);
         deleted++;
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.bulkDelete", resource: "campaign", details: { deleted, skipped: skipped.length } });
       return { success: true, deleted, skipped: skipped.length };
     }),
     resetCallHistory: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
       if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot reset call history while campaign is running" });
-      const result = await db.resetCampaignCallHistory(input.id, ctx.user.id);
+      const result = await db.resetCampaignCallHistory(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.resetCallHistory", resource: "campaign", resourceId: input.id, details: { deletedLogs: result.deletedLogs } });
       return { success: true, deletedLogs: result.deletedLogs };
     }),
     getRetriableCount: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
-      const count = await db.getRetriableContactCount(input.id, ctx.user.id);
+      const count = await db.getRetriableContactCount(input.id);
       return { count };
     }),
     retryFailed: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
       if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot retry failed contacts while campaign is running" });
-      const result = await db.retryFailedContacts(input.id, ctx.user.id);
+      const result = await db.retryFailedContacts(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.retryFailed", resource: "campaign", resourceId: input.id, details: { retriedCount: result.retriedCount, deletedLogs: result.deletedLogs } });
       return { success: true, retriedCount: result.retriedCount, deletedLogs: result.deletedLogs };
     }),
@@ -616,15 +616,15 @@ export const appRouter = router({
       return { success: true };
     }),
     reactivate: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       if (campaign.status !== "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Only cancelled campaigns can be reactivated" });
-      await db.updateCampaign(input.id, ctx.user.id, { status: "draft" });
+      await db.updateCampaign(input.id, { status: "draft" });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.reactivate", resource: "campaign", resourceId: input.id });
       return { success: true };
     }),
     forceResume: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
       // Allow force resume for campaigns that are "running" in DB but not active in memory (stuck state)
       if (campaign.status !== "running" && campaign.status !== "paused") {
@@ -636,7 +636,7 @@ export const appRouter = router({
       }
       // Set to running if paused
       if (campaign.status === "paused") {
-        await db.updateCampaign(input.id, ctx.user.id, { status: "running" });
+        await db.updateCampaign(input.id, { status: "running" });
       }
       // Resume the dialer loop
       await resumeCampaignAfterRestart(input.id, ctx.user.id);
@@ -644,7 +644,7 @@ export const appRouter = router({
       return { success: true };
     }),
     stats: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.id, ctx.user.id);
+      const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       const stats = await db.getCampaignStats(input.id);
       return { ...stats, isActive: isCampaignActive(input.id) };
@@ -654,7 +654,7 @@ export const appRouter = router({
       id: z.number(),
       name: z.string().min(1).max(255),
     })).mutation(async ({ ctx, input }) => {
-      const result = await db.cloneCampaign(input.id, ctx.user.id, input.name);
+      const result = await db.cloneCampaign(input.id, input.name);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clone", resource: "campaign", resourceId: result.id, details: { clonedFrom: input.id } });
       return result;
     }),
@@ -662,11 +662,11 @@ export const appRouter = router({
 
   callLogs: router({
     list: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
-      return db.getCallLogs(input.campaignId, ctx.user.id);
+      return db.getCallLogs(input.campaignId);
     }),
     export: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
-      const logs = await db.getCallLogsForExport(input.campaignId, ctx.user.id);
-      const campaign = await db.getCampaign(input.campaignId, ctx.user.id);
+      const logs = await db.getCallLogsForExport(input.campaignId);
+      const campaign = await db.getCampaign(input.campaignId);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       // Generate CSV content
       const headers = ["ID","Phone Number","Contact Name","Status","Duration (s)","Attempt","DTMF Response","IVR Action","Caller ID Used","Error","Started At","Answered At","Ended At"];
@@ -702,10 +702,10 @@ export const appRouter = router({
 
   dnc: router({
     list: protectedProcedure.input(z.object({ search: z.string().optional() })).query(async ({ ctx, input }) => {
-      return db.getDncEntries(ctx.user.id, input.search);
+      return db.getDncEntries(input.search);
     }),
     count: protectedProcedure.query(async ({ ctx }) => {
-      return { count: await db.getDncCount(ctx.user.id) };
+      return { count: await db.getDncCount() };
     }),
     add: protectedProcedure.input(z.object({
       phoneNumber: z.string().min(1).max(20),
@@ -731,22 +731,22 @@ export const appRouter = router({
       return result;
     }),
     remove: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.removeDncEntry(input.id, ctx.user.id);
+      await db.removeDncEntry(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "dnc.remove", resource: "dnc", resourceId: input.id });
       return { success: true };
     }),
     bulkRemove: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
-      await db.bulkRemoveDnc(input.ids, ctx.user.id);
+      await db.bulkRemoveDnc(input.ids);
       return { success: true };
     }),
     check: protectedProcedure.input(z.object({ phoneNumber: z.string() })).query(async ({ ctx, input }) => {
-      return { onDnc: await db.isPhoneOnDnc(input.phoneNumber, ctx.user.id) };
+      return { onDnc: await db.isPhoneOnDnc(input.phoneNumber) };
     }),
   }),
 
   callerIds: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getCallerIds(ctx.user.id);
+      return db.getCallerIds();
     }),
     create: protectedProcedure.input(z.object({
       phoneNumber: z.string().min(1).max(20),
@@ -777,15 +777,15 @@ export const appRouter = router({
       isActive: z.number().min(0).max(1).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateCallerId(id, ctx.user.id, data);
+      await db.updateCallerId(id, data);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.deleteCallerId(input.id, ctx.user.id);
+      await db.deleteCallerId(input.id);
       return { success: true };
     }),
     bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
-      await db.bulkDeleteCallerIds(input.ids, ctx.user.id);
+      await db.bulkDeleteCallerIds(input.ids);
       return { success: true };
     }),
     // Set region mappings for geo targeting
@@ -811,11 +811,11 @@ export const appRouter = router({
       let callerIdsToCheck;
       if (idsToCheck && idsToCheck.length > 0) {
         // Specific IDs requested
-        callerIdsToCheck = await db.getCallerIds(ctx.user.id);
+        callerIdsToCheck = await db.getCallerIds();
         callerIdsToCheck = callerIdsToCheck.filter(c => idsToCheck.includes(c.id));
       } else {
         // Get all due for check
-        callerIdsToCheck = await db.getCallerIdsForHealthCheck(ctx.user.id);
+        callerIdsToCheck = await db.getCallerIdsForHealthCheck();
       }
       if (callerIdsToCheck.length === 0) {
         return { queued: 0, message: "No caller IDs need checking right now" };
@@ -856,19 +856,19 @@ export const appRouter = router({
       return { queued, message: `${queued} health check(s) queued` };
     }),
     resetHealth: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.resetCallerIdHealth(input.id, ctx.user.id);
+      await db.resetCallerIdHealth(input.id);
       return { success: true };
     }),
     // Health check schedule endpoints
     getSchedule: protectedProcedure.query(async ({ ctx }) => {
-      const schedule = await db.getHealthCheckSchedule(ctx.user.id);
+      const schedule = await db.getHealthCheckSchedule();
       return schedule || { enabled: 0, intervalHours: 24, lastRunAt: null, nextRunAt: null };
     }),
     updateSchedule: protectedProcedure.input(z.object({
       enabled: z.boolean(),
       intervalHours: z.number().min(1).max(168), // 1 hour to 7 days
     })).mutation(async ({ ctx, input }) => {
-      const result = await db.upsertHealthCheckSchedule(ctx.user.id, {
+      const result = await db.upsertHealthCheckSchedule({
         enabled: input.enabled ? 1 : 0,
         intervalHours: input.intervalHours,
       });
@@ -877,30 +877,30 @@ export const appRouter = router({
     }),
     // Per-DID Analytics endpoints
     analyticsSummary: protectedProcedure.query(async ({ ctx }) => {
-      return db.getDidAnalyticsSummary(ctx.user.id);
+      return db.getDidAnalyticsSummary();
     }),
     callVolume: protectedProcedure.input(z.object({
       callerIdStr: z.string().optional(),
       days: z.number().min(1).max(90).default(7),
     }).optional()).query(async ({ ctx, input }) => {
-      return db.getDidCallVolume(ctx.user.id, input?.callerIdStr, input?.days || 7);
+      return db.getDidCallVolume(input?.callerIdStr, input?.days || 7);
     }),
     flagHistory: protectedProcedure.query(async ({ ctx }) => {
-      return db.getDidFlagHistory(ctx.user.id);
+      return db.getDidFlagHistory();
     }),
     campaignBreakdown: protectedProcedure.input(z.object({
       callerIdStr: z.string().min(1),
     })).query(async ({ ctx, input }) => {
-      return db.getDidCampaignBreakdown(ctx.user.id, input.callerIdStr);
+      return db.getDidCampaignBreakdown(input.callerIdStr);
     }),
   }),
 
   templates: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getBroadcastTemplates(ctx.user.id);
+      return db.getBroadcastTemplates();
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const template = await db.getBroadcastTemplate(input.id, ctx.user.id);
+      const template = await db.getBroadcastTemplate(input.id);
       if (!template) throw new TRPCError({ code: "NOT_FOUND" });
       return template;
     }),
@@ -936,15 +936,15 @@ export const appRouter = router({
       timeWindowEnd: z.string().max(5).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateBroadcastTemplate(id, ctx.user.id, data);
+      await db.updateBroadcastTemplate(id, data);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.deleteBroadcastTemplate(input.id, ctx.user.id);
+      await db.deleteBroadcastTemplate(input.id);
       return { success: true };
     }),
     bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
-      const deleted = await db.bulkDeleteBroadcastTemplates(input.ids, ctx.user.id);
+      const deleted = await db.bulkDeleteBroadcastTemplates(input.ids);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "template.bulkDelete", resource: "template", details: { count: deleted } });
       return { deleted };
     }),
@@ -952,28 +952,28 @@ export const appRouter = router({
 
   analytics: router({
     overview: protectedProcedure.query(async ({ ctx }) => {
-      return db.getCallAnalytics(ctx.user.id);
+      return db.getCallAnalytics();
     }),
     campaign: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
-      const result = await db.getCampaignAnalytics(input.campaignId, ctx.user.id);
+      const result = await db.getCampaignAnalytics(input.campaignId);
       if (!result) throw new TRPCError({ code: "NOT_FOUND" });
       return result;
     }),
     abTest: protectedProcedure.input(z.object({ group: z.string() })).query(async ({ ctx, input }) => {
-      return db.getABTestResults(input.group, ctx.user.id);
+      return db.getABTestResults(input.group);
     }),
   }),
 
   // Contact Scoring
   scoring: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getContactScores(ctx.user.id);
+      return db.getContactScores();
     }),
     get: protectedProcedure.input(z.object({ contactId: z.number() })).query(async ({ ctx, input }) => {
-      return db.getContactScore(input.contactId, ctx.user.id);
+      return db.getContactScore(input.contactId);
     }),
     recalculate: protectedProcedure.input(z.object({ contactId: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.recalculateContactScore(input.contactId, ctx.user.id);
+      await db.recalculateContactScore(input.contactId);
       return { success: true };
     }),
     updateTags: protectedProcedure.input(z.object({
@@ -981,7 +981,7 @@ export const appRouter = router({
       tags: z.array(z.string()),
       notes: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
-      const score = await db.getContactScore(input.contactId, ctx.user.id);
+      const score = await db.getContactScore(input.contactId);
       if (!score) throw new TRPCError({ code: "NOT_FOUND" });
       await db.updateContactScore(score.id, { tags: input.tags, notes: input.notes });
       return { success: true };
@@ -991,7 +991,7 @@ export const appRouter = router({
   // Cost Estimator
   costEstimator: router({
     getSettings: protectedProcedure.query(async ({ ctx }) => {
-      const settings = await db.getCostSettings(ctx.user.id);
+      const settings = await db.getCostSettings();
       return settings || {
         trunkCostPerMinute: "0.01",
         ttsCostPer1kChars: "0.015",
@@ -1005,7 +1005,7 @@ export const appRouter = router({
       currency: z.string().max(10).optional(),
       avgCallDurationSecs: z.number().min(1).max(600).optional(),
     })).mutation(async ({ ctx, input }) => {
-      await db.upsertCostSettings(ctx.user.id, input);
+      await db.upsertCostSettings(input);
       return { success: true };
     }),
     estimate: protectedProcedure.input(z.object({
@@ -1014,7 +1014,7 @@ export const appRouter = router({
       retryAttempts: z.number().min(0).max(5).optional(),
       expectedAnswerRate: z.number().min(0).max(100).optional(),
     })).query(async ({ ctx, input }) => {
-      const settings = await db.getCostSettings(ctx.user.id);
+      const settings = await db.getCostSettings();
       const trunkRate = parseFloat(settings?.trunkCostPerMinute ?? "0.01");
       const ttsRate = parseFloat(settings?.ttsCostPer1kChars ?? "0.015");
       const avgDuration = settings?.avgCallDurationSecs ?? 30;
@@ -1112,7 +1112,7 @@ Return ONLY the message text, nothing else.`;
       audioFileId: z.number(),
       callerIdId: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
-      const audioFile = await db.getAudioFile(input.audioFileId, ctx.user.id);
+      const audioFile = await db.getAudioFile(input.audioFileId);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
 
       // Queue-based approach: enqueue the call for the PBX agent to pick up
@@ -1123,7 +1123,7 @@ Return ONLY the message text, nothing else.`;
 
       // Resolve caller ID — use selected DID or pick a random active one
       let callerIdStr: string | undefined;
-      const callerIdList = await db.getCallerIds(ctx.user.id);
+      const callerIdList = await db.getCallerIds();
       if (input.callerIdId) {
         const selectedCid = callerIdList.find(c => c.id === input.callerIdId);
         if (selectedCid) callerIdStr = selectedCid.phoneNumber;
@@ -1164,9 +1164,9 @@ Return ONLY the message text, nothing else.`;
 
   reports: router({
     exportCampaign: protectedProcedure.input(z.object({ campaignId: z.number() })).mutation(async ({ ctx, input }) => {
-      const campaign = await db.getCampaign(input.campaignId, ctx.user.id);
+      const campaign = await db.getCampaign(input.campaignId);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
-      const logs = await db.getCallLogsForExport(input.campaignId, ctx.user.id);
+      const logs = await db.getCallLogsForExport(input.campaignId);
       const headers = ["Contact Name","Phone","Status","Duration (s)","Timestamp","Attempt","Caller ID"];
       const rows = logs.map((l: any) => [
         l.contactName || "", l.phoneNumber, l.status, l.duration || 0,
@@ -1177,7 +1177,7 @@ Return ONLY the message text, nothing else.`;
       return { csv, filename: `campaign_${campaign.name.replace(/[^a-zA-Z0-9]/g, "_")}_report.csv` };
     }),
     exportAll: protectedProcedure.mutation(async ({ ctx }) => {
-      const campaigns = await db.getCampaigns(ctx.user.id);
+      const campaigns = await db.getCampaigns();
       const headers = ["Campaign","Status","Total Contacts","Completed","Voice","Created","Started","Completed At"];
       const rows = campaigns.map((c: any) => [
         c.name, c.status, c.totalContacts, c.completedCalls, c.voice || "alloy",
@@ -1500,10 +1500,10 @@ Return ONLY the message text, nothing else.`;
   // ─── Call Scripts ────────────────────────────────────────────────────────
   callScripts: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getCallScripts(ctx.user.id);
+      return db.getCallScripts();
     }),
     get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
-      const script = await db.getCallScript(input.id, ctx.user.id);
+      const script = await db.getCallScript(input.id);
       if (!script) throw new TRPCError({ code: "NOT_FOUND" });
       return script;
     }),
@@ -1566,17 +1566,17 @@ Return ONLY the message text, nothing else.`;
           throw new TRPCError({ code: "BAD_REQUEST", message: "Maximum 2 recorded audio segments allowed per script" });
         }
       }
-      await db.updateCallScript(id, ctx.user.id, data as any);
+      await db.updateCallScript(id, data as any);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-      await db.deleteCallScript(input.id, ctx.user.id);
+      await db.deleteCallScript(input.id);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.delete", resource: "callScript", resourceId: input.id });
       return { success: true };
     }),
     bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
       for (const id of input.ids) {
-        await db.deleteCallScript(id, ctx.user.id);
+        await db.deleteCallScript(id);
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.bulkDelete", resource: "callScript", details: { count: input.ids.length } });
       return { success: true, deleted: input.ids.length };
@@ -1786,7 +1786,7 @@ Return ONLY the message text, nothing else.`;
 
     agentMetrics: protectedProcedure
       .query(async ({ ctx }) => {
-        return db.getAgentMetrics(ctx.user.id);
+        return db.getAgentMetrics();
       }),
 
     agentTimeSeries: protectedProcedure
@@ -1795,7 +1795,7 @@ Return ONLY the message text, nothing else.`;
         days: z.number().min(1).max(90).default(7),
       }))
       .query(async ({ ctx, input }) => {
-        return db.getAgentCallTimeSeries(ctx.user.id, input.agentId, input.days);
+        return db.getAgentCallTimeSeries(input.agentId, input.days);
       }),
 
     agentDailyStats: protectedProcedure
@@ -1804,7 +1804,7 @@ Return ONLY the message text, nothing else.`;
         days: z.number().min(1).max(90).default(30),
       }))
       .query(async ({ ctx, input }) => {
-        return db.getAgentDailyStats(ctx.user.id, input.agentId, input.days);
+        return db.getAgentDailyStats(input.agentId, input.days);
       }),
 
     getInstallerCommand: protectedProcedure
@@ -1859,7 +1859,7 @@ Return ONLY the message text, nothing else.`;
       description: z.string().optional(),
       isSecret: z.number().optional(),
     })).mutation(async ({ ctx, input }) => {
-      await db.upsertAppSetting(input.key, input.value, input.description, input.isSecret, ctx.user.id);
+      await db.upsertAppSetting(input.key, input.value, input.description, input.isSecret);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "settings.update", resource: "appSettings", details: { key: input.key, isSecret: input.isSecret ? true : false } });
       return { success: true };
     }),
@@ -1872,7 +1872,7 @@ Return ONLY the message text, nothing else.`;
       isSecret: z.number().optional(),
     }))).mutation(async ({ ctx, input }) => {
       for (const setting of input) {
-        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret, ctx.user.id);
+        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret);
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "settings.bulkUpdate", resource: "appSettings", details: { keys: input.map(s => s.key), count: input.length } });
       return { success: true, count: input.length };
@@ -2028,7 +2028,7 @@ Return ONLY the message text, nothing else.`;
     }))).mutation(async ({ ctx, input }) => {
       // Save all settings
       for (const setting of input) {
-        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret, ctx.user.id);
+        await db.upsertAppSetting(setting.key, setting.value, setting.description, setting.isSecret);
       }
       // Auto-reconnect AMI with fresh settings
       let reconnectResult: { success: boolean; host: string; port: number; error?: string } = { success: false, host: "", port: 0, error: "" };
@@ -2057,7 +2057,7 @@ Return ONLY the message text, nothing else.`;
       key: z.string().min(1),
       enabled: z.boolean(),
     })).mutation(async ({ ctx, input }) => {
-      await db.setNotificationPreference(input.key, input.enabled, ctx.user.id);
+      await db.setNotificationPreference(input.key, input.enabled);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "notifications.update", resource: "notificationPref", details: { key: input.key, enabled: input.enabled } });
       return { success: true };
     }),
@@ -2068,7 +2068,7 @@ Return ONLY the message text, nothing else.`;
       enabled: z.boolean(),
     }))).mutation(async ({ ctx, input }) => {
       for (const pref of input) {
-        await db.setNotificationPreference(pref.key, pref.enabled, ctx.user.id);
+        await db.setNotificationPreference(pref.key, pref.enabled);
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "notifications.bulkUpdate", resource: "notificationPref", details: { keys: input.map(p => p.key), count: input.length } });
       return { success: true, count: input.length };
@@ -2179,15 +2179,15 @@ Return ONLY the message text, nothing else.`;
       const pbxOnline = agents.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 60000);
 
       // Step 3: Caller IDs imported (at least one caller ID)
-      const callerIds = await db.getCallerIds(userId);
+      const callerIds = await db.getCallerIds();
       const hasCallerIds = callerIds.length > 0;
 
       // Step 4: Contacts imported (at least one contact list with contacts)
-      const contactLists = await db.getContactLists(userId);
+      const contactLists = await db.getContactLists();
       const hasContacts = contactLists.some((l: any) => (l.contactCount ?? 0) > 0);
 
       // Step 5: Campaign created
-      const campaigns = await db.getCampaigns(userId);
+      const campaigns = await db.getCampaigns();
       const hasCampaigns = campaigns.length > 0;
 
       const steps = [

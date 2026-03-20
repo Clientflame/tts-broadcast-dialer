@@ -1,0 +1,31 @@
+{
+  "query": "SELECT id, name, email, role, openId FROM users WHERE email LIKE '%jamar%' OR email LIKE '%christian%' OR name LIKE '%Jamar%' OR name LIKE '%Jay%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, email, role, openId FROM users WHERE email LIKE '%jamar%' OR email LIKE '%christian%' OR name LIKE '%Jamar%' OR name LIKE '%Jay%';",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Jamar Christian",
+      "email": "jchristian@clientflame.com",
+      "role": "admin",
+      "openId": "NK2jqiGrJVWfHZ2S5DZe5F"
+    },
+    {
+      "id": "37444",
+      "name": "Jay Testing",
+      "email": "jamar.christian@gmail.com",
+      "role": "user",
+      "openId": "local_1773093025055_yy69htjhyh"
+    },
+    {
+      "id": "42228",
+      "name": "J Christian",
+      "email": "jamar.christian@gmail.com",
+      "role": "user",
+      "openId": "WYpjcjbhTB5RAMemu9w3Nq"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\trole\topenId\n1\tJamar Christian\tjchristian@clientflame.com\tadmin\tNK2jqiGrJVWfHZ2S5DZe5F\n37444\tJay Testing\tjamar.christian@gmail.com\tuser\tlocal_1773093025055_yy69htjhyh\n42228\tJ Christian\tjamar.christian@gmail.com\tuser\tWYpjcjbhTB5RAMemu9w3Nq\n",
+  "stderr": "",
+  "execution_time_ms": 1150
+}

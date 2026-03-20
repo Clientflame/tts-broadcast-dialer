@@ -125,30 +125,30 @@ export async function createContactList(data: InsertContactList) {
   return { id: result[0].insertId };
 }
 
-export async function getContactLists(userId: number) {
+export async function getContactLists() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(contactLists).where(eq(contactLists.userId, userId)).orderBy(desc(contactLists.createdAt));
+  return db.select().from(contactLists).orderBy(desc(contactLists.createdAt));
 }
 
-export async function getContactList(id: number, userId: number) {
+export async function getContactList(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(contactLists).where(and(eq(contactLists.id, id), eq(contactLists.userId, userId))).limit(1);
+  const result = await db.select().from(contactLists).where(eq(contactLists.id, id)).limit(1);
   return result[0];
 }
 
-export async function updateContactList(id: number, userId: number, data: Partial<InsertContactList>) {
+export async function updateContactList(id: number, data: Partial<InsertContactList>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(contactLists).set(data).where(and(eq(contactLists.id, id), eq(contactLists.userId, userId)));
+  await db.update(contactLists).set(data).where(eq(contactLists.id, id));
 }
 
-export async function deleteContactList(id: number, userId: number) {
+export async function deleteContactList(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(contacts).where(and(eq(contacts.listId, id), eq(contacts.userId, userId)));
-  await db.delete(contactLists).where(and(eq(contactLists.id, id), eq(contactLists.userId, userId)));
+  await db.delete(contacts).where(eq(contacts.listId, id));
+  await db.delete(contactLists).where(eq(contactLists.id, id));
 }
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
   } else {
     const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
       .from(contacts)
-      .where(eq(contacts.userId, userId));
+      ;
     const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
     const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
 
@@ -214,7 +214,7 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
   }
 
   // --- Step 3: DNC check - remove contacts on the DNC list ---
-  const dncPhoneSet = await getDncPhoneNumbers(userId);
+  const dncPhoneSet = await getDncPhoneNumbers();
   const dncOmitted: string[] = [];
   const afterDnc = options?.skipDnc ? afterDedup : afterDedup.filter(c => {
     const normalized = normalizePhone(c.phoneNumber);
@@ -249,13 +249,13 @@ export async function bulkCreateContacts(data: InsertContact[], options?: { skip
 }
 
 /** Preview an import without actually inserting - returns dedup/DNC stats */
-export async function previewImport(phoneNumbers: string[], userId: number, listId: number, options?: { skipDupeCheck?: boolean }) {
+export async function previewImport(phoneNumbers: string[], listId: number, options?: { skipDupeCheck?: boolean }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
   if (options?.skipDupeCheck) {
     // Skip all dedup checks - just count DNC matches
-    const dncPhoneSet = await getDncPhoneNumbers(userId);
+    const dncPhoneSet = await getDncPhoneNumbers();
     let dncMatches = 0;
     for (const phone of phoneNumbers) {
       const normalized = normalizePhone(phone);
@@ -288,7 +288,7 @@ export async function previewImport(phoneNumbers: string[], userId: number, list
   // Cross-list dedup
   const existingRows = await db.select({ phoneNumber: contacts.phoneNumber, listId: contacts.listId })
     .from(contacts)
-    .where(eq(contacts.userId, userId));
+    ;
   const existingPhones = new Set(existingRows.map(r => normalizePhone(r.phoneNumber)));
   const sameListPhones = new Set(existingRows.filter(r => r.listId === listId).map(r => normalizePhone(r.phoneNumber)));
 
@@ -303,7 +303,7 @@ export async function previewImport(phoneNumbers: string[], userId: number, list
   }
 
   // DNC check
-  const dncPhoneSet = await getDncPhoneNumbers(userId);
+  const dncPhoneSet = await getDncPhoneNumbers();
   let dncMatches = 0;
   for (const phone of afterDedup) {
     const normalized = normalizePhone(phone);
@@ -329,24 +329,24 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
-export async function getContacts(listId: number, userId: number) {
+export async function getContacts(listId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(contacts).where(and(eq(contacts.listId, listId), eq(contacts.userId, userId))).orderBy(desc(contacts.createdAt));
+  return db.select().from(contacts).where(eq(contacts.listId, listId)).orderBy(desc(contacts.createdAt));
 }
 
-export async function updateContact(id: number, userId: number, data: Partial<InsertContact>) {
+export async function updateContact(id: number, data: Partial<InsertContact>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(contacts).set(data).where(and(eq(contacts.id, id), eq(contacts.userId, userId)));
+  await db.update(contacts).set(data).where(eq(contacts.id, id));
 }
 
-export async function deleteContacts(ids: number[], userId: number) {
+export async function deleteContacts(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (ids.length === 0) return;
-  const contactRows = await db.select({ listId: contacts.listId }).from(contacts).where(and(inArray(contacts.id, ids), eq(contacts.userId, userId)));
-  await db.delete(contacts).where(and(inArray(contacts.id, ids), eq(contacts.userId, userId)));
+  const contactRows = await db.select({ listId: contacts.listId }).from(contacts).where(inArray(contacts.id, ids));
+  await db.delete(contacts).where(inArray(contacts.id, ids));
   const listIds = Array.from(new Set(contactRows.map(c => c.listId)));
   for (const listId of listIds) {
     await db.update(contactLists).set({ contactCount: sql`(SELECT COUNT(*) FROM contacts WHERE listId = ${listId})` }).where(eq(contactLists.id, listId));
@@ -367,16 +367,16 @@ export async function createAudioFile(data: InsertAudioFile) {
   return { id: result[0].insertId };
 }
 
-export async function getAudioFiles(userId: number) {
+export async function getAudioFiles() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(audioFiles).where(eq(audioFiles.userId, userId)).orderBy(desc(audioFiles.createdAt));
+  return db.select().from(audioFiles).orderBy(desc(audioFiles.createdAt));
 }
 
-export async function getAudioFile(id: number, userId: number) {
+export async function getAudioFile(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(audioFiles).where(and(eq(audioFiles.id, id), eq(audioFiles.userId, userId))).limit(1);
+  const result = await db.select().from(audioFiles).where(eq(audioFiles.id, id)).limit(1);
   return result[0];
 }
 
@@ -386,10 +386,10 @@ export async function updateAudioFile(id: number, data: Partial<InsertAudioFile>
   await db.update(audioFiles).set(data).where(eq(audioFiles.id, id));
 }
 
-export async function deleteAudioFile(id: number, userId: number) {
+export async function deleteAudioFile(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(audioFiles).where(and(eq(audioFiles.id, id), eq(audioFiles.userId, userId)));
+  await db.delete(audioFiles).where(eq(audioFiles.id, id));
 }
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -400,16 +400,16 @@ export async function createCampaign(data: InsertCampaign) {
   return { id: result[0].insertId };
 }
 
-export async function getCampaigns(userId: number) {
+export async function getCampaigns() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(campaigns).where(eq(campaigns.userId, userId)).orderBy(desc(campaigns.createdAt));
+  return db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
 }
 
-export async function getCampaign(id: number, userId: number) {
+export async function getCampaign(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.userId, userId))).limit(1);
+  const result = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
   return result[0];
 }
 
@@ -421,20 +421,20 @@ export async function getCampaignById(id: number) {
   return result[0];
 }
 
-export async function updateCampaign(id: number, userId: number, data: Partial<InsertCampaign>) {
+export async function updateCampaign(id: number, data: Partial<InsertCampaign>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(campaigns).set(data).where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)));
+  await db.update(campaigns).set(data).where(eq(campaigns.id, id));
 }
 
-export async function deleteCampaign(id: number, userId: number) {
+export async function deleteCampaign(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(callLogs).where(and(eq(callLogs.campaignId, id), eq(callLogs.userId, userId)));
-  await db.delete(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)));
+  await db.delete(callLogs).where(eq(callLogs.campaignId, id));
+  await db.delete(campaigns).where(eq(campaigns.id, id));
 }
 
-export async function resetCampaignCallHistory(campaignId: number, userId: number) {
+export async function resetCampaignCallHistory(campaignId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   
@@ -447,14 +447,14 @@ export async function resetCampaignCallHistory(campaignId: number, userId: numbe
   // Step 1: Mark any "claimed" call_queue items as "failed" first
   // so the PBX agent won't get 404 when reporting results
   await db.execute(
-    sql`UPDATE ${callQueue} SET ${callQueue.status} = 'failed', ${callQueue.result} = 'cancelled' WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.userId} = ${userId} AND ${callQueue.status} = 'claimed'`
+    sql`UPDATE ${callQueue} SET ${callQueue.status} = 'failed', ${callQueue.result} = 'cancelled' WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.status} = 'claimed'`
   );
   
   // Step 2: Batch-delete call_logs with delays between batches
   let deleted = 0;
   do {
     const result = await db.execute(
-      sql`DELETE FROM ${callLogs} WHERE ${callLogs.campaignId} = ${campaignId} AND ${callLogs.userId} = ${userId} LIMIT ${BATCH_SIZE}`
+      sql`DELETE FROM ${callLogs} WHERE ${callLogs.campaignId} = ${campaignId} LIMIT ${BATCH_SIZE}`
     );
     deleted = (result as any)[0]?.affectedRows ?? 0;
     totalDeleted += deleted;
@@ -466,7 +466,7 @@ export async function resetCampaignCallHistory(campaignId: number, userId: numbe
   // Step 3: Batch-delete call_queue with delays between batches
   do {
     const result = await db.execute(
-      sql`DELETE FROM ${callQueue} WHERE ${callQueue.campaignId} = ${campaignId} AND ${callQueue.userId} = ${userId} LIMIT ${BATCH_SIZE}`
+      sql`DELETE FROM ${callQueue} WHERE ${callQueue.campaignId} = ${campaignId} LIMIT ${BATCH_SIZE}`
     );
     deleted = (result as any)[0]?.affectedRows ?? 0;
     if (deleted >= BATCH_SIZE) {
@@ -477,7 +477,7 @@ export async function resetCampaignCallHistory(campaignId: number, userId: numbe
   // Step 4: Reset campaign status back to draft
   await db.update(campaigns)
     .set({ status: "draft" })
-    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
+    .where(eq(campaigns.id, campaignId));
   
   return { deletedLogs: totalDeleted };
 }
@@ -497,10 +497,10 @@ export async function bulkCreateCallLogs(data: InsertCallLog[]) {
   await db.insert(callLogs).values(data);
 }
 
-export async function getCallLogs(campaignId: number, userId: number) {
+export async function getCallLogs(campaignId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId))).orderBy(desc(callLogs.createdAt));
+  return db.select().from(callLogs).where(eq(callLogs.campaignId, campaignId)).orderBy(desc(callLogs.createdAt));
 }
 
 export async function updateCallLog(id: number, data: Partial<InsertCallLog>) {
@@ -594,21 +594,21 @@ export async function getAuditLogActions() {
 }
 
 // ─── Dashboard Stats ─────────────────────────────────────────────────────────
-export async function getDashboardStats(userId: number) {
+export async function getDashboardStats() {
   const db = await getDb();
   if (!db) return { totalCampaigns: 0, activeCampaigns: 0, totalContacts: 0, totalCalls: 0, answeredCalls: 0, totalLists: 0 };
   const [campaignStats] = await db.select({
     total: count(),
     active: sql<number>`SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END)`,
-  }).from(campaigns).where(eq(campaigns.userId, userId));
-  const [contactStats] = await db.select({ total: count() }).from(contacts).where(eq(contacts.userId, userId));
-  const [listStats] = await db.select({ total: count() }).from(contactLists).where(eq(contactLists.userId, userId));
+  }).from(campaigns);
+  const [contactStats] = await db.select({ total: count() }).from(contacts);
+  const [listStats] = await db.select({ total: count() }).from(contactLists);
   const [callStats] = await db.select({
     total: sql<number>`SUM(CASE WHEN status != 'pending' THEN 1 ELSE 0 END)`,
     answered: sql<number>`SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END)`,
     totalDuration: sql<number>`COALESCE(SUM(CASE WHEN status != 'pending' THEN duration ELSE 0 END), 0)`,
     avgDuration: sql<number>`COALESCE(AVG(CASE WHEN duration > 0 AND status != 'pending' THEN duration END), 0)`,
-  }).from(callLogs).where(eq(callLogs.userId, userId));
+  }).from(callLogs);
   return {
     totalCampaigns: campaignStats?.total ?? 0,
     activeCampaigns: Number(campaignStats?.active ?? 0),
@@ -631,7 +631,7 @@ export async function addToDnc(data: InsertDncEntry) {
   // Normalize phone number - strip non-digits
   const normalized = data.phoneNumber.replace(/\D/g, "");
   // Check if already exists
-  const existing = await db.select().from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, data.userId))).limit(1);
+  const existing = await db.select().from(dncList).where(eq(dncList.phoneNumber, normalized)).limit(1);
   if (existing.length > 0) return { id: existing[0].id, duplicate: true };
   const result = await db.insert(dncList).values({ ...data, phoneNumber: normalized });
   return { id: result[0].insertId, duplicate: false };
@@ -643,7 +643,7 @@ export async function bulkAddToDnc(entries: InsertDncEntry[]) {
   if (entries.length === 0) return { added: 0, duplicates: 0 };
   const userId = entries[0].userId;
   // Batch fetch existing DNC numbers for this user
-  const existingRows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList).where(eq(dncList.userId, userId));
+  const existingRows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList);
   const existingSet = new Set(existingRows.map(r => r.phoneNumber));
   const seenInBatch = new Set<string>();
   const toInsert: typeof entries = [];
@@ -663,40 +663,40 @@ export async function bulkAddToDnc(entries: InsertDncEntry[]) {
   return { added: toInsert.length, duplicates };
 }
 
-export async function getDncEntries(userId: number, search?: string) {
+export async function getDncEntries(search?: string) {
   const db = await getDb();
   if (!db) return [];
   if (search) {
-    return db.select().from(dncList).where(and(eq(dncList.userId, userId), like(dncList.phoneNumber, `%${search}%`))).orderBy(desc(dncList.createdAt)).limit(500);
+    return db.select().from(dncList).where(like(dncList.phoneNumber, `%${search}%`)).orderBy(desc(dncList.createdAt)).limit(500);
   }
-  return db.select().from(dncList).where(eq(dncList.userId, userId)).orderBy(desc(dncList.createdAt)).limit(500);
+  return db.select().from(dncList).orderBy(desc(dncList.createdAt)).limit(500);
 }
 
-export async function removeDncEntry(id: number, userId: number) {
+export async function removeDncEntry(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(dncList).where(and(eq(dncList.id, id), eq(dncList.userId, userId)));
+  await db.delete(dncList).where(eq(dncList.id, id));
 }
 
-export async function bulkRemoveDnc(ids: number[], userId: number) {
+export async function bulkRemoveDnc(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (ids.length === 0) return;
-  await db.delete(dncList).where(and(inArray(dncList.id, ids), eq(dncList.userId, userId)));
+  await db.delete(dncList).where(inArray(dncList.id, ids));
 }
 
-export async function isPhoneOnDnc(phoneNumber: string, userId: number): Promise<boolean> {
+export async function isPhoneOnDnc(phoneNumber: string): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
   const normalized = phoneNumber.replace(/\D/g, "");
-  const result = await db.select({ id: dncList.id }).from(dncList).where(and(eq(dncList.phoneNumber, normalized), eq(dncList.userId, userId))).limit(1);
+  const result = await db.select({ id: dncList.id }).from(dncList).where(eq(dncList.phoneNumber, normalized)).limit(1);
   return result.length > 0;
 }
 
-export async function getDncPhoneNumbers(userId: number): Promise<Set<string>> {
+export async function getDncPhoneNumbers(): Promise<Set<string>> {
   const db = await getDb();
   if (!db) return new Set();
-  const rows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList).where(eq(dncList.userId, userId));
+  const rows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList);
   return new Set(rows.map(r => r.phoneNumber));
 }
 
@@ -704,7 +704,7 @@ export async function getDncPhoneNumbers(userId: number): Promise<Set<string>> {
  * Get phone numbers that were called within the last N hours (default 48).
  * Used for dedup to prevent calling the same number too frequently.
  */
-export async function getRecentlyCalledPhoneNumbers(userId: number, hoursAgo: number = 48): Promise<Set<string>> {
+export async function getRecentlyCalledPhoneNumbers(hoursAgo: number = 48): Promise<Set<string>> {
   const db = await getDb();
   if (!db) return new Set();
   const cutoff = Date.now() - (hoursAgo * 60 * 60 * 1000);
@@ -712,17 +712,16 @@ export async function getRecentlyCalledPhoneNumbers(userId: number, hoursAgo: nu
   const rows = await db.select({ phoneNumber: callLogs.phoneNumber })
     .from(callLogs)
     .where(and(
-      eq(callLogs.userId, userId),
       gte(callLogs.createdAt, new Date(cutoff)),
       inArray(callLogs.status, ["dialing", "ringing", "answered", "busy", "no-answer", "failed", "completed"])
     ));
   return new Set(rows.map(r => r.phoneNumber.replace(/\D/g, "")));
 }
 
-export async function getDncCount(userId: number): Promise<number> {
+export async function getDncCount(): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
-  const [result] = await db.select({ cnt: count() }).from(dncList).where(eq(dncList.userId, userId));
+  const [result] = await db.select({ cnt: count() }).from(dncList);
   return result?.cnt ?? 0;
 }
 
@@ -752,8 +751,7 @@ export async function bulkCreateCallerIds(entries: InsertCallerId[]) {
 
   // Get existing caller IDs for this user
   const existingRows = await db.select({ phoneNumber: callerIds.phoneNumber })
-    .from(callerIds)
-    .where(eq(callerIds.userId, userId));
+    .from(callerIds);
   const existingPhones = new Set(existingRows.map(r => r.phoneNumber));
 
   // Intra-batch dedup + existing dedup
@@ -775,35 +773,35 @@ export async function bulkCreateCallerIds(entries: InsertCallerId[]) {
   return { count: toInsert.length, duplicatesOmitted: dupePhones.length, duplicatePhones: dupePhones.slice(0, 50) };
 }
 
-export async function getCallerIds(userId: number) {
+export async function getCallerIds() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(callerIds).where(eq(callerIds.userId, userId)).orderBy(desc(callerIds.createdAt));
+  return db.select().from(callerIds).orderBy(desc(callerIds.createdAt));
 }
 
-export async function getActiveCallerIds(userId: number) {
+export async function getActiveCallerIds() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(callerIds).where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1))).orderBy(callerIds.callCount);
+  return db.select().from(callerIds).where(eq(callerIds.isActive, 1)).orderBy(callerIds.callCount);
 }
 
-export async function updateCallerId(id: number, userId: number, data: Partial<InsertCallerId>) {
+export async function updateCallerId(id: number, data: Partial<InsertCallerId>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(callerIds).set(data).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+  await db.update(callerIds).set(data).where(eq(callerIds.id, id));
 }
 
-export async function deleteCallerId(id: number, userId: number) {
+export async function deleteCallerId(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(callerIds).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+  await db.delete(callerIds).where(eq(callerIds.id, id));
 }
 
-export async function bulkDeleteCallerIds(ids: number[], userId: number) {
+export async function bulkDeleteCallerIds(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (ids.length === 0) return;
-  await db.delete(callerIds).where(and(inArray(callerIds.id, ids), eq(callerIds.userId, userId)));
+  await db.delete(callerIds).where(inArray(callerIds.id, ids));
 }
 
 export async function incrementCallerIdUsage(id: number) {
@@ -812,7 +810,7 @@ export async function incrementCallerIdUsage(id: number) {
   await db.update(callerIds).set({ callCount: sql`callCount + 1`, lastUsedAt: Date.now() }).where(eq(callerIds.id, id));
 }
 
-export async function getNextRotatingCallerId(userId: number) {
+export async function getNextRotatingCallerId() {
   const db = await getDb();
   if (!db) return undefined;
   // Round-robin: pick the active caller ID with the lowest call count
@@ -820,7 +818,6 @@ export async function getNextRotatingCallerId(userId: number) {
   const now = Date.now();
   const result = await db.select().from(callerIds)
     .where(and(
-      eq(callerIds.userId, userId),
       eq(callerIds.isActive, 1),
       sql`(${callerIds.cooldownUntil} IS NULL OR ${callerIds.cooldownUntil} <= ${now})`,
     ))
@@ -832,14 +829,13 @@ export async function getNextRotatingCallerId(userId: number) {
 // ─── Caller ID Health Checks ──────────────────────────────────────────────
 const HEALTH_CHECK_FAIL_THRESHOLD = 3; // auto-disable after this many consecutive failures
 
-export async function getCallerIdsForHealthCheck(userId: number) {
+export async function getCallerIdsForHealthCheck() {
   const db = await getDb();
   if (!db) return [];
   // Get all active caller IDs that haven't been checked in the last 4 hours, or never checked
   const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
   return db.select().from(callerIds)
     .where(and(
-      eq(callerIds.userId, userId),
       eq(callerIds.isActive, 1),
       sql`(${callerIds.lastCheckAt} IS NULL OR ${callerIds.lastCheckAt} < ${fourHoursAgo})`,
     ))
@@ -897,7 +893,7 @@ export async function updateCallerIdHealthCheck(
   };
 }
 
-export async function resetCallerIdHealth(id: number, userId: number) {
+export async function resetCallerIdHealth(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(callerIds).set({
@@ -907,7 +903,7 @@ export async function resetCallerIdHealth(id: number, userId: number) {
     isActive: 1,
     lastCheckAt: null,
     lastCheckResult: null,
-  }).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+  }).where(eq(callerIds.id, id));
 }
 
 // ─── Real-Time DID Health Monitoring ────────────────────────────────────────
@@ -989,7 +985,6 @@ export async function recordDidCallResult(
 
 export async function recordDidCallResultByNumber(
   phoneNumberOrCallerIdStr: string,
-  userId: number,
   result: string,
 ) {
   const db = await getDb();
@@ -1007,7 +1002,7 @@ export async function recordDidCallResultByNumber(
   // Look up the caller ID by phone number and userId
   const did = await db.select({ id: callerIds.id })
     .from(callerIds)
-    .where(and(eq(callerIds.phoneNumber, phoneNumber), eq(callerIds.userId, userId)))
+    .where(eq(callerIds.phoneNumber, phoneNumber))
     .limit(1);
   if (!did[0]) return { flagged: false };
 
@@ -1045,7 +1040,7 @@ export async function reactivateCooledDownDids() {
   return cooledDown;
 }
 
-export async function resetDidHealth(id: number, userId: number) {
+export async function resetDidHealth(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(callerIds).set({
@@ -1059,7 +1054,7 @@ export async function resetDidHealth(id: number, userId: number) {
     flaggedAt: null,
     flagReason: null,
     cooldownUntil: null,
-  }).where(and(eq(callerIds.id, id), eq(callerIds.userId, userId)));
+  }).where(eq(callerIds.id, id));
 }
 
 // ─── Broadcast Templates ────────────────────────────────────────────────────
@@ -1070,51 +1065,51 @@ export async function createBroadcastTemplate(data: InsertBroadcastTemplate) {
   return { id: result[0].insertId };
 }
 
-export async function getBroadcastTemplates(userId: number) {
+export async function getBroadcastTemplates() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(broadcastTemplates).where(eq(broadcastTemplates.userId, userId)).orderBy(desc(broadcastTemplates.createdAt));
+  return db.select().from(broadcastTemplates).orderBy(desc(broadcastTemplates.createdAt));
 }
 
-export async function getBroadcastTemplate(id: number, userId: number) {
+export async function getBroadcastTemplate(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(broadcastTemplates).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId))).limit(1);
+  const result = await db.select().from(broadcastTemplates).where(eq(broadcastTemplates.id, id)).limit(1);
   return result[0];
 }
 
-export async function updateBroadcastTemplate(id: number, userId: number, data: Partial<InsertBroadcastTemplate>) {
+export async function updateBroadcastTemplate(id: number, data: Partial<InsertBroadcastTemplate>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(broadcastTemplates).set(data).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+  await db.update(broadcastTemplates).set(data).where(eq(broadcastTemplates.id, id));
 }
 
-export async function deleteBroadcastTemplate(id: number, userId: number) {
+export async function deleteBroadcastTemplate(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(broadcastTemplates).where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+  await db.delete(broadcastTemplates).where(eq(broadcastTemplates.id, id));
 }
 
 // ─── Analytics ──────────────────────────────────────────────────────────────
-export async function getCallAnalytics(userId: number) {
+export async function getCallAnalytics() {
   const db = await getDb();
   if (!db) return { statusBreakdown: [], dailyCalls: [], avgDuration: 0, totalDuration: 0 };
 
   const statusBreakdown = await db.select({
     status: callLogs.status,
     cnt: count(),
-  }).from(callLogs).where(eq(callLogs.userId, userId)).groupBy(callLogs.status);
+  }).from(callLogs).groupBy(callLogs.status);
 
   const dailyCalls = await db.select({
     day: sql<string>`DATE(createdAt)`,
     cnt: count(),
     answered: sql<number>`SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END)`,
-  }).from(callLogs).where(eq(callLogs.userId, userId)).groupBy(sql`DATE(createdAt)`).orderBy(sql`DATE(createdAt)`).limit(30);
+  }).from(callLogs).groupBy(sql`DATE(createdAt)`).orderBy(sql`DATE(createdAt)`).limit(30);
 
   const [durationStats] = await db.select({
     avgDur: sql<number>`COALESCE(AVG(duration), 0)`,
     totalDur: sql<number>`COALESCE(SUM(duration), 0)`,
-  }).from(callLogs).where(and(eq(callLogs.userId, userId), sql`duration IS NOT NULL AND duration > 0`));
+  }).from(callLogs).where(sql`duration IS NOT NULL AND duration > 0`);
 
   return {
     statusBreakdown: statusBreakdown.map(r => ({ status: r.status, count: r.cnt })),
@@ -1124,10 +1119,10 @@ export async function getCallAnalytics(userId: number) {
   };
 }
 
-export async function getCampaignAnalytics(campaignId: number, userId: number) {
+export async function getCampaignAnalytics(campaignId: number) {
   const db = await getDb();
   if (!db) return null;
-  const campaign = await getCampaign(campaignId, userId);
+  const campaign = await getCampaign(campaignId);
   if (!campaign) return null;
 
   const stats = await getCampaignStats(campaignId);
@@ -1154,7 +1149,7 @@ export async function upsertContactScore(data: InsertContactScore) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const existing = await db.select().from(contactScores)
-    .where(and(eq(contactScores.contactId, data.contactId), eq(contactScores.userId, data.userId))).limit(1);
+    .where(eq(contactScores.contactId, data.contactId)).limit(1);
   if (existing.length > 0) {
     await db.update(contactScores).set(data).where(eq(contactScores.id, existing[0].id));
     return { id: existing[0].id };
@@ -1163,17 +1158,17 @@ export async function upsertContactScore(data: InsertContactScore) {
   return { id: result[0].insertId };
 }
 
-export async function getContactScores(userId: number) {
+export async function getContactScores() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(contactScores).where(eq(contactScores.userId, userId)).orderBy(desc(contactScores.score));
+  return db.select().from(contactScores).orderBy(desc(contactScores.score));
 }
 
-export async function getContactScore(contactId: number, userId: number) {
+export async function getContactScore(contactId: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(contactScores)
-    .where(and(eq(contactScores.contactId, contactId), eq(contactScores.userId, userId))).limit(1);
+    .where(eq(contactScores.contactId, contactId)).limit(1);
   return result[0];
 }
 
@@ -1183,11 +1178,11 @@ export async function updateContactScore(id: number, data: Partial<InsertContact
   await db.update(contactScores).set(data).where(eq(contactScores.id, id));
 }
 
-export async function recalculateContactScore(contactId: number, userId: number) {
+export async function recalculateContactScore(contactId: number) {
   const db = await getDb();
   if (!db) return;
   const logs = await db.select().from(callLogs)
-    .where(and(eq(callLogs.contactId, contactId), eq(callLogs.userId, userId)));
+    .where(eq(callLogs.contactId, contactId));
   const totalCalls = logs.length;
   const answeredCalls = logs.filter(l => l.status === "answered" || l.status === "completed").length;
   const durations = logs.filter(l => l.duration && l.duration > 0).map(l => l.duration!);
@@ -1198,28 +1193,28 @@ export async function recalculateContactScore(contactId: number, userId: number)
   const contact = await db.select().from(contacts).where(eq(contacts.id, contactId)).limit(1);
   const phoneNumber = contact[0]?.phoneNumber ?? "";
   await upsertContactScore({
-    userId, contactId, phoneNumber, score, totalCalls, answeredCalls, avgDuration,
+    userId: 0, contactId, phoneNumber, score, totalCalls, answeredCalls, avgDuration,
     lastCallResult: lastLog?.status ?? null,
   });
 }
 
 // ─── Cost Settings ──────────────────────────────────────────────────────────
-export async function getCostSettings(userId: number) {
+export async function getCostSettings() {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(costSettings).where(eq(costSettings.userId, userId)).limit(1);
+  const result = await db.select().from(costSettings).limit(1);
   return result[0];
 }
 
-export async function upsertCostSettings(userId: number, data: Partial<InsertCostSetting>) {
+export async function upsertCostSettings(data: Partial<InsertCostSetting>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const existing = await db.select().from(costSettings).where(eq(costSettings.userId, userId)).limit(1);
+  const existing = await db.select().from(costSettings).limit(1);
   if (existing.length > 0) {
     await db.update(costSettings).set(data).where(eq(costSettings.id, existing[0].id));
     return { id: existing[0].id };
   }
-  const result = await db.insert(costSettings).values({ userId, ...data } as InsertCostSetting);
+  const result = await db.insert(costSettings).values(data as InsertCostSetting);
   return { id: result[0].insertId };
 }
 
@@ -1239,12 +1234,12 @@ export async function getCallerIdRegions(callerIdId: number) {
   return db.select().from(callerIdRegions).where(eq(callerIdRegions.callerIdId, callerIdId));
 }
 
-export async function getCallerIdsByRegion(userId: number, state?: string, areaCode?: string) {
+export async function getCallerIdsByRegion(state?: string, areaCode?: string) {
   const db = await getDb();
   if (!db) return [];
   // Get caller IDs that match the region or have no region assigned (global)
   const allCallerIdsList = await db.select().from(callerIds)
-    .where(and(eq(callerIds.userId, userId), eq(callerIds.isActive, 1)));
+    .where(eq(callerIds.isActive, 1));
   const allRegions = await db.select().from(callerIdRegions);
   const regionMap = new Map<number, Array<{ state: string | null; areaCode: string | null }>>();
   for (const r of allRegions) {
@@ -1262,10 +1257,10 @@ export async function getCallerIdsByRegion(userId: number, state?: string, areaC
 }
 
 // ─── Campaign Cloning ───────────────────────────────────────────────────────
-export async function cloneCampaign(id: number, userId: number, newName: string) {
+export async function cloneCampaign(id: number, newName: string) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const original = await getCampaign(id, userId);
+  const original = await getCampaign(id);
   if (!original) throw new Error("Campaign not found");
   const { id: _id, status: _status, completedCalls: _cc, answeredCalls: _ac, failedCalls: _fc,
     startedAt: _sa, completedAt: _ca, createdAt: _cr, updatedAt: _up, ...rest } = original;
@@ -1281,11 +1276,11 @@ export async function cloneCampaign(id: number, userId: number, newName: string)
 }
 
 // ─── A/B Test Analytics ─────────────────────────────────────────────────────
-export async function getABTestResults(abTestGroup: string, userId: number) {
+export async function getABTestResults(abTestGroup: string) {
   const db = await getDb();
   if (!db) return [];
   const groupCampaigns = await db.select().from(campaigns)
-    .where(and(eq(campaigns.userId, userId), eq(campaigns.abTestGroup, abTestGroup)));
+    .where(eq(campaigns.abTestGroup, abTestGroup));
   const results = [];
   for (const c of groupCampaigns) {
     const stats = await getCampaignStats(c.id);
@@ -1306,7 +1301,7 @@ export async function getABTestResults(abTestGroup: string, userId: number) {
 }
 
 // ─── Export Helpers ──────────────────────────────────────────────────────────
-export async function getCallLogsForExport(campaignId: number, userId: number) {
+export async function getCallLogsForExport(campaignId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select({
@@ -1323,7 +1318,7 @@ export async function getCallLogsForExport(campaignId: number, userId: number) {
     startedAt: callLogs.startedAt,
     answeredAt: callLogs.answeredAt,
     endedAt: callLogs.endedAt,
-  }).from(callLogs).where(and(eq(callLogs.campaignId, campaignId), eq(callLogs.userId, userId)))
+  }).from(callLogs).where(eq(callLogs.campaignId, campaignId))
     .orderBy(callLogs.id);
 }
 
@@ -1506,10 +1501,10 @@ export async function markEmailVerified(userId: number) {
 }
 
 // Get a single contact by ID
-export async function getContact(id: number, userId: number) {
+export async function getContact(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.userId, userId))).limit(1);
+  const result = await db.select().from(contacts).where(eq(contacts.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -1718,17 +1713,17 @@ export async function createCallScript(data: InsertCallScript) {
   return { id: Number(result[0].insertId) };
 }
 
-export async function getCallScripts(userId: number) {
+export async function getCallScripts() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(callScripts).where(eq(callScripts.userId, userId)).orderBy(desc(callScripts.createdAt));
+  return db.select().from(callScripts).orderBy(desc(callScripts.createdAt));
 }
 
-export async function getCallScript(id: number, userId: number) {
+export async function getCallScript(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(callScripts)
-    .where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)))
+    .where(eq(callScripts.id, id))
     .limit(1);
   return result[0];
 }
@@ -1742,31 +1737,31 @@ export async function getCallScriptById(id: number) {
   return result[0];
 }
 
-export async function updateCallScript(id: number, userId: number, data: Partial<InsertCallScript>) {
+export async function updateCallScript(id: number, data: Partial<InsertCallScript>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(callScripts).set(data).where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)));
+  await db.update(callScripts).set(data).where(eq(callScripts.id, id));
 }
 
-export async function deleteCallScript(id: number, userId: number) {
+export async function deleteCallScript(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(callScripts).where(and(eq(callScripts.id, id), eq(callScripts.userId, userId)));
+  await db.delete(callScripts).where(eq(callScripts.id, id));
 }
 
 
 // ─── Health Check Schedule ────────────────────────────────────────────────
-export async function getHealthCheckSchedule(userId: number) {
+export async function getHealthCheckSchedule() {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const rows = await db.select().from(healthCheckSchedule).where(eq(healthCheckSchedule.userId, userId)).limit(1);
+  const rows = await db.select().from(healthCheckSchedule).limit(1);
   return rows[0] || null;
 }
 
-export async function upsertHealthCheckSchedule(userId: number, data: { enabled: number; intervalHours: number }) {
+export async function upsertHealthCheckSchedule(data: { enabled: number; intervalHours: number }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const existing = await getHealthCheckSchedule(userId);
+  const existing = await getHealthCheckSchedule();
   const nextRunAt = data.enabled ? new Date(Date.now() + data.intervalHours * 60 * 60 * 1000) : null;
   if (existing) {
     await db.update(healthCheckSchedule)
@@ -1774,15 +1769,15 @@ export async function upsertHealthCheckSchedule(userId: number, data: { enabled:
       .where(eq(healthCheckSchedule.id, existing.id));
     return { ...existing, ...data, nextRunAt };
   } else {
-    const result = await db.insert(healthCheckSchedule).values({ userId, enabled: data.enabled, intervalHours: data.intervalHours, nextRunAt });
-    return { id: Number(result[0].insertId), userId, ...data, nextRunAt };
+    const result = await db.insert(healthCheckSchedule).values({ userId: 0, enabled: data.enabled, intervalHours: data.intervalHours, nextRunAt });
+    return { id: Number(result[0].insertId), ...data, nextRunAt };
   }
 }
 
-export async function markHealthCheckRun(userId: number) {
+export async function markHealthCheckRun() {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const schedule = await getHealthCheckSchedule(userId);
+  const schedule = await getHealthCheckSchedule();
   if (!schedule) return;
   const nextRunAt = new Date(Date.now() + schedule.intervalHours * 60 * 60 * 1000);
   await db.update(healthCheckSchedule)
@@ -1840,13 +1835,13 @@ export async function getThrottleHistory(agentId?: string, limit = 50): Promise<
 }
 
 // ─── Broadcast Template Bulk Delete ────────────────────────────────────────
-export async function bulkDeleteBroadcastTemplates(ids: number[], userId: number): Promise<number> {
+export async function bulkDeleteBroadcastTemplates(ids: number[]): Promise<number> {
   const dbInst = await getDb();
   if (!dbInst) return 0;
   let deleted = 0;
   for (const id of ids) {
     const result = await dbInst.delete(broadcastTemplates)
-      .where(and(eq(broadcastTemplates.id, id), eq(broadcastTemplates.userId, userId)));
+      .where(eq(broadcastTemplates.id, id));
     if ((result as any)[0]?.affectedRows > 0) deleted++;
   }
   return deleted;
@@ -1884,7 +1879,7 @@ export async function getPendingHealthCheckCount(): Promise<number> {
 
 // ─── Agent Metrics ──────────────────────────────────────────────────────────
 
-export async function getAgentMetrics(userId: number) {
+export async function getAgentMetrics() {
   const db = await getDb();
   if (!db) return [];
 
@@ -1933,7 +1928,7 @@ export async function getAgentMetrics(userId: number) {
   return metrics;
 }
 
-export async function getAgentCallTimeSeries(userId: number, agentId: string, days: number = 7) {
+export async function getAgentCallTimeSeries(agentId: string, days: number = 7) {
   const db = await getDb();
   if (!db) return [];
 
@@ -1948,7 +1943,6 @@ export async function getAgentCallTimeSeries(userId: number, agentId: string, da
     .where(
       and(
         eq(callQueue.claimedBy, agentId),
-        eq(callQueue.userId, userId),
         inArray(callQueue.status, ["completed", "failed"]),
         gte(callQueue.createdAt, cutoff)
       )
@@ -1980,7 +1974,7 @@ export async function getAgentCallTimeSeries(userId: number, agentId: string, da
   }));
 }
 
-export async function getAgentDailyStats(userId: number, agentId: string, days: number = 30) {
+export async function getAgentDailyStats(agentId: string, days: number = 30) {
   const db = await getDb();
   if (!db) return [];
 
@@ -1995,7 +1989,6 @@ export async function getAgentDailyStats(userId: number, agentId: string, days: 
     .where(
       and(
         eq(callQueue.claimedBy, agentId),
-        eq(callQueue.userId, userId),
         inArray(callQueue.status, ["completed", "failed"]),
         gte(callQueue.createdAt, cutoff)
       )
@@ -2028,7 +2021,7 @@ export async function getAgentDailyStats(userId: number, agentId: string, days: 
 }
 
 // ─── Call Activity Feed ─────────────────────────────────────────────────
-export async function getRecentCallActivity(userId: number, limit = 50) {
+export async function getRecentCallActivity(limit = 50) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const rows = await db.select({
@@ -2048,7 +2041,6 @@ export async function getRecentCallActivity(userId: number, limit = 50) {
   })
     .from(callQueue)
     .leftJoin(campaigns, eq(callQueue.campaignId, campaigns.id))
-    .where(eq(callQueue.userId, userId))
     .orderBy(desc(callQueue.updatedAt))
     .limit(limit);
 
@@ -2083,12 +2075,12 @@ export async function getRecentCallActivity(userId: number, limit = 50) {
 
 // ─── Per-DID Analytics ──────────────────────────────────────────────────────
 
-export async function getDidAnalyticsSummary(userId: number) {
+export async function getDidAnalyticsSummary() {
   const db = await getDb();
   if (!db) return [];
 
   // Get all caller IDs for the user
-  const dids = await db.select().from(callerIds).where(eq(callerIds.userId, userId));
+  const dids = await db.select().from(callerIds);
 
   // Use call_logs table (has clean callerIdUsed field) instead of call_queue (polluted callerIdStr)
   // Exclude 'pending' and 'cancelled' statuses - only count actually dialed calls
@@ -2105,8 +2097,7 @@ export async function getDidAnalyticsSummary(userId: number) {
       MIN(createdAt) as firstUsed,
       MAX(createdAt) as lastUsed
     FROM call_logs
-    WHERE userId = ${userId}
-      AND callerIdUsed IS NOT NULL
+    WHERE callerIdUsed IS NOT NULL
       AND status NOT IN ('pending', 'cancelled')
     GROUP BY callerIdUsed`
   ) as any;
@@ -2167,7 +2158,7 @@ export async function getDidAnalyticsSummary(userId: number) {
   });
 }
 
-export async function getDidCallVolume(userId: number, callerIdStr?: string, days: number = 7) {
+export async function getDidCallVolume(callerIdStr?: string, days: number = 7) {
   const db = await getDb();
   if (!db) return [];
 
@@ -2175,8 +2166,8 @@ export async function getDidCallVolume(userId: number, callerIdStr?: string, day
 
   // Use call_logs table with callerIdUsed for accurate DID tracking
   const baseQuery = callerIdStr
-    ? sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE userId = ${userId} AND callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} AND callerIdUsed = ${callerIdStr} GROUP BY callerIdUsed, call_date ORDER BY call_date`
-    : sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE userId = ${userId} AND callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} GROUP BY callerIdUsed, call_date ORDER BY call_date`;
+    ? sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} AND callerIdUsed = ${callerIdStr} GROUP BY callerIdUsed, call_date ORDER BY call_date`
+    : sql`SELECT callerIdUsed as callerIdStr, DATE(createdAt) as call_date, COUNT(*) as total, SUM(CASE WHEN status IN ('answered','completed') THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed FROM call_logs WHERE callerIdUsed IS NOT NULL AND status NOT IN ('pending','cancelled') AND createdAt >= ${since} GROUP BY callerIdUsed, call_date ORDER BY call_date`;
 
   const rows = await db.execute(baseQuery) as any;
   const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
@@ -2190,17 +2181,16 @@ export async function getDidCallVolume(userId: number, callerIdStr?: string, day
   }));
 }
 
-export async function getDidFlagHistory(userId: number) {
+export async function getDidFlagHistory() {
   const db = await getDb();
   if (!db) return [];
 
   // Get audit logs related to DID flagging
   const logs = await db.select()
     .from(auditLogs)
-    .where(and(
-      eq(auditLogs.userId, userId),
+    .where(
       sql`${auditLogs.action} IN ('did.flagged', 'did.reactivated', 'callerId.healthCheck', 'callerId.create')`,
-    ))
+    )
     .orderBy(sql`${auditLogs.createdAt} DESC`)
     .limit(100);
 
@@ -2214,7 +2204,7 @@ export async function getDidFlagHistory(userId: number) {
   }));
 }
 
-export async function getDidCampaignBreakdown(userId: number, callerIdStr: string) {
+export async function getDidCampaignBreakdown(callerIdStr: string) {
   const db = await getDb();
   if (!db) return [];
 
@@ -2228,8 +2218,7 @@ export async function getDidCampaignBreakdown(userId: number, callerIdStr: strin
       SUM(CASE WHEN status = 'no-answer' THEN 1 ELSE 0 END) as noAnswer,
       AVG(CASE WHEN status IN ('answered','completed') AND duration > 0 THEN duration ELSE NULL END) as avgDuration
     FROM call_logs
-    WHERE userId = ${userId}
-      AND callerIdUsed = ${callerIdStr}
+    WHERE callerIdUsed = ${callerIdStr}
       AND status NOT IN ('pending','cancelled')
     GROUP BY campaignId`
   ) as any;
@@ -2254,7 +2243,7 @@ export async function getDidCampaignBreakdown(userId: number, callerIdStr: strin
 
 // ─── Area Code Distribution ──────────────────────────────────────────────────
 
-export async function getAreaCodeDistribution(userId: number, campaignId?: number, hours: number = 24) {
+export async function getAreaCodeDistribution(campaignId?: number, hours: number = 24) {
   const db = await getDb();
   if (!db) return { areaCodes: [], total: 0 };
 
@@ -2275,8 +2264,7 @@ export async function getAreaCodeDistribution(userId: number, campaignId?: numbe
       SUM(CASE WHEN result IN ('failed', 'congestion', 'trunk-error') THEN 1 ELSE 0 END) as failed,
       SUM(CASE WHEN result = 'no-answer' THEN 1 ELSE 0 END) as noAnswer
     FROM call_queue
-    WHERE userId = ${userId}
-      AND result IS NOT NULL
+    WHERE result IS NOT NULL
       AND createdAt >= ${since}
       ${campaignFilter}
     GROUP BY areaCode
@@ -2302,34 +2290,31 @@ export async function getAreaCodeDistribution(userId: number, campaignId?: numbe
 
 
 // ─── Retry Failed Contacts ──────────────────────────────────────────────────
-export async function getRetriableContactCount(campaignId: number, userId: number): Promise<number> {
+export async function getRetriableContactCount(campaignId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
   // Find contacts that have only failed/no-answer/busy outcomes (no answered calls)
   const [result] = await db.select({ cnt: count() }).from(callLogs)
     .where(and(
       eq(callLogs.campaignId, campaignId),
-      eq(callLogs.userId, userId),
       inArray(callLogs.status, ["failed", "no-answer", "busy"]),
     ));
   // Exclude contacts that also have an answered call
   const answeredPhones = db.select({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
     .where(and(
       eq(callLogs.campaignId, campaignId),
-      eq(callLogs.userId, userId),
       eq(callLogs.status, "answered"),
     ));
   const [retriable] = await db.selectDistinct({ cnt: sql<number>`COUNT(DISTINCT ${callLogs.phoneNumber})` }).from(callLogs)
     .where(and(
       eq(callLogs.campaignId, campaignId),
-      eq(callLogs.userId, userId),
       inArray(callLogs.status, ["failed", "no-answer", "busy"]),
       notInArray(callLogs.phoneNumber, answeredPhones),
     ));
   return Number(retriable?.cnt ?? 0);
 }
 
-export async function retryFailedContacts(campaignId: number, userId: number): Promise<{ retriedCount: number; deletedLogs: number }> {
+export async function retryFailedContacts(campaignId: number): Promise<{ retriedCount: number; deletedLogs: number }> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
 
@@ -2337,7 +2322,6 @@ export async function retryFailedContacts(campaignId: number, userId: number): P
   const answeredRows = await db.selectDistinct({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
     .where(and(
       eq(callLogs.campaignId, campaignId),
-      eq(callLogs.userId, userId),
       eq(callLogs.status, "answered"),
     ));
   const answeredPhones = new Set(answeredRows.map(r => r.phoneNumber));
@@ -2346,7 +2330,6 @@ export async function retryFailedContacts(campaignId: number, userId: number): P
   const failedRows = await db.selectDistinct({ phoneNumber: callLogs.phoneNumber }).from(callLogs)
     .where(and(
       eq(callLogs.campaignId, campaignId),
-      eq(callLogs.userId, userId),
       inArray(callLogs.status, ["failed", "no-answer", "busy"]),
     ));
   const retriablePhones = failedRows.map(r => r.phoneNumber).filter(p => !answeredPhones.has(p));
@@ -2358,21 +2341,19 @@ export async function retryFailedContacts(campaignId: number, userId: number): P
   // Delete call logs for retriable phones (so they can be re-dialed)
   const logResult = await db.delete(callLogs).where(and(
     eq(callLogs.campaignId, campaignId),
-    eq(callLogs.userId, userId),
     inArray(callLogs.phoneNumber, retriablePhones),
   ));
 
   // Delete any existing queue items for these phones
   await db.delete(callQueue).where(and(
     eq(callQueue.campaignId, campaignId),
-    eq(callQueue.userId, userId),
     inArray(callQueue.phoneNumber, retriablePhones),
   ));
 
   // Set campaign back to draft so it can be restarted
   await db.update(campaigns)
     .set({ status: "paused" })
-    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
+    .where(eq(campaigns.id, campaignId));
 
   return { retriedCount: retriablePhones.length, deletedLogs: Number((logResult as any)[0]?.affectedRows ?? retriablePhones.length) };
 }
@@ -2536,24 +2517,24 @@ export async function getCampaignPaymentStats(campaignId: number) {
   return { totalPayments, totalAmount, successfulPayments, successfulAmount, pendingPayments, failedPayments };
 }
 
-export async function getAllPayments(userId: number, limit = 100) {
+export async function getAllPayments(limit = 100) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(payments).where(eq(payments.userId, userId)).orderBy(desc(payments.createdAt)).limit(limit);
+  return db.select().from(payments).orderBy(desc(payments.createdAt)).limit(limit);
 }
 
 
 // ─── Voice AI Prompts ─────────────────────────────────────────────────────────
-export async function getVoiceAiPrompts(userId: number) {
+export async function getVoiceAiPrompts() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(voiceAiPrompts).where(eq(voiceAiPrompts.userId, userId)).orderBy(desc(voiceAiPrompts.createdAt));
+  return db.select().from(voiceAiPrompts).orderBy(desc(voiceAiPrompts.createdAt));
 }
 
-export async function getVoiceAiPrompt(id: number, userId: number) {
+export async function getVoiceAiPrompt(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(voiceAiPrompts).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+  const [row] = await db.select().from(voiceAiPrompts).where(eq(voiceAiPrompts.id, id));
   return row ?? null;
 }
 
@@ -2572,35 +2553,35 @@ export async function createVoiceAiPrompt(data: InsertVoiceAiPrompt) {
   return result;
 }
 
-export async function updateVoiceAiPrompt(id: number, userId: number, data: Partial<InsertVoiceAiPrompt>) {
+export async function updateVoiceAiPrompt(id: number, data: Partial<InsertVoiceAiPrompt>) {
   const db = await getDb();
   if (!db) return;
-  await db.update(voiceAiPrompts).set(data).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+  await db.update(voiceAiPrompts).set(data).where(eq(voiceAiPrompts.id, id));
 }
 
-export async function deleteVoiceAiPrompt(id: number, userId: number) {
+export async function deleteVoiceAiPrompt(id: number) {
   const db = await getDb();
   if (!db) return;
-  await db.delete(voiceAiPrompts).where(and(eq(voiceAiPrompts.id, id), eq(voiceAiPrompts.userId, userId)));
+  await db.delete(voiceAiPrompts).where(eq(voiceAiPrompts.id, id));
 }
 
 // ─── Voice AI Conversations ───────────────────────────────────────────────────
-export async function getVoiceAiConversations(userId: number, opts?: { campaignId?: number; limit?: number; offset?: number }) {
+export async function getVoiceAiConversations(opts?: { campaignId?: number; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
-  const conditions = [eq(voiceAiConversations.userId, userId)];
+  const conditions: any[] = [];
   if (opts?.campaignId) conditions.push(eq(voiceAiConversations.campaignId, opts.campaignId));
   return db.select().from(voiceAiConversations)
-    .where(and(...conditions))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(voiceAiConversations.createdAt))
     .limit(opts?.limit ?? 50)
     .offset(opts?.offset ?? 0);
 }
 
-export async function getVoiceAiConversation(id: number, userId: number) {
+export async function getVoiceAiConversation(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(voiceAiConversations).where(and(eq(voiceAiConversations.id, id), eq(voiceAiConversations.userId, userId)));
+  const [row] = await db.select().from(voiceAiConversations).where(eq(voiceAiConversations.id, id));
   return row ?? null;
 }
 
@@ -2617,7 +2598,7 @@ export async function updateVoiceAiConversation(id: number, data: Partial<Insert
   await db.update(voiceAiConversations).set(data).where(eq(voiceAiConversations.id, id));
 }
 
-export async function getVoiceAiStats(userId: number) {
+export async function getVoiceAiStats() {
   const db = await getDb();
   if (!db) return null;
   const [stats] = await db.select({
@@ -2631,7 +2612,7 @@ export async function getVoiceAiStats(userId: number) {
     paymentMade: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'payment_made' then 1 else 0 end)`,
     callbackScheduled: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'callback_scheduled' then 1 else 0 end)`,
     disputed: sql<number>`sum(case when ${voiceAiConversations.disposition} = 'dispute_filed' then 1 else 0 end)`,
-  }).from(voiceAiConversations).where(eq(voiceAiConversations.userId, userId));
+  }).from(voiceAiConversations);
   return stats;
 }
 
@@ -2649,18 +2630,18 @@ export async function updateSupervisorAction(id: number, data: Partial<InsertSup
   await db.update(supervisorActions).set(data).where(eq(supervisorActions.id, id));
 }
 
-export async function getRecentSupervisorActions(userId: number, limit = 50) {
+export async function getRecentSupervisorActions(limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(supervisorActions).where(eq(supervisorActions.userId, userId)).orderBy(desc(supervisorActions.createdAt)).limit(limit);
+  return db.select().from(supervisorActions).orderBy(desc(supervisorActions.createdAt)).limit(limit);
 }
 
 
 // ─── Get Single Live Agent ────────────────────────────────────────────────────
-export async function getLiveAgent(agentId: number, userId: number) {
+export async function getLiveAgent(agentId: number) {
   const db = await getDb();
   if (!db) return null;
-  const [row] = await db.select().from(liveAgents).where(and(eq(liveAgents.id, agentId), eq(liveAgents.userId, userId)));
+  const [row] = await db.select().from(liveAgents).where(eq(liveAgents.id, agentId));
   return row ?? null;
 }
 
@@ -2673,35 +2654,35 @@ export async function createCoachingTemplate(data: InsertCoachingTemplate) {
   return { id: result[0].insertId };
 }
 
-export async function getCoachingTemplates(userId: number) {
+export async function getCoachingTemplates() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(coachingTemplates).where(eq(coachingTemplates.userId, userId)).orderBy(desc(coachingTemplates.createdAt));
+  return db.select().from(coachingTemplates).orderBy(desc(coachingTemplates.createdAt));
 }
 
-export async function getCoachingTemplate(id: number, userId: number) {
+export async function getCoachingTemplate(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const [row] = await db.select().from(coachingTemplates).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+  const [row] = await db.select().from(coachingTemplates).where(eq(coachingTemplates.id, id));
   return row;
 }
 
-export async function updateCoachingTemplate(id: number, userId: number, data: Partial<InsertCoachingTemplate>) {
+export async function updateCoachingTemplate(id: number, data: Partial<InsertCoachingTemplate>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(coachingTemplates).set(data).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+  await db.update(coachingTemplates).set(data).where(eq(coachingTemplates.id, id));
 }
 
-export async function deleteCoachingTemplate(id: number, userId: number) {
+export async function deleteCoachingTemplate(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.delete(coachingTemplates).where(and(eq(coachingTemplates.id, id), eq(coachingTemplates.userId, userId)));
+  await db.delete(coachingTemplates).where(eq(coachingTemplates.id, id));
 }
 
-export async function getActiveCoachingTemplates(userId: number) {
+export async function getActiveCoachingTemplates() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(coachingTemplates).where(and(eq(coachingTemplates.userId, userId), eq(coachingTemplates.isActive, 1)));
+  return db.select().from(coachingTemplates).where(eq(coachingTemplates.isActive, 1));
 }
 
 export async function incrementTemplateUsage(id: number) {
@@ -2750,7 +2731,7 @@ export async function getAssistSessionsByAgent(agentId: number, limit = 20) {
   return db.select().from(assistSessions).where(eq(assistSessions.agentId, agentId)).orderBy(desc(assistSessions.createdAt)).limit(limit);
 }
 
-export async function getAssistStats(userId: number) {
+export async function getAssistStats() {
   const db = await getDb();
   if (!db) return { totalSessions: 0, activeSessions: 0, totalSuggestions: 0, acceptedSuggestions: 0, avgAcceptRate: 0 };
   const [stats] = await db.select({
@@ -2758,7 +2739,7 @@ export async function getAssistStats(userId: number) {
     activeSessions: sql<number>`SUM(CASE WHEN ${assistSessions.status} = 'active' THEN 1 ELSE 0 END)`,
     totalSuggestions: sql<number>`SUM(${assistSessions.totalSuggestions})`,
     acceptedSuggestions: sql<number>`SUM(${assistSessions.acceptedSuggestions})`,
-  }).from(assistSessions).where(eq(assistSessions.userId, userId));
+  }).from(assistSessions);
   const total = Number(stats?.totalSuggestions) || 0;
   const accepted = Number(stats?.acceptedSuggestions) || 0;
   return {
@@ -2808,7 +2789,7 @@ export async function expirePendingSuggestions(sessionId: number) {
 }
 
 // ─── Coaching Report: Agent Performance ─────────────────────────────────────
-export async function getAgentCoachingPerformance(userId: number) {
+export async function getAgentCoachingPerformance() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -2826,7 +2807,6 @@ export async function getAgentCoachingPerformance(userId: number) {
       MAX(s.startedAt) AS lastSessionAt
     FROM assist_sessions s
     LEFT JOIN live_agents la ON la.id = s.agentId
-    WHERE s.userId = ${userId}
     GROUP BY s.agentId, la.name, la.sipExtension
     ORDER BY totalSessions DESC
   `);
@@ -2834,7 +2814,7 @@ export async function getAgentCoachingPerformance(userId: number) {
 }
 
 // ─── Coaching Report: Template Effectiveness ────────────────────────────────
-export async function getTemplateEffectiveness(userId: number) {
+export async function getTemplateEffectiveness() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -2851,7 +2831,6 @@ export async function getTemplateEffectiveness(userId: number) {
         ELSE 0 END AS acceptRate
     FROM coaching_templates ct
     LEFT JOIN assist_suggestions asug ON asug.templateId = ct.id
-    WHERE ct.userId = ${userId}
     GROUP BY ct.id, ct.name, ct.category, ct.usageCount
     ORDER BY ct.usageCount DESC
   `);
@@ -2859,7 +2838,7 @@ export async function getTemplateEffectiveness(userId: number) {
 }
 
 // ─── Coaching Report: Suggestion Type Breakdown ─────────────────────────────
-export async function getSuggestionTypeBreakdown(userId: number) {
+export async function getSuggestionTypeBreakdown() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -2874,7 +2853,6 @@ export async function getSuggestionTypeBreakdown(userId: number) {
         ELSE 0 END AS acceptRate
     FROM assist_suggestions asug
     JOIN assist_sessions s ON s.id = asug.sessionId
-    WHERE s.userId = ${userId}
     GROUP BY asug.type
     ORDER BY total DESC
   `);
@@ -2882,7 +2860,7 @@ export async function getSuggestionTypeBreakdown(userId: number) {
 }
 
 // ─── Coaching Report: Training Gaps (low accept rate by category per agent) ─
-export async function getTrainingGaps(userId: number) {
+export async function getTrainingGaps() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -2898,7 +2876,6 @@ export async function getTrainingGaps(userId: number) {
     FROM assist_suggestions asug
     JOIN assist_sessions s ON s.id = asug.sessionId
     LEFT JOIN live_agents la ON la.id = s.agentId
-    WHERE s.userId = ${userId}
     GROUP BY s.agentId, la.name, asug.type
     HAVING COUNT(*) >= 3 AND acceptRate < 40
     ORDER BY acceptRate ASC
@@ -2907,7 +2884,7 @@ export async function getTrainingGaps(userId: number) {
 }
 
 // ─── Coaching Report: Daily Trend ───────────────────────────────────────────
-export async function getCoachingDailyTrend(userId: number, days = 30) {
+export async function getCoachingDailyTrend(days = 30) {
   const db = await getDb();
   if (!db) return [];
   const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
@@ -2921,7 +2898,7 @@ export async function getCoachingDailyTrend(userId: number, days = 30) {
         THEN ROUND(SUM(s.acceptedSuggestions) / SUM(s.totalSuggestions) * 100, 1)
         ELSE 0 END AS acceptRate
     FROM assist_sessions s
-    WHERE s.userId = ${userId} AND s.startedAt >= ${cutoff}
+    WHERE s.startedAt >= ${cutoff}
     GROUP BY day
     ORDER BY day ASC
   `);
@@ -2929,7 +2906,7 @@ export async function getCoachingDailyTrend(userId: number, days = 30) {
 }
 
 // ─── Coaching Report: Sentiment Distribution ────────────────────────────────
-export async function getSentimentDistribution(userId: number) {
+export async function getSentimentDistribution() {
   const db = await getDb();
   if (!db) return [];
   const rows = await db.execute(sql`
@@ -2937,7 +2914,7 @@ export async function getSentimentDistribution(userId: number) {
       sentimentLabel AS label,
       COUNT(*) AS count
     FROM assist_sessions
-    WHERE userId = ${userId} AND sentimentLabel IS NOT NULL
+    WHERE sentimentLabel IS NOT NULL
     GROUP BY sentimentLabel
     ORDER BY FIELD(sentimentLabel, 'very_negative', 'negative', 'neutral', 'positive', 'very_positive')
   `);

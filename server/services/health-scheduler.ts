@@ -58,12 +58,12 @@ async function runScheduledChecks() {
         }
 
         // Get all active (non-disabled) caller IDs for this user
-        const callerIds = await db.getCallerIds(schedule.userId);
+        const callerIds = await db.getCallerIds();
         const activeIds = callerIds.filter(c => c.isActive);
         
         if (activeIds.length === 0) {
           // No active caller IDs, just mark the run
-          await db.markHealthCheckRun(schedule.userId);
+          await db.markHealthCheckRun();
           console.log(`[HealthScheduler] User ${schedule.userId}: no active caller IDs to check`);
           continue;
         }
@@ -92,7 +92,7 @@ async function runScheduledChecks() {
           queued++;
         }
 
-        await db.markHealthCheckRun(schedule.userId);
+        await db.markHealthCheckRun();
         console.log(`[HealthScheduler] User ${schedule.userId}: queued ${queued} health checks (business hours)`);
         
         await db.createAuditLog({

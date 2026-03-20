@@ -1,0 +1,10 @@
+{
+  "query": "SELECT ug.id, ug.name, ug.permissions FROM user_groups ug; SELECT ugm.userId, ugm.groupId FROM user_group_members ugm WHERE ugm.userId IN (37444, 42228);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT ug.id, ug.name, ug.permissions FROM user_groups ug; SELECT ugm.userId, ugm.groupId FROM user_group_members ugm WHERE ugm.userId IN (37444, 42228);",
+  "returncode": 1,
+  "logs": [
+    "id\tname\tpermissions",
+    "1\tManager\t{\"audio.create\": true, \"audio.view\": true, \"callerIds.view\": true, \"campaigns.create\": true, \"campaigns.edit\": true, \"campaigns.start\": true, \"campaigns.view\": true, \"contacts.view\": true, \"reports.view\": true}",
+    "ERROR 1146 (42S02) at line 1: Table 'qap68z2aatogwpccsodafh.user_group_members' doesn't exist"
+  ]
+}

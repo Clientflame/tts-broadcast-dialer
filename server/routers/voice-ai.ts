@@ -36,13 +36,13 @@ const voiceAiPromptInput = z.object({
 export const voiceAiRouter = router({
   // ─── Prompts CRUD ───────────────────────────────────────────────────
   listPrompts: protectedProcedure.query(async ({ ctx }) => {
-    return db.getVoiceAiPrompts(ctx.user.id);
+    return db.getVoiceAiPrompts();
   }),
 
   getPrompt: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const prompt = await db.getVoiceAiPrompt(input.id, ctx.user.id);
+      const prompt = await db.getVoiceAiPrompt(input.id);
       if (!prompt) throw new TRPCError({ code: "NOT_FOUND", message: "Prompt not found" });
       return prompt;
     }),
@@ -61,14 +61,14 @@ export const voiceAiRouter = router({
     .input(z.object({ id: z.number() }).merge(voiceAiPromptInput.partial()))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      await db.updateVoiceAiPrompt(id, ctx.user.id, data);
+      await db.updateVoiceAiPrompt(id, data);
       return { success: true };
     }),
 
   deletePrompt: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.deleteVoiceAiPrompt(input.id, ctx.user.id);
+      await db.deleteVoiceAiPrompt(input.id);
       return { success: true };
     }),
 
@@ -158,20 +158,20 @@ export const voiceAiRouter = router({
       offset: z.number().min(0).default(0),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getVoiceAiConversations(ctx.user.id, input);
+      return db.getVoiceAiConversations(input);
     }),
 
   getConversation: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const conv = await db.getVoiceAiConversation(input.id, ctx.user.id);
+      const conv = await db.getVoiceAiConversation(input.id);
       if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
       return conv;
     }),
 
   // ─── Analytics ──────────────────────────────────────────────────────
   getStats: protectedProcedure.query(async ({ ctx }) => {
-    return db.getVoiceAiStats(ctx.user.id);
+    return db.getVoiceAiStats();
   }),
 
   // ─── Voice AI Bridge Status ─────────────────────────────────────────
@@ -327,13 +327,13 @@ QUESTIONS:
     }))
     .mutation(async ({ ctx, input }) => {
       // Queue a test call with voice_ai routing
-      const prompt = await db.getVoiceAiPrompt(input.promptId, ctx.user.id);
+      const prompt = await db.getVoiceAiPrompt(input.promptId);
       if (!prompt) throw new TRPCError({ code: "NOT_FOUND", message: "Prompt not found" });
 
       // Resolve caller ID — use selected DID or pick a random active one
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
       let callerIdStr: string | undefined;
-      const callerIdList = await db.getCallerIds(ctx.user.id);
+      const callerIdList = await db.getCallerIds();
       if (input.callerIdId) {
         const selectedCid = callerIdList.find(c => c.id === input.callerIdId);
         if (selectedCid) callerIdStr = selectedCid.phoneNumber;
@@ -398,7 +398,7 @@ export const supervisorRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       // Get the agent's current call channel from the live agent tracker
-      const agent = await db.getLiveAgent(input.agentId, ctx.user.id);
+      const agent = await db.getLiveAgent(input.agentId);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (agent.status !== "on_call") throw new TRPCError({ code: "BAD_REQUEST", message: "Agent is not on a call" });
 
@@ -434,7 +434,7 @@ export const supervisorRouter = router({
       callLogId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const agent = await db.getLiveAgent(input.agentId, ctx.user.id);
+      const agent = await db.getLiveAgent(input.agentId);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (agent.status !== "on_call") throw new TRPCError({ code: "BAD_REQUEST", message: "Agent is not on a call" });
 
@@ -467,7 +467,7 @@ export const supervisorRouter = router({
       callLogId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const agent = await db.getLiveAgent(input.agentId, ctx.user.id);
+      const agent = await db.getLiveAgent(input.agentId);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
       if (agent.status !== "on_call") throw new TRPCError({ code: "BAD_REQUEST", message: "Agent is not on a call" });
 
@@ -507,6 +507,6 @@ export const supervisorRouter = router({
   getHistory: protectedProcedure
     .input(z.object({ limit: z.number().min(1).max(200).default(50) }).optional())
     .query(async ({ ctx, input }) => {
-      return db.getRecentSupervisorActions(ctx.user.id, input?.limit);
+      return db.getRecentSupervisorActions(input?.limit);
     }),
 });
