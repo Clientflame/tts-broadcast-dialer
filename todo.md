@@ -674,3 +674,6 @@
 - [x] Fix: Call scripts only playing first TTS segment — should play all segments (up to 6) in order
 - [x] Fix: Bulk delete limited to 100 items — remove the cap to allow deleting more than 100 at a time
 - [x] Add segment count badge on Call Scripts list to show how many segments each script has
+- [x] Script preview on hover — tooltip/popover showing first few words of each segment when hovering over script row
+- [x] Script version history — track edits over time with schema, DB helpers, and revert capability
+- [x] Script performance metrics — answer rate, talk time, and call stats per script from call_logs

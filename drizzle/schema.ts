@@ -871,3 +871,24 @@ export const bridgeEvents = mysqlTable("bridge_events", {
 
 export type BridgeEvent = typeof bridgeEvents.$inferSelect;
 export type InsertBridgeEvent = typeof bridgeEvents.$inferInsert;
+
+// ─── Call Script Version History ────────────────────────────────────────────
+export const scriptVersions = mysqlTable("script_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  scriptId: int("scriptId").notNull(),
+  version: int("version").notNull(), // auto-incrementing version number per script
+  userId: int("userId").notNull(), // who made the change
+  userName: varchar("userName", { length: 255 }),
+  changeType: mysqlEnum("changeType", ["created", "edited", "reverted"]).default("edited").notNull(),
+  changeSummary: text("changeSummary"), // human-readable summary of what changed
+  // Snapshot of the script at this version
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  callbackNumber: varchar("callbackNumber", { length: 20 }),
+  segments: json("segments").$type<ScriptSegment[]>().notNull(),
+  status: mysqlEnum("status", ["draft", "active", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ScriptVersion = typeof scriptVersions.$inferSelect;
+export type InsertScriptVersion = typeof scriptVersions.$inferInsert;

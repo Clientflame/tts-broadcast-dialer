@@ -30,6 +30,7 @@ import {
   assistSuggestions, InsertAssistSuggestion,
   agentCallLog,
   bridgeEvents, InsertBridgeEvent,
+  scriptVersions, InsertScriptVersion,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3058,4 +3059,85 @@ export async function getBridgeEventStats() {
     lastOnline: lastOnlineRow?.createdAt?.toISOString() ?? null,
     lastOffline: lastOfflineRow?.createdAt?.toISOString() ?? null,
   };
+}
+
+
+// ─── Script Version History ────────────────────────────────────────────────
+
+export async function createScriptVersion(data: InsertScriptVersion) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(scriptVersions).values(data);
+  return { id: Number(result[0].insertId) };
+}
+
+export async function getScriptVersions(scriptId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(scriptVersions)
+    .where(eq(scriptVersions.scriptId, scriptId))
+    .orderBy(desc(scriptVersions.version))
+    .limit(limit);
+}
+
+export async function getScriptVersion(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(scriptVersions)
+    .where(eq(scriptVersions.id, id))
+    .limit(1);
+  return row;
+}
+
+export async function getLatestScriptVersionNumber(scriptId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const [row] = await db.select({ maxVersion: sql<number>`COALESCE(MAX(${scriptVersions.version}), 0)` })
+    .from(scriptVersions)
+    .where(eq(scriptVersions.scriptId, scriptId));
+  return Number(row?.maxVersion) || 0;
+}
+
+// ─── Script Performance Metrics ────────────────────────────────────────────
+
+export async function getScriptPerformanceMetrics(scriptId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Join campaigns (which reference scriptId) with call_logs to aggregate metrics per script
+  const conditions = [
+    isNotNull(campaigns.scriptId),
+  ];
+  if (scriptId) {
+    conditions.push(eq(campaigns.scriptId, scriptId));
+  }
+
+  const rows = await db.select({
+    scriptId: campaigns.scriptId,
+    totalCalls: count(),
+    answeredCalls: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END)`,
+    failedCalls: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'failed' THEN 1 ELSE 0 END)`,
+    busyCalls: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'busy' THEN 1 ELSE 0 END)`,
+    noAnswerCalls: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'no-answer' THEN 1 ELSE 0 END)`,
+    totalDuration: sql<number>`COALESCE(SUM(${callLogs.duration}), 0)`,
+    avgDuration: sql<number>`COALESCE(AVG(CASE WHEN ${callLogs.status} IN ('answered', 'completed') AND ${callLogs.duration} > 0 THEN ${callLogs.duration} END), 0)`,
+    campaignCount: sql<number>`COUNT(DISTINCT ${campaigns.id})`,
+  })
+    .from(callLogs)
+    .innerJoin(campaigns, eq(callLogs.campaignId, campaigns.id))
+    .where(and(...conditions))
+    .groupBy(campaigns.scriptId);
+
+  return rows.map(r => ({
+    scriptId: r.scriptId!,
+    totalCalls: Number(r.totalCalls) || 0,
+    answeredCalls: Number(r.answeredCalls) || 0,
+    failedCalls: Number(r.failedCalls) || 0,
+    busyCalls: Number(r.busyCalls) || 0,
+    noAnswerCalls: Number(r.noAnswerCalls) || 0,
+    answerRate: r.totalCalls ? Math.round((Number(r.answeredCalls) / Number(r.totalCalls)) * 100) : 0,
+    totalDuration: Number(r.totalDuration) || 0,
+    avgDuration: Math.round(Number(r.avgDuration) || 0),
+    campaignCount: Number(r.campaignCount) || 0,
+  }));
 }

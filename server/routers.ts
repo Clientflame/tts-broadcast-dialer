@@ -1582,6 +1582,20 @@ Return ONLY the message text, nothing else.`;
         status: "active",
       });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.create", resource: "callScript", resourceId: result.id });
+      // Create initial version snapshot
+      await db.createScriptVersion({
+        scriptId: result.id,
+        version: 1,
+        userId: ctx.user.id,
+        userName: ctx.user.name || "Unknown",
+        changeType: "created",
+        changeSummary: "Initial script creation",
+        name: input.name,
+        description: input.description || null,
+        callbackNumber: input.callbackNumber || null,
+        segments: input.segments as ScriptSegment[],
+        status: "active",
+      });
       return result;
     }),
     update: protectedProcedure.input(z.object({
@@ -1609,6 +1623,31 @@ Return ONLY the message text, nothing else.`;
         if (recordedCount > 2) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Maximum 2 recorded audio segments allowed per script" });
         }
+      }
+      // Snapshot current state before update for version history
+      const currentScript = await db.getCallScript(id);
+      if (currentScript) {
+        const latestVersion = await db.getLatestScriptVersionNumber(id);
+        // Build change summary
+        const changes: string[] = [];
+        if (data.name && data.name !== currentScript.name) changes.push(`Name: "${currentScript.name}" → "${data.name}"`);
+        if (data.segments) changes.push(`Segments updated (${data.segments.length} segments)`);
+        if (data.status && data.status !== currentScript.status) changes.push(`Status: ${currentScript.status} → ${data.status}`);
+        if (data.callbackNumber !== undefined && data.callbackNumber !== currentScript.callbackNumber) changes.push(`Callback # changed`);
+        if (data.description !== undefined && data.description !== currentScript.description) changes.push(`Description updated`);
+        await db.createScriptVersion({
+          scriptId: id,
+          version: latestVersion + 1,
+          userId: ctx.user.id,
+          userName: ctx.user.name || "Unknown",
+          changeType: "edited",
+          changeSummary: changes.length > 0 ? changes.join("; ") : "Script updated",
+          name: data.name || currentScript.name,
+          description: data.description !== undefined ? (data.description || null) : (currentScript.description || null),
+          callbackNumber: data.callbackNumber !== undefined ? (data.callbackNumber || null) : (currentScript.callbackNumber || null),
+          segments: (data.segments || currentScript.segments) as ScriptSegment[],
+          status: (data.status || currentScript.status) as "draft" | "active" | "archived",
+        });
       }
       await db.updateCallScript(id, data as any);
       return { success: true };
@@ -1645,6 +1684,57 @@ Return ONLY the message text, nothing else.`;
         callbackNumber: input.callbackNumber,
       });
       return result;
+    }),
+    // Version history
+    versions: protectedProcedure.input(z.object({ scriptId: z.number() })).query(async ({ input }) => {
+      return db.getScriptVersions(input.scriptId);
+    }),
+    getVersion: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const version = await db.getScriptVersion(input.id);
+      if (!version) throw new TRPCError({ code: "NOT_FOUND" });
+      return version;
+    }),
+    revertToVersion: protectedProcedure.input(z.object({
+      scriptId: z.number(),
+      versionId: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const version = await db.getScriptVersion(input.versionId);
+      if (!version || version.scriptId !== input.scriptId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Version not found for this script" });
+      }
+      // Apply the version snapshot to the script
+      await db.updateCallScript(input.scriptId, {
+        name: version.name,
+        description: version.description,
+        callbackNumber: version.callbackNumber,
+        segments: version.segments as ScriptSegment[],
+        status: version.status as "draft" | "active" | "archived",
+      });
+      // Create a new version entry for the revert
+      const latestVersion = await db.getLatestScriptVersionNumber(input.scriptId);
+      await db.createScriptVersion({
+        scriptId: input.scriptId,
+        version: latestVersion + 1,
+        userId: ctx.user.id,
+        userName: ctx.user.name || "Unknown",
+        changeType: "reverted",
+        changeSummary: `Reverted to version ${version.version}`,
+        name: version.name,
+        description: version.description,
+        callbackNumber: version.callbackNumber,
+        segments: version.segments as ScriptSegment[],
+        status: version.status as "draft" | "active" | "archived",
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.revert", resource: "callScript", resourceId: input.scriptId, details: { revertedToVersion: version.version } });
+      return { success: true };
+    }),
+    // Performance metrics
+    metrics: protectedProcedure.query(async () => {
+      return db.getScriptPerformanceMetrics();
+    }),
+    scriptMetrics: protectedProcedure.input(z.object({ scriptId: z.number() })).query(async ({ input }) => {
+      const rows = await db.getScriptPerformanceMetrics(input.scriptId);
+      return rows[0] || null;
     }),
   }),
 

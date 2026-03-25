@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Play, Pause, Loader2, ScrollText, GripVertical,
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
+  History, BarChart3, RotateCcw, Eye,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -332,8 +334,23 @@ export default function Scripts() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [versionHistoryScriptId, setVersionHistoryScriptId] = useState<number | null>(null);
+  const [metricsScriptId, setMetricsScriptId] = useState<number | null>(null);
 
   const scripts = trpc.callScripts.list.useQuery();
+  const scriptMetrics = trpc.callScripts.metrics.useQuery();
+  const versions = trpc.callScripts.versions.useQuery(
+    { scriptId: versionHistoryScriptId! },
+    { enabled: !!versionHistoryScriptId }
+  );
+  const revertToVersion = trpc.callScripts.revertToVersion.useMutation({
+    onSuccess: () => {
+      scripts.refetch();
+      versions.refetch();
+      toast.success("Script reverted successfully");
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const audioFiles = trpc.audio.list.useQuery();
   const createScript = trpc.callScripts.create.useMutation({
     onSuccess: () => {
@@ -579,7 +596,34 @@ export default function Scripts() {
                             onCheckedChange={() => setSelectedIds(prev => prev.includes(script.id) ? prev.filter(i => i !== script.id) : [...prev, script.id])}
                           />
                         </TableCell>
-                        <TableCell className="font-medium">{script.name}</TableCell>
+                        <TableCell className="font-medium">
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-default">{script.name}</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-sm p-3">
+                                <div className="space-y-1.5">
+                                  <p className="font-semibold text-xs mb-2">Script Preview ({segs.length} segment{segs.length !== 1 ? 's' : ''})</p>
+                                  {segs.slice(0, 6).map((seg: any, i: number) => (
+                                    <div key={i} className="text-xs">
+                                      <span className="text-muted-foreground font-mono">#{i + 1}</span>{' '}
+                                      <Badge variant={seg.type === 'tts' ? 'default' : 'secondary'} className="text-[9px] px-1 py-0 h-3.5 mr-1">
+                                        {seg.type === 'tts' ? 'TTS' : 'REC'}
+                                      </Badge>
+                                      <span className="text-muted-foreground">
+                                        {seg.type === 'tts'
+                                          ? (seg.text ? (seg.text.length > 80 ? seg.text.slice(0, 80) + '...' : seg.text) : 'No text')
+                                          : (seg.audioName || 'Audio file')}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {segs.length > 6 && <p className="text-[10px] text-muted-foreground">+{segs.length - 6} more...</p>}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <Badge variant="outline" className="text-xs font-semibold tabular-nums px-1.5">
@@ -611,8 +655,14 @@ export default function Scripts() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(script)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(script)} title="Edit">
                               <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setVersionHistoryScriptId(script.id)} title="Version History">
+                              <History className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMetricsScriptId(script.id)} title="Performance Metrics">
+                              <BarChart3 className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
                               resetForm();
@@ -742,6 +792,198 @@ export default function Scripts() {
                 </Button>
               </div>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {/* Performance Metrics Summary Card */}
+        {scriptMetrics.data && scriptMetrics.data.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" /> Script Performance Overview</CardTitle>
+              <CardDescription>Aggregated call metrics for each script across all campaigns.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Script</TableHead>
+                    <TableHead className="text-center">Campaigns</TableHead>
+                    <TableHead className="text-center">Total Calls</TableHead>
+                    <TableHead className="text-center">Answered</TableHead>
+                    <TableHead className="text-center">Answer Rate</TableHead>
+                    <TableHead className="text-center">Avg Duration</TableHead>
+                    <TableHead className="text-center">Total Talk Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {scriptMetrics.data.map((m: any) => {
+                    const script = scripts.data?.find((s: any) => s.id === m.scriptId);
+                    return (
+                      <TableRow key={m.scriptId}>
+                        <TableCell className="font-medium">{script?.name || `Script #${m.scriptId}`}</TableCell>
+                        <TableCell className="text-center">{m.campaignCount}</TableCell>
+                        <TableCell className="text-center tabular-nums">{m.totalCalls.toLocaleString()}</TableCell>
+                        <TableCell className="text-center tabular-nums">{m.answeredCalls.toLocaleString()}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant={m.answerRate >= 50 ? "default" : m.answerRate >= 30 ? "secondary" : "destructive"} className="tabular-nums">
+                            {m.answerRate}%
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">{m.avgDuration}s</TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {m.totalDuration >= 3600
+                            ? `${Math.floor(m.totalDuration / 3600)}h ${Math.floor((m.totalDuration % 3600) / 60)}m`
+                            : `${Math.floor(m.totalDuration / 60)}m ${m.totalDuration % 60}s`}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Version History Dialog */}
+        <Dialog open={!!versionHistoryScriptId} onOpenChange={v => { if (!v) setVersionHistoryScriptId(null); }}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" /> Version History
+              </DialogTitle>
+              <DialogDescription>
+                {scripts.data?.find((s: any) => s.id === versionHistoryScriptId)?.name || "Script"} — all changes are tracked automatically.
+              </DialogDescription>
+            </DialogHeader>
+            {versions.isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : !versions.data?.length ? (
+              <p className="text-center py-8 text-muted-foreground">No version history available.</p>
+            ) : (
+              <div className="space-y-3">
+                {versions.data.map((v: any) => (
+                  <div key={v.id} className="border rounded-lg p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={v.changeType === "created" ? "default" : v.changeType === "reverted" ? "secondary" : "outline"} className="text-xs">
+                          {v.changeType === "created" ? "Created" : v.changeType === "reverted" ? (<><RotateCcw className="h-3 w-3 mr-0.5" /> Reverted</>) : "Edited"}
+                        </Badge>
+                        <span className="text-xs font-mono text-muted-foreground">v{v.version}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {v.userName} · {new Date(v.createdAt).toLocaleString()}
+                        </span>
+                        {v.version !== versions.data![0].version && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={revertToVersion.isPending}
+                            onClick={() => {
+                              if (confirm(`Revert to version ${v.version}? This will overwrite the current script.`)) {
+                                revertToVersion.mutate({ scriptId: versionHistoryScriptId!, versionId: v.id });
+                              }
+                            }}
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" /> Revert
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    {v.changeSummary && (
+                      <p className="text-xs text-muted-foreground">{v.changeSummary}</p>
+                    )}
+                    <div className="text-xs text-muted-foreground">
+                      {(v.segments || []).length} segment{(v.segments || []).length !== 1 ? "s" : ""}
+                      {v.segments?.slice(0, 3).map((seg: any, i: number) => (
+                        <span key={i} className="ml-2">
+                          <Badge variant={seg.type === "tts" ? "default" : "secondary"} className="text-[9px] px-1 py-0 h-3.5">
+                            {seg.type === "tts" ? "TTS" : "REC"}
+                          </Badge>
+                          {" "}
+                          {seg.type === "tts" ? (seg.text?.slice(0, 40) + (seg.text?.length > 40 ? "..." : "")) : (seg.audioName || "Audio")}
+                        </span>
+                      ))}
+                      {(v.segments || []).length > 3 && <span className="ml-1">+{(v.segments || []).length - 3} more</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Script Metrics Dialog */}
+        <Dialog open={!!metricsScriptId} onOpenChange={v => { if (!v) setMetricsScriptId(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" /> Script Metrics
+              </DialogTitle>
+              <DialogDescription>
+                {scripts.data?.find((s: any) => s.id === metricsScriptId)?.name || "Script"} — performance across all campaigns.
+              </DialogDescription>
+            </DialogHeader>
+            {(() => {
+              const m = scriptMetrics.data?.find((x: any) => x.scriptId === metricsScriptId);
+              if (!m) return <p className="text-center py-8 text-muted-foreground">No call data yet for this script.</p>;
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{m.totalCalls.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Total Calls</p>
+                    </div>
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{m.answeredCalls.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Answered</p>
+                    </div>
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">
+                        <Badge variant={m.answerRate >= 50 ? "default" : m.answerRate >= 30 ? "secondary" : "destructive"} className="text-lg px-2">
+                          {m.answerRate}%
+                        </Badge>
+                      </p>
+                      <p className="text-xs text-muted-foreground">Answer Rate</p>
+                    </div>
+                    <div className="border rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold tabular-nums">{m.avgDuration}s</p>
+                      <p className="text-xs text-muted-foreground">Avg Duration</p>
+                    </div>
+                  </div>
+                  <div className="border rounded-lg p-3">
+                    <p className="text-xs text-muted-foreground mb-2">Call Breakdown</p>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums text-green-600">{m.answeredCalls}</p>
+                        <p className="text-[10px] text-muted-foreground">Answered</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums text-yellow-600">{m.busyCalls}</p>
+                        <p className="text-[10px] text-muted-foreground">Busy</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums text-orange-600">{m.noAnswerCalls}</p>
+                        <p className="text-[10px] text-muted-foreground">No Answer</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums text-red-600">{m.failedCalls}</p>
+                        <p className="text-[10px] text-muted-foreground">Failed</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Used in {m.campaignCount} campaign{m.campaignCount !== 1 ? "s" : ""}</span>
+                    <span>Total talk time: {m.totalDuration >= 3600
+                      ? `${Math.floor(m.totalDuration / 3600)}h ${Math.floor((m.totalDuration % 3600) / 60)}m`
+                      : `${Math.floor(m.totalDuration / 60)}m ${m.totalDuration % 60}s`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </DialogContent>
         </Dialog>
       </div>
