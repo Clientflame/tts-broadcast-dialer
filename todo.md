@@ -673,3 +673,4 @@
 - [x] Replace all direct notifyOwner() calls with unified dispatcher across pbx-api, dialer, auto-throttle, ivr-payment
 - [x] Fix: Call scripts only playing first TTS segment — should play all segments (up to 6) in order
 - [x] Fix: Bulk delete limited to 100 items — remove the cap to allow deleting more than 100 at a time
+- [x] Add segment count badge on Call Scripts list to show how many segments each script has

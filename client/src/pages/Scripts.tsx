@@ -581,9 +581,14 @@ export default function Scripts() {
                         </TableCell>
                         <TableCell className="font-medium">{script.name}</TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
-                            {ttsCount > 0 && <Badge variant="default" className="text-xs">{ttsCount} TTS</Badge>}
-                            {recCount > 0 && <Badge variant="secondary" className="text-xs">{recCount} Recorded</Badge>}
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-xs font-semibold tabular-nums px-1.5">
+                              {segs.length}
+                            </Badge>
+                            <div className="flex gap-1">
+                              {ttsCount > 0 && <Badge variant="default" className="text-[10px] px-1 py-0 h-4">{ttsCount} TTS</Badge>}
+                              {recCount > 0 && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{recCount} Rec</Badge>}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell>
