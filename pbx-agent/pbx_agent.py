@@ -374,6 +374,122 @@ def prepare_audio(audio_url, audio_name):
     return f"custom/broadcast/{audio_name}"
 
 
+def prepare_multi_audio(audio_urls, audio_name):
+    """
+    Download, convert, and concatenate multiple audio segments into a single WAV file.
+    Used for call scripts with multiple TTS/recorded segments (up to 6+).
+    Returns the Asterisk playback path for the concatenated file.
+    """
+    if not audio_urls or not audio_name:
+        return None
+
+    audio_dir = CONFIG["audio_dir"]
+    os.makedirs(audio_dir, exist_ok=True)
+
+    # Final concatenated WAV path
+    concat_wav = os.path.join(audio_dir, f"{audio_name}.wav")
+
+    # Check cache — skip if already concatenated recently
+    if os.path.exists(concat_wav):
+        file_age = time.time() - os.path.getmtime(concat_wav)
+        if file_age < 3600:  # Cache for 1 hour
+            log.info(f"Multi-segment audio cached: {concat_wav} ({len(audio_urls)} segments)")
+            return f"custom/broadcast/{audio_name}"
+
+    log.info(f"Preparing multi-segment audio: {len(audio_urls)} segments for {audio_name}")
+
+    # Step 1: Download and convert each segment to WAV
+    segment_wavs = []
+    for idx, url in enumerate(audio_urls):
+        seg_name = f"{audio_name}_seg{idx}"
+        seg_wav = os.path.join(audio_dir, f"{seg_name}.wav")
+        seg_tmp = os.path.join(audio_dir, f"{seg_name}_tmp.mp3")
+
+        try:
+            # Download segment
+            log.info(f"  Downloading segment {idx + 1}/{len(audio_urls)}: {url[:80]}...")
+            req = Request(url, headers={"User-Agent": "PBX-Agent/1.0"})
+            with urlopen(req, timeout=30) as resp:
+                with open(seg_tmp, "wb") as f:
+                    f.write(resp.read())
+
+            # Convert to WAV (8kHz, mono, 16-bit PCM)
+            subprocess.run([
+                "ffmpeg", "-y", "-i", seg_tmp,
+                "-ar", "8000", "-ac", "1", "-sample_fmt", "s16",
+                seg_wav
+            ], capture_output=True, timeout=30, check=True)
+
+            segment_wavs.append(seg_wav)
+            log.info(f"  Segment {idx + 1} ready: {seg_wav}")
+
+        except Exception as e:
+            log.error(f"  Segment {idx + 1} failed: {e}")
+            # Continue with remaining segments — partial playback is better than none
+        finally:
+            try:
+                os.remove(seg_tmp)
+            except:
+                pass
+
+    if not segment_wavs:
+        log.error(f"All segments failed for {audio_name}")
+        return None
+
+    # Step 2: Concatenate all segment WAVs into one file using ffmpeg
+    if len(segment_wavs) == 1:
+        # Only one segment — just rename it
+        os.rename(segment_wavs[0], concat_wav)
+    else:
+        # Build ffmpeg concat filter
+        # Create a concat list file for ffmpeg
+        concat_list = os.path.join(audio_dir, f"{audio_name}_concat.txt")
+        try:
+            with open(concat_list, "w") as f:
+                for sw in segment_wavs:
+                    f.write(f"file '{sw}'\n")
+
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", concat_list,
+                "-ar", "8000", "-ac", "1", "-sample_fmt", "s16",
+                concat_wav
+            ], capture_output=True, timeout=60, check=True)
+
+            log.info(f"Multi-segment audio concatenated: {len(segment_wavs)} segments -> {concat_wav}")
+
+        except Exception as e:
+            log.error(f"Concatenation failed: {e}")
+            # Fall back to first segment only
+            if segment_wavs:
+                try:
+                    os.rename(segment_wavs[0], concat_wav)
+                    log.warning(f"Falling back to first segment only")
+                except:
+                    return None
+        finally:
+            # Cleanup concat list and individual segment files
+            try:
+                os.remove(concat_list)
+            except:
+                pass
+            for sw in segment_wavs:
+                try:
+                    os.remove(sw)
+                except:
+                    pass
+
+    # Set ownership for Asterisk
+    try:
+        subprocess.run(["chown", "asterisk:asterisk", concat_wav],
+                       capture_output=True, timeout=5)
+    except:
+        pass
+
+    log.info(f"Multi-segment audio ready: {concat_wav} ({len(segment_wavs)} segments)")
+    return f"custom/broadcast/{audio_name}"
+
+
 # ─── Call Processing ─────────────────────────────────────────────────────────
 def process_health_check(ami, call_data):
     """
@@ -482,7 +598,19 @@ def process_call(ami, call_data):
     log.info(f"Processing call {queue_id} to {phone_number} (routing={routing_mode}, amd={amd_enabled})")
 
     # Prepare audio on the PBX
-    if audio_url and audio_name:
+    # Priority: audioUrls (multi-segment scripts) > audioUrl (single audio)
+    audio_urls = call_data.get("audioUrls")
+    if audio_urls and isinstance(audio_urls, list) and len(audio_urls) > 1 and audio_name:
+        # Multi-segment call script — download all segments and concatenate
+        log.info(f"Call {queue_id}: multi-segment script with {len(audio_urls)} segments")
+        audio_path = prepare_multi_audio(audio_urls, audio_name)
+        if audio_path:
+            variables["AUDIOFILE"] = audio_path
+        else:
+            log.error(f"Failed to prepare multi-segment audio for call {queue_id}")
+            report_result(queue_id, "failed", {"error": "Multi-segment audio preparation failed"})
+            return
+    elif audio_url and audio_name:
         audio_path = prepare_audio(audio_url, audio_name)
         if audio_path:
             variables["AUDIOFILE"] = audio_path

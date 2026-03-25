@@ -570,7 +570,7 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.delete", resource: "campaign", resourceId: input.id });
       return { success: true };
     }),
-    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(10000) })).mutation(async ({ ctx, input }) => {
       let deleted = 0;
       const skipped: number[] = [];
       for (const id of input.ids) {
@@ -1618,7 +1618,7 @@ Return ONLY the message text, nothing else.`;
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.delete", resource: "callScript", resourceId: input.id });
       return { success: true };
     }),
-    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+    bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1).max(10000) })).mutation(async ({ ctx, input }) => {
       for (const id of input.ids) {
         await db.deleteCallScript(id);
       }
