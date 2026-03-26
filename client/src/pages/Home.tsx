@@ -18,7 +18,7 @@ import {
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings, Volume2, Bot,
+  Settings, Volume2, Bot, Download,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -771,6 +771,7 @@ export default function Home() {
     }
   }, [onboardingStatus.data, setLocation]);
   const amiStatus = trpc.dashboard.amiStatus.useQuery(undefined, { enabled: !!user, refetchInterval: 15000 });
+  const agentAutoUpdate = trpc.agentAutoUpdate.update.useMutation();
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 
   const isDialerActive = (dialerLive.data?.activeCampaignCount ?? 0) > 0;
@@ -911,6 +912,9 @@ export default function Home() {
           </CardContent>
         </Card>
 
+        {/* Rate Limit Alerts */}
+        <RateLimitAlerts />
+
         {/* Overview Stats */}
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           <Card>
@@ -1024,8 +1028,28 @@ export default function Home() {
                       <p className="text-xs font-medium text-amber-600">Agent Update Required</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {amiStatus.data?.outdatedAgents} agent(s) need updating to v{amiStatus.data?.requiredVersion} for multi-segment script support.
-                        Use the Reinstall/Update button in System Health.
                       </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 h-7 text-xs border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                        onClick={() => {
+                          agentAutoUpdate.mutate(undefined, {
+                            onSuccess: (res: any) => {
+                              if (res.success) {
+                                toast.success("Agent updated successfully! It will reconnect shortly.");
+                                amiStatus.refetch();
+                              } else {
+                                toast.error(res.error || "Update failed");
+                              }
+                            },
+                            onError: (err: any) => toast.error(err.message),
+                          });
+                        }}
+                        disabled={agentAutoUpdate.isPending}
+                      >
+                        {agentAutoUpdate.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Updating...</> : <><Download className="h-3 w-3 mr-1" />Auto-Update Agent</>}
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1039,5 +1063,43 @@ export default function Home() {
         </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+function RateLimitAlerts() {
+  const rateLimits = trpc.rateLimits.status.useQuery(undefined, { refetchInterval: 10000 });
+  const data = rateLimits.data;
+  if (!data || (data.alerts.length === 0 && data.utilizationPct < 50)) return null;
+  return (
+    <Card className={data.alerts.some(a => a.level === "critical") ? "border-red-500/50 bg-red-500/5" : data.alerts.length > 0 ? "border-amber-500/50 bg-amber-500/5" : ""}>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            <span className="text-sm font-medium">Trunk Utilization</span>
+          </div>
+          <span className={`text-lg font-bold tabular-nums ${data.utilizationPct >= 90 ? "text-red-500" : data.utilizationPct >= 70 ? "text-amber-500" : "text-green-500"}`}>
+            {data.utilizationPct}%
+          </span>
+        </div>
+        <Progress value={data.utilizationPct} className="h-2 mb-3" />
+        <div className="grid grid-cols-4 gap-3 text-center text-xs">
+          <div><div className="font-bold text-base tabular-nums">{data.activeCalls}</div><span className="text-muted-foreground">Active</span></div>
+          <div><div className="font-bold text-base tabular-nums">{data.trunkCapacity}</div><span className="text-muted-foreground">Capacity</span></div>
+          <div><div className="font-bold text-base tabular-nums">{data.callsLastMinute}</div><span className="text-muted-foreground">Last Min</span></div>
+          <div><div className="font-bold text-base tabular-nums">{data.callsLastHour}</div><span className="text-muted-foreground">Last Hour</span></div>
+        </div>
+        {data.alerts.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {data.alerts.map((alert, i) => (
+              <div key={i} className={`flex items-center gap-2 text-xs p-2 rounded ${alert.level === "critical" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>
+                <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                {alert.message}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

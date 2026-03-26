@@ -892,3 +892,67 @@ export const scriptVersions = mysqlTable("script_versions", {
 
 export type ScriptVersion = typeof scriptVersions.$inferSelect;
 export type InsertScriptVersion = typeof scriptVersions.$inferInsert;
+
+// ─── Campaign Templates ─────────────────────────────────────────────────────
+export const campaignTemplates = mysqlTable("campaign_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Snapshot of campaign config
+  config: json("config").$type<{
+    type?: string;
+    scriptId?: number;
+    listId?: number;
+    callerIdStrategy?: string;
+    callerIdGroup?: string;
+    cpsLimit?: number;
+    retryAttempts?: number;
+    retryDelay?: number;
+    timezone?: string;
+    timeWindowStart?: string;
+    timeWindowEnd?: string;
+    usePersonalizedTTS?: number;
+    ttsSpeed?: string;
+    ivrEnabled?: number;
+    ivrConfig?: any;
+    voiceAiEnabled?: number;
+    voiceAiPersonaId?: number;
+  }>().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CampaignTemplate = typeof campaignTemplates.$inferSelect;
+export type InsertCampaignTemplate = typeof campaignTemplates.$inferInsert;
+
+// ─── Campaign Schedules ─────────────────────────────────────────────────────
+export const campaignSchedules = mysqlTable("campaign_schedules", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  userId: int("userId").notNull(),
+  scheduledAt: bigint("scheduledAt", { mode: "number" }).notNull(), // UTC timestamp ms
+  status: mysqlEnum("status", ["pending", "launched", "cancelled", "failed"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  launchedAt: bigint("launchedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CampaignSchedule = typeof campaignSchedules.$inferSelect;
+export type InsertCampaignSchedule = typeof campaignSchedules.$inferInsert;
+
+// ─── Bridge Health Checks (Proactive SSH-based) ────────────────────────────
+export const bridgeHealthChecks = mysqlTable("bridge_health_checks", {
+  id: int("id").autoincrement().primaryKey(),
+  agentId: varchar("agentId", { length: 255 }),
+  checkType: mysqlEnum("checkType", ["heartbeat", "ssh_probe", "manual"]).default("heartbeat").notNull(),
+  status: mysqlEnum("status", ["healthy", "degraded", "offline", "error"]).default("healthy").notNull(),
+  responseTimeMs: int("responseTimeMs"),
+  details: text("details"),
+  errorMessage: text("errorMessage"),
+  checkedAt: bigint("checkedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type BridgeHealthCheck = typeof bridgeHealthChecks.$inferSelect;
+export type InsertBridgeHealthCheck = typeof bridgeHealthChecks.$inferInsert;

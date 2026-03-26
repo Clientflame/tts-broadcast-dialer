@@ -31,6 +31,9 @@ import {
   agentCallLog,
   bridgeEvents, InsertBridgeEvent,
   scriptVersions, InsertScriptVersion,
+  campaignTemplates, InsertCampaignTemplate,
+  campaignSchedules, InsertCampaignSchedule,
+  bridgeHealthChecks, InsertBridgeHealthCheck,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3154,4 +3157,242 @@ export async function getScriptPerformanceMetrics(scriptId?: number) {
     avgDuration: Math.round(Number(r.avgDuration) || 0),
     campaignCount: Number(r.campaignCount) || 0,
   }));
+}
+
+
+// ─── Campaign Templates ─────────────────────────────────────────────────────
+
+export async function createCampaignTemplate(data: Omit<InsertCampaignTemplate, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(campaignTemplates).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getCampaignTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(campaignTemplates).orderBy(desc(campaignTemplates.updatedAt));
+}
+
+export async function getCampaignTemplate(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(campaignTemplates).where(eq(campaignTemplates.id, id)).limit(1);
+  return row;
+}
+
+export async function updateCampaignTemplate(id: number, data: Partial<InsertCampaignTemplate>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(campaignTemplates).set(data).where(eq(campaignTemplates.id, id));
+}
+
+export async function deleteCampaignTemplate(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(campaignTemplates).where(eq(campaignTemplates.id, id));
+}
+
+// ─── Campaign Schedules ─────────────────────────────────────────────────────
+
+export async function createCampaignSchedule(data: Omit<InsertCampaignSchedule, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(campaignSchedules).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getCampaignSchedule(campaignId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(campaignSchedules)
+    .where(and(eq(campaignSchedules.campaignId, campaignId), eq(campaignSchedules.status, "pending")))
+    .orderBy(desc(campaignSchedules.scheduledAt))
+    .limit(1);
+  return row;
+}
+
+export async function getPendingSchedules() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(campaignSchedules)
+    .where(and(
+      eq(campaignSchedules.status, "pending"),
+      sql`${campaignSchedules.scheduledAt} <= ${Date.now()}`
+    ));
+}
+
+export async function updateCampaignSchedule(id: number, data: Partial<InsertCampaignSchedule>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(campaignSchedules).set(data).where(eq(campaignSchedules.id, id));
+}
+
+export async function cancelCampaignSchedule(campaignId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaignSchedules)
+    .set({ status: "cancelled" })
+    .where(and(eq(campaignSchedules.campaignId, campaignId), eq(campaignSchedules.status, "pending")));
+}
+
+export async function getCampaignScheduleHistory(campaignId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(campaignSchedules)
+    .where(eq(campaignSchedules.campaignId, campaignId))
+    .orderBy(desc(campaignSchedules.createdAt));
+}
+
+// ─── Contact Segmentation ───────────────────────────────────────────────────
+
+export async function getContactSegmentation(listId: number) {
+  const db = await getDb();
+  if (!db) return { byAreaCode: [], byTimezone: [], byOutcome: [], total: 0 };
+
+  // By area code (first 3 digits of phone number)
+  const areaCodeRows = await db.execute(sql`
+    SELECT 
+      SUBSTRING(REPLACE(REPLACE(REPLACE(REPLACE(phoneNumber, '-', ''), '(', ''), ')', ''), ' ', ''),
+        CASE WHEN LEFT(REPLACE(REPLACE(REPLACE(REPLACE(phoneNumber, '-', ''), '(', ''), ')', ''), ' ', ''), 1) = '1'
+          THEN 2 ELSE 1 END, 3) AS areaCode,
+      COUNT(*) AS cnt
+    FROM contacts
+    WHERE listId = ${listId}
+    GROUP BY areaCode
+    ORDER BY cnt DESC
+    LIMIT 50
+  `) as any;
+
+  // By outcome (from call_logs for contacts in this list)
+  const outcomeRows = await db.execute(sql`
+    SELECT 
+      cl.status,
+      COUNT(*) AS cnt
+    FROM call_logs cl
+    INNER JOIN contacts c ON cl.contactId = c.id
+    WHERE c.listId = ${listId}
+    GROUP BY cl.status
+    ORDER BY cnt DESC
+  `) as any;
+
+  const [totalRow] = await db.select({ cnt: count() }).from(contacts).where(eq(contacts.listId, listId));
+
+  return {
+    byAreaCode: (Array.isArray(areaCodeRows) ? (Array.isArray(areaCodeRows[0]) ? areaCodeRows[0] : areaCodeRows) : []).map((r: any) => ({
+      areaCode: String(r.areaCode || ""),
+      count: Number(r.cnt) || 0,
+    })),
+    byOutcome: (Array.isArray(outcomeRows) ? (Array.isArray(outcomeRows[0]) ? outcomeRows[0] : outcomeRows) : []).map((r: any) => ({
+      status: String(r.status || ""),
+      count: Number(r.cnt) || 0,
+    })),
+    byTimezone: [], // timezone detection requires external API or area code mapping
+    total: Number(totalRow?.cnt) || 0,
+  };
+}
+
+// ─── Contact Dedup Across Lists ─────────────────────────────────────────────
+
+export async function findDuplicateContacts(listIds?: number[]) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const listFilter = listIds && listIds.length > 0
+    ? sql`WHERE c.listId IN (${sql.join(listIds.map(id => sql`${id}`), sql`, `)})`
+    : sql``;
+
+  const rows = await db.execute(sql`
+    SELECT 
+      c.phoneNumber,
+      COUNT(*) AS occurrences,
+      GROUP_CONCAT(DISTINCT c.listId) AS listIds,
+      GROUP_CONCAT(DISTINCT cl.name) AS listNames
+    FROM contacts c
+    LEFT JOIN contact_lists cl ON cl.id = c.listId
+    ${listFilter}
+    GROUP BY c.phoneNumber
+    HAVING COUNT(*) > 1
+    ORDER BY occurrences DESC
+    LIMIT 500
+  `) as any;
+
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+  return resultRows.map((r: any) => ({
+    phoneNumber: String(r.phoneNumber || ""),
+    occurrences: Number(r.occurrences) || 0,
+    listIds: String(r.listIds || "").split(",").map(Number).filter(Boolean),
+    listNames: String(r.listNames || "").split(",").filter(Boolean),
+  }));
+}
+
+export async function removeDuplicateContacts(listId: number, keepStrategy: "first" | "last" = "first") {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+
+  // Find duplicates within the list
+  const dupeRows = await db.execute(sql`
+    SELECT phoneNumber, MIN(id) AS firstId, MAX(id) AS lastId, COUNT(*) AS cnt
+    FROM contacts
+    WHERE listId = ${listId}
+    GROUP BY phoneNumber
+    HAVING COUNT(*) > 1
+  `) as any;
+
+  const resultRows = Array.isArray(dupeRows) ? (Array.isArray(dupeRows[0]) ? dupeRows[0] : dupeRows) : [];
+  let removedCount = 0;
+
+  for (const row of resultRows) {
+    const keepId = keepStrategy === "first" ? row.firstId : row.lastId;
+    const result = await db.delete(contacts).where(and(
+      eq(contacts.listId, listId),
+      eq(contacts.phoneNumber, row.phoneNumber),
+      sql`${contacts.id} != ${keepId}`
+    ));
+    removedCount += Number(row.cnt) - 1;
+  }
+
+  return { removedCount, duplicateGroups: resultRows.length };
+}
+
+// ─── Bridge Health Checks (Proactive) ───────────────────────────────────────
+
+export async function createBridgeHealthCheck(data: Omit<InsertBridgeHealthCheck, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(bridgeHealthChecks).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getBridgeHealthChecks(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(bridgeHealthChecks)
+    .orderBy(desc(bridgeHealthChecks.checkedAt))
+    .limit(limit);
+}
+
+export async function getBridgeHealthStats() {
+  const db = await getDb();
+  if (!db) return { totalChecks: 0, healthyChecks: 0, offlineChecks: 0, avgResponseTime: 0, uptimePercent: 0 };
+
+  const last24h = Date.now() - 24 * 60 * 60 * 1000;
+  const [stats] = await db.select({
+    totalChecks: count(),
+    healthyChecks: sql<number>`SUM(CASE WHEN ${bridgeHealthChecks.status} = 'healthy' THEN 1 ELSE 0 END)`,
+    offlineChecks: sql<number>`SUM(CASE WHEN ${bridgeHealthChecks.status} = 'offline' THEN 1 ELSE 0 END)`,
+    avgResponseTime: sql<number>`COALESCE(AVG(${bridgeHealthChecks.responseTimeMs}), 0)`,
+  }).from(bridgeHealthChecks).where(gte(bridgeHealthChecks.checkedAt, last24h));
+
+  const total = Number(stats?.totalChecks) || 0;
+  const healthy = Number(stats?.healthyChecks) || 0;
+
+  return {
+    totalChecks: total,
+    healthyChecks: healthy,
+    offlineChecks: Number(stats?.offlineChecks) || 0,
+    avgResponseTime: Math.round(Number(stats?.avgResponseTime) || 0),
+    uptimePercent: total > 0 ? Math.round((healthy / total) * 100) : 0,
+  };
 }

@@ -34,6 +34,7 @@ import Recordings from "./pages/Recordings";
 import VoiceAi from "./pages/VoiceAi";
 import AgentAssist from "./pages/AgentAssist";
 import AgentDashboard from "./pages/AgentDashboard";
+import CommandPalette from "./components/CommandPalette";
 
 function Router() {
   return (
@@ -88,6 +89,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
+          <CommandPalette />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

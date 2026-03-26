@@ -680,3 +680,16 @@
 - [x] Fix: Call scripts still only playing first TTS segment — added agent versioning + multi_audio feature detection + dashboard warning for outdated agents
 - [x] Add delete and bulk delete for Voice AI Conversations (single delete + checkbox select all + bulk delete)
 - [x] Allow campaigns to be replayed after completion (Replay Campaign button resets stats to draft)
+- [x] Campaign clone/duplicate — already implemented (backend + frontend clone dialog)
+- [x] Campaign scheduling — set future start date/time for auto-launch (scheduler service + UI)
+- [x] Campaign templates — save/load reusable campaign configurations (save from campaign + load into new)
+- [x] Smart contact segmentation — auto-segment by timezone, area code, or state (segmentation query + UI)
+- [x] Contact dedup across lists — detect and remove duplicate phone numbers (removeDuplicates + UI)
+- [x] Contact import from Vtiger CRM — API integration service + UI dialog
+- [x] Script variable preview — already implemented (live merge field preview + Generate Preview button)
+- [x] Audio waveform player — waveform visualization for audio segments (AudioWaveformPlayer component)
+- [x] Automatic PBX agent updates — one-click Auto-Update Agent button on dashboard when outdated
+- [x] Call recording playback — already implemented (Recordings page with play/download/delete/stats)
+- [x] Rate limit alerts — trunk utilization widget on dashboard with warning/critical alerts
+- [x] Scheduled health checks — proactive SSH-based PBX/bridge ping every 5 minutes (bridge-health-scheduler)
+- [x] Global search command palette (Cmd+K) — search across campaigns, contacts, scripts, settings

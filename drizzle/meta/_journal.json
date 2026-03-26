@@ -253,6 +253,20 @@
       "when": 1774472282154,
       "tag": "0035_freezing_nekra",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1774532849278,
+      "tag": "0036_medical_mandrill",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1774533150028,
+      "tag": "0037_flat_shatterstar",
+      "breakpoints": true
     }
   ]
 }

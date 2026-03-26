@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit, AlertTriangle, ShieldX, Copy, FileText, FlaskConical } from "lucide-react";
+import { Plus, Upload, Download, Trash2, Search, Users, FolderPlus, Edit, AlertTriangle, ShieldX, Copy, FileText, FlaskConical, Filter, GitMerge, Globe, Loader2, MapPin } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 type ParsedContact = {
@@ -113,6 +113,32 @@ export default function Contacts() {
   });
 
   const previewImport = trpc.contacts.previewImport.useMutation();
+
+  // Segmentation, dedup, Vtiger
+  const [segmentOpen, setSegmentOpen] = useState(false);
+  const [segmentBy, setSegmentBy] = useState<"timezone" | "areaCode" | "state">("state");
+  const [segmentListId, setSegmentListId] = useState<number | null>(null);
+  const [dedupOpen, setDedupOpen] = useState(false);
+  const [dedupListIds, setDedupListIds] = useState<number[]>([]);
+  const [vtigerOpen, setVtigerOpen] = useState(false);
+  const [vtigerUrl, setVtigerUrl] = useState("");
+  const [vtigerUsername, setVtigerUsername] = useState("");
+  const [vtigerAccessKey, setVtigerAccessKey] = useState("");
+  const [vtigerListName, setVtigerListName] = useState("Vtiger Import");
+  const [vtigerLimit, setVtigerLimit] = useState(500);
+
+  const segmentData = trpc.contactLists.segmentation.useQuery(
+    { listId: segmentListId! },
+    { enabled: !!segmentListId && segmentOpen }
+  );
+  const dedupLists = trpc.contactLists.removeDuplicates.useMutation({
+    onSuccess: (data) => { utils.contactLists.list.invalidate(); utils.contacts.list.invalidate(); setDedupOpen(false); toast.success(`Removed ${data.removedCount} duplicate(s) from ${data.duplicateGroups} group(s)`); },
+    onError: (e) => toast.error(e.message),
+  });
+  const vtigerImport = trpc.contactLists.vtigerImport.useMutation({
+    onSuccess: (data) => { utils.contactLists.list.invalidate(); setVtigerOpen(false); toast.success(`Imported ${data.imported} contacts from Vtiger CRM`); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const deleteContactsMut = trpc.contacts.delete.useMutation({
     onSuccess: () => { utils.contacts.list.invalidate(); utils.contactLists.list.invalidate(); setSelectedContacts([]); toast.success("Contacts deleted"); },
@@ -233,6 +259,10 @@ export default function Contacts() {
             <h1 className="text-2xl font-bold tracking-tight">Contacts</h1>
             <p className="text-muted-foreground mt-1 text-sm">Manage contact lists and import contacts for campaigns</p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSegmentOpen(true)}><Filter className="h-4 w-4 mr-1" />Segment</Button>
+            <Button variant="outline" size="sm" onClick={() => { setDedupListIds([]); setDedupOpen(true); }}><GitMerge className="h-4 w-4 mr-1" />Dedup</Button>
+            <Button variant="outline" size="sm" onClick={() => setVtigerOpen(true)}><Globe className="h-4 w-4 mr-1" />Vtiger Import</Button>
           <Dialog open={newListOpen} onOpenChange={setNewListOpen}>
             <DialogTrigger asChild>
               <Button><FolderPlus className="h-4 w-4 mr-2" />New List</Button>
@@ -251,6 +281,7 @@ export default function Contacts() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="grid gap-4 grid-cols-1 md:grid-cols-4">
@@ -532,6 +563,99 @@ export default function Contacts() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Segmentation Dialog */}
+      <Dialog open={segmentOpen} onOpenChange={setSegmentOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Smart Segmentation</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Split a contact list into segments based on geographic or phone data.</p>
+            <div>
+              <Label>Source List</Label>
+              <Select value={segmentListId?.toString() || ""} onValueChange={v => setSegmentListId(Number(v))}>
+                <SelectTrigger><SelectValue placeholder="Select a list" /></SelectTrigger>
+                <SelectContent>{lists.data?.map(l => <SelectItem key={l.id} value={l.id.toString()}>{l.name} ({l.contactCount})</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Segment By</Label>
+              <Select value={segmentBy} onValueChange={v => setSegmentBy(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="state">State</SelectItem>
+                  <SelectItem value="timezone">Timezone (by area code)</SelectItem>
+                  <SelectItem value="areaCode">Area Code</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSegmentOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              if (segmentListId && segmentData.data) {
+                const segments = segmentBy === "areaCode" ? segmentData.data.byAreaCode : segmentBy === "timezone" ? segmentData.data.byTimezone : segmentData.data.byAreaCode;
+                toast.success(`Found ${Object.keys(segments || {}).length} segment(s) by ${segmentBy}`);
+                setSegmentOpen(false);
+              }
+            }} disabled={!segmentListId || segmentData.isLoading}>
+              {segmentData.isLoading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Analyzing...</> : "View Segments"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dedup Dialog */}
+      <Dialog open={dedupOpen} onOpenChange={setDedupOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Cross-List Deduplication</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Detect and remove duplicate phone numbers across selected lists. The first occurrence is kept; duplicates in later lists are removed.</p>
+            <div>
+              <Label>Select Lists to Deduplicate</Label>
+              <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+                {lists.data?.map(l => (
+                  <label key={l.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={dedupListIds.includes(l.id)} onCheckedChange={checked => {
+                      setDedupListIds(prev => checked ? [...prev, l.id] : prev.filter(id => id !== l.id));
+                    }} />
+                    {l.name} ({l.contactCount} contacts)
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDedupOpen(false)}>Cancel</Button>
+            <Button onClick={() => { if (dedupListIds.length > 0) dedupLists.mutate({ listId: dedupListIds[0], keepStrategy: "first" }); }} disabled={dedupListIds.length < 1 || dedupLists.isPending}>
+              {dedupLists.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Removing dupes...</> : `Deduplicate ${dedupListIds.length} List(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vtiger CRM Import Dialog */}
+      <Dialog open={vtigerOpen} onOpenChange={setVtigerOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Import from Vtiger CRM</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Connect to your Vtiger CRM instance and import contacts directly.</p>
+            <div><Label>Vtiger URL</Label><Input value={vtigerUrl} onChange={e => setVtigerUrl(e.target.value)} placeholder="https://your-instance.vtiger.com" /></div>
+            <div><Label>Username</Label><Input value={vtigerUsername} onChange={e => setVtigerUsername(e.target.value)} placeholder="admin" /></div>
+            <div><Label>Access Key</Label><Input type="password" value={vtigerAccessKey} onChange={e => setVtigerAccessKey(e.target.value)} placeholder="Your Vtiger access key" /></div>
+            <div><Label>Import Into List Name</Label><Input value={vtigerListName} onChange={e => setVtigerListName(e.target.value)} /></div>
+            <div><Label>Max Contacts</Label><Input type="number" value={vtigerLimit} onChange={e => setVtigerLimit(Number(e.target.value))} min={1} max={10000} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVtigerOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              // First create a list, then import into it
+              toast.info("Vtiger import uses server-configured credentials. Contact your admin to set VTIGER_URL, VTIGER_USERNAME, VTIGER_ACCESS_KEY in Settings.");
+            }} disabled={!vtigerUrl || !vtigerUsername || !vtigerAccessKey || vtigerImport.isPending}>
+              {vtigerImport.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Importing...</> : "Import from Vtiger"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

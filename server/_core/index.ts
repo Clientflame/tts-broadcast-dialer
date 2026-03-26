@@ -86,6 +86,22 @@ async function startServer() {
     } catch (err) {
       console.error("[Startup] Health check scheduler failed:", err);
     }
+
+    // Start the campaign auto-launch scheduler
+    try {
+      const { startCampaignScheduler } = await import("../services/campaign-scheduler");
+      startCampaignScheduler();
+    } catch (err) {
+      console.error("[Startup] Campaign scheduler failed:", err);
+    }
+
+    // Start the bridge health check scheduler
+    try {
+      const { startBridgeHealthScheduler } = await import("../services/bridge-health-scheduler");
+      startBridgeHealthScheduler();
+    } catch (err) {
+      console.error("[Startup] Bridge health scheduler failed:", err);
+    }
   });
 }
 

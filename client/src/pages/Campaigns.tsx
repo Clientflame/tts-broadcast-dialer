@@ -968,6 +968,37 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Campaign scheduling
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleCampaignId, setScheduleCampaignId] = useState<number | null>(null);
+  const campaignSchedule = trpc.campaigns.getSchedule.useQuery({ campaignId: detailId! }, { enabled: !!detailId });
+
+  const scheduleCampaign = trpc.campaigns.schedule.useMutation({
+    onSuccess: () => { utils.campaigns.getSchedule.invalidate(); toast.success("Campaign scheduled for auto-launch"); setScheduleOpen(false); },
+    onError: (e) => toast.error(e.message),
+  });
+  const cancelSchedule = trpc.campaigns.cancelSchedule.useMutation({
+    onSuccess: () => { utils.campaigns.getSchedule.invalidate(); toast.success("Schedule cancelled"); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Campaign templates
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState("");
+  const [saveTemplateDesc, setSaveTemplateDesc] = useState("");
+  const [saveTemplateCampaignId, setSaveTemplateCampaignId] = useState<number | null>(null);
+  const campaignTemplatesList = trpc.campaignTemplates.list.useQuery();
+  const saveFromCampaign = trpc.campaignTemplates.saveFromCampaign.useMutation({
+    onSuccess: () => { utils.campaignTemplates.list.invalidate(); setTemplateDialogOpen(false); setSaveTemplateName(""); setSaveTemplateDesc(""); toast.success("Campaign saved as template"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteTemplate = trpc.campaignTemplates.delete.useMutation({
+    onSuccess: () => { utils.campaignTemplates.list.invalidate(); toast.success("Template deleted"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const readyAudioFiles = useMemo(() => audioFiles.data?.filter(f => f.status === "ready") || [], [audioFiles.data]);
 
   const completionRate = useMemo(() => {
@@ -1228,6 +1259,34 @@ export default function Campaigns() {
                   <Zap className="h-4 w-4 mr-1" />{forceResume.isPending ? "Resuming..." : "Force Resume"}
                 </Button>
               )}
+              {c.status === "draft" && (
+                <Button variant="outline" size="sm" className="text-indigo-600 border-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/30" onClick={() => {
+                  setScheduleCampaignId(c.id);
+                  const now = new Date();
+                  now.setHours(now.getHours() + 1, 0, 0, 0);
+                  setScheduleDate(now.toISOString().split('T')[0]);
+                  setScheduleTime(now.toTimeString().slice(0, 5));
+                  setScheduleOpen(true);
+                }}>
+                  <Clock className="h-4 w-4 mr-1" />Schedule
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="text-teal-600 border-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/30" onClick={() => {
+                setSaveTemplateCampaignId(c.id);
+                setSaveTemplateName(`${c.name} Template`);
+                setTemplateDialogOpen(true);
+              }}>
+                <Copy className="h-4 w-4 mr-1" />Save Template
+              </Button>
+              {campaignSchedule.data && (
+                <div className="flex items-center gap-2 text-sm text-indigo-600">
+                  <Clock className="h-3 w-3" />
+                  <span>Scheduled: {new Date(campaignSchedule.data.scheduledAt).toLocaleString()}</span>
+                  <Button variant="ghost" size="sm" className="h-6 px-2 text-destructive" onClick={() => cancelSchedule.mutate({ campaignId: c.id })}>
+                    <XCircle className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
               {(c.status === "draft" || c.status === "completed" || c.status === "cancelled") && (
                 <Button variant="ghost" className="text-destructive" onClick={() => { if (confirm("Delete this campaign?")) deleteCampaign.mutate({ id: c.id }); }}>
                   <Trash2 className="h-4 w-4" />
@@ -1466,6 +1525,60 @@ export default function Campaigns() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Schedule Dialog */}
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Schedule Campaign Launch</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">Set a date and time for this campaign to automatically start dialing.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Date</Label><Input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} /></div>
+              <div><Label>Time</Label><Input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScheduleOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              if (scheduleCampaignId && scheduleDate && scheduleTime) {
+                const scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`).getTime();
+                scheduleCampaign.mutate({ campaignId: scheduleCampaignId, scheduledAt });
+              }
+            }} disabled={!scheduleDate || !scheduleTime || scheduleCampaign.isPending}>
+              {scheduleCampaign.isPending ? "Scheduling..." : "Schedule Launch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Save Template Dialog */}
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Save Campaign as Template</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Template Name</Label><Input value={saveTemplateName} onChange={e => setSaveTemplateName(e.target.value)} /></div>
+            <div><Label>Description (optional)</Label><Input value={saveTemplateDesc} onChange={e => setSaveTemplateDesc(e.target.value)} placeholder="Describe this template..." /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTemplateDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => {
+              if (saveTemplateCampaignId && saveTemplateName) {
+                saveFromCampaign.mutate({ campaignId: saveTemplateCampaignId, name: saveTemplateName, description: saveTemplateDesc });
+              }
+            }} disabled={!saveTemplateName || saveFromCampaign.isPending}>
+              {saveFromCampaign.isPending ? "Saving..." : "Save Template"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Campaign Templates List */}
+      {campaignTemplatesList.data && campaignTemplatesList.data.length > 0 && !detailId && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <Button variant="outline" size="sm" className="shadow-lg" onClick={() => toast.info(`${campaignTemplatesList.data.length} template(s) available — use them when creating new campaigns`)}>
+            {campaignTemplatesList.data.length} Template(s) Saved
+          </Button>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

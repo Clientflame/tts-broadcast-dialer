@@ -251,77 +251,10 @@ function SegmentEditor({
 }
 
 // ─── Audio Preview Player ─────────────────────────────────────────────────────
+import AudioWaveformPlayer from "@/components/AudioWaveformPlayer";
+
 function MultiAudioPlayer({ urls }: { urls: string[] }) {
-  const [playing, setPlaying] = useState(false);
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, []);
-
-  const play = () => {
-    if (urls.length === 0) return;
-    setCurrentIdx(0);
-    setPlaying(true);
-    playUrl(urls[0], 0);
-  };
-
-  const playUrl = (url: string, idx: number) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onended = () => {
-      const next = idx + 1;
-      if (next < urls.length) {
-        setCurrentIdx(next);
-        playUrl(urls[next], next);
-      } else {
-        setPlaying(false);
-        setCurrentIdx(0);
-      }
-    };
-    audio.onerror = () => {
-      toast.error(`Failed to play segment ${idx + 1}`);
-      setPlaying(false);
-    };
-    audio.play();
-  };
-
-  const stop = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-    setPlaying(false);
-    setCurrentIdx(0);
-  };
-
-  return (
-    <div className="flex items-center gap-2">
-      {playing ? (
-        <Button variant="outline" size="sm" onClick={stop}>
-          <Pause className="h-4 w-4 mr-1" /> Stop
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" onClick={play} disabled={urls.length === 0}>
-          <Play className="h-4 w-4 mr-1" /> Play All
-        </Button>
-      )}
-      {playing && (
-        <span className="text-xs text-muted-foreground">
-          Playing segment {currentIdx + 1} of {urls.length}...
-        </span>
-      )}
-    </div>
-  );
+  return <AudioWaveformPlayer urls={urls} />;
 }
 
 // ─── Main Scripts Page ────────────────────────────────────────────────────────

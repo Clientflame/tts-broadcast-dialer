@@ -328,6 +328,52 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.bulkDelete", resource: "contactList", details: { deleted, ids: input.ids } });
       return { deleted };
     }),
+    // ─── Contact Segmentation ──────────────────────────────────────────
+    segmentation: protectedProcedure.input(z.object({ listId: z.number() })).query(async ({ input }) => {
+      return db.getContactSegmentation(input.listId);
+    }),
+    // ─── Contact Dedup ─────────────────────────────────────────────────
+    findDuplicates: protectedProcedure.input(z.object({
+      listIds: z.array(z.number()).optional(),
+    })).query(async ({ input }) => {
+      return db.findDuplicateContacts(input.listIds);
+    }),
+    removeDuplicates: protectedProcedure.input(z.object({
+      listId: z.number(),
+      keepStrategy: z.enum(["first", "last"]).default("first"),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.removeDuplicateContacts(input.listId, input.keepStrategy);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.removeDuplicates", resource: "contactList", resourceId: input.listId, details: result });
+      return result;
+    }),
+    // ─── Vtiger CRM Import ─────────────────────────────────────────────
+    vtigerTest: protectedProcedure.mutation(async () => {
+      const { testVtigerConnection } = await import("./services/vtiger-crm");
+      return testVtigerConnection();
+    }),
+    vtigerContacts: protectedProcedure.input(z.object({
+      limit: z.number().default(100),
+      offset: z.number().default(0),
+      query: z.string().optional(),
+    })).query(async ({ input }) => {
+      const { fetchVtigerContacts } = await import("./services/vtiger-crm");
+      return fetchVtigerContacts(input);
+    }),
+    vtigerImport: protectedProcedure.input(z.object({
+      listId: z.number(),
+      limit: z.number().default(10000),
+      query: z.string().optional(),
+      phoneField: z.enum(["phone", "mobile", "both"]).default("both"),
+    })).mutation(async ({ ctx, input }) => {
+      const { importVtigerContacts } = await import("./services/vtiger-crm");
+      const result = await importVtigerContacts(input.listId, ctx.user.id, { limit: input.limit, query: input.query, phoneField: input.phoneField });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "contactList.vtigerImport", resource: "contactList", resourceId: input.listId, details: result });
+      return result;
+    }),
+    vtigerCount: protectedProcedure.input(z.object({ query: z.string().optional() })).query(async ({ input }) => {
+      const { getVtigerContactCount } = await import("./services/vtiger-crm");
+      return getVtigerContactCount(input.query);
+    }),
   }),
 
   contacts: router({
@@ -696,6 +742,109 @@ export const appRouter = router({
       const result = await db.cloneCampaign(input.id, input.name);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clone", resource: "campaign", resourceId: result.id, details: { clonedFrom: input.id } });
       return result;
+    }),
+    // ─── Campaign Scheduling ──────────────────────────────────────────
+    schedule: protectedProcedure.input(z.object({
+      campaignId: z.number(),
+      scheduledAt: z.number(), // Unix timestamp ms
+    })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.campaignId);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      if (campaign.status !== "draft" && campaign.status !== "paused") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only draft or paused campaigns can be scheduled" });
+      }
+      if (input.scheduledAt <= Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Scheduled time must be in the future" });
+      }
+      // Cancel any existing pending schedule
+      await db.cancelCampaignSchedule(input.campaignId);
+      const result = await db.createCampaignSchedule({
+        campaignId: input.campaignId,
+        scheduledAt: input.scheduledAt,
+        userId: ctx.user.id,
+        status: "pending",
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.scheduled", resource: "campaign", resourceId: input.campaignId, details: { scheduledAt: input.scheduledAt } });
+      return { id: result.id, scheduledAt: input.scheduledAt };
+    }),
+    cancelSchedule: protectedProcedure.input(z.object({ campaignId: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.cancelCampaignSchedule(input.campaignId);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.scheduleCancelled", resource: "campaign", resourceId: input.campaignId });
+      return { success: true };
+    }),
+    getSchedule: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
+      return db.getCampaignSchedule(input.campaignId) ?? null;
+    }),
+    scheduleHistory: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
+      return db.getCampaignScheduleHistory(input.campaignId);
+    }),
+  }),
+
+  // ─── Campaign Templates ──────────────────────────────────────────────
+  campaignTemplates: router({
+    list: protectedProcedure.query(async () => {
+      return db.getCampaignTemplates();
+    }),
+    get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const tpl = await db.getCampaignTemplate(input.id);
+      if (!tpl) throw new TRPCError({ code: "NOT_FOUND" });
+      return tpl;
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      config: z.record(z.string(), z.any()), // JSON campaign config object
+    })).mutation(async ({ ctx, input }) => {
+      return db.createCampaignTemplate({
+        name: input.name,
+        description: input.description || null,
+        config: input.config as any,
+        userId: ctx.user.id,
+      });
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      config: z.record(z.string(), z.any()).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.updateCampaignTemplate(input.id, {
+        ...(input.name && { name: input.name }),
+        ...(input.description !== undefined && { description: input.description }),
+        ...(input.config && { config: input.config as any }),
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await db.deleteCampaignTemplate(input.id);
+      return { success: true };
+    }),
+    saveFromCampaign: protectedProcedure.input(z.object({
+      campaignId: z.number(),
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.campaignId);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      const config = {
+        scriptId: campaign.scriptId,
+        listId: campaign.contactListId,
+        callerIdStrategy: campaign.callerIdNumber || undefined,
+        retryAttempts: campaign.retryAttempts,
+        retryDelay: campaign.retryDelay,
+        ivrEnabled: campaign.ivrEnabled,
+        ivrConfig: campaign.ivrOptions,
+        voiceAiEnabled: campaign.routingMode === "voice_ai" ? 1 : 0,
+        voiceAiPersonaId: campaign.voiceAiPromptId,
+        usePersonalizedTTS: campaign.usePersonalizedTTS,
+        ttsSpeed: campaign.ttsSpeed,
+      };
+      return db.createCampaignTemplate({
+        name: input.name,
+        description: input.description || `Saved from campaign "${campaign.name}"`,
+        config: config as any,
+        userId: ctx.user.id,
+      });
     }),
   }),
 
@@ -2473,6 +2622,180 @@ Return ONLY the message text, nothing else.`;
     /** Mark onboarding as dismissed (stores in localStorage on frontend) */
     dismiss: protectedProcedure.mutation(async () => {
       return { success: true };
+    }),
+  }),
+
+  // ─── Bridge Health Checks ──────────────────────────────────────────────
+  bridgeHealth: router({
+    history: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(500).default(100),
+    }).optional()).query(async ({ input }) => {
+      return db.getBridgeHealthChecks(input?.limit ?? 100);
+    }),
+    stats: protectedProcedure.query(async () => {
+      return db.getBridgeHealthStats();
+    }),
+    runCheck: adminProcedure.mutation(async () => {
+      // Trigger a manual health check
+      const { Client: SSHClient } = await import("ssh2");
+      const host = process.env.FREEPBX_HOST;
+      const sshUser = process.env.FREEPBX_SSH_USER;
+      const sshPass = process.env.FREEPBX_SSH_PASSWORD;
+      if (!host || !sshUser || !sshPass) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "SSH credentials not configured" });
+      }
+      const startTime = Date.now();
+      try {
+        const result = await new Promise<{ agentRunning: boolean; bridgeRunning: boolean; output: string }>((resolve, reject) => {
+          const conn = new SSHClient();
+          let output = "";
+          conn.on("ready", () => {
+            conn.exec(`systemctl is-active pbx-agent 2>/dev/null; echo "---"; systemctl is-active voice-ai-bridge 2>/dev/null`, (err, stream) => {
+              if (err) { conn.end(); reject(err); return; }
+              stream.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.on("close", () => {
+                conn.end();
+                const parts = output.trim().split("---").map(s => s.trim());
+                resolve({ agentRunning: parts[0] === "active", bridgeRunning: (parts[1] || "") === "active", output: output.trim() });
+              });
+            });
+          });
+          conn.on("error", reject);
+          conn.connect({ host, port: 22, username: sshUser, password: sshPass, readyTimeout: 10000 });
+          setTimeout(() => { conn.end(); reject(new Error("SSH timeout")); }, 15000);
+        });
+        const responseTime = Date.now() - startTime;
+        const status = result.agentRunning && result.bridgeRunning ? "healthy" : "offline";
+        await db.createBridgeHealthCheck({ checkType: "manual", status, responseTimeMs: responseTime, agentId: host, details: JSON.stringify(result), checkedAt: Date.now() });
+        return { status, responseTimeMs: responseTime, agentRunning: result.agentRunning, bridgeRunning: result.bridgeRunning };
+      } catch (err: any) {
+        const responseTime = Date.now() - startTime;
+        await db.createBridgeHealthCheck({ checkType: "manual", status: "error", responseTimeMs: responseTime, agentId: host, errorMessage: err.message, checkedAt: Date.now() });
+        return { status: "error" as const, responseTimeMs: responseTime, error: err.message };
+      }
+    }),
+  }),
+
+  // ─── Global Search ──────────────────────────────────────────────────────
+  globalSearch: router({
+    search: protectedProcedure.input(z.object({
+      query: z.string().min(1).max(200),
+      limit: z.number().min(1).max(50).default(20),
+    })).query(async ({ input }) => {
+      const q = `%${input.query}%`;
+      const dbInst = await db.getDb();
+      if (!dbInst) return { results: [] };
+      const { campaigns, contactLists, callScripts, callerIds, voiceAiPrompts } = await import("../drizzle/schema");
+      const { like, or } = await import("drizzle-orm");
+
+      const [campaignResults, listResults, scriptResults, callerIdResults, promptResults] = await Promise.all([
+        dbInst.select({ id: campaigns.id, name: campaigns.name, type: campaigns.status }).from(campaigns).where(or(like(campaigns.name, q), like(campaigns.description, q))).limit(input.limit),
+        dbInst.select({ id: contactLists.id, name: contactLists.name }).from(contactLists).where(like(contactLists.name, q)).limit(input.limit),
+        dbInst.select({ id: callScripts.id, name: callScripts.name }).from(callScripts).where(or(like(callScripts.name, q), like(callScripts.description, q))).limit(input.limit),
+        dbInst.select({ id: callerIds.id, name: callerIds.phoneNumber }).from(callerIds).where(or(like(callerIds.phoneNumber, q), like(callerIds.label, q))).limit(input.limit),
+        dbInst.select({ id: voiceAiPrompts.id, name: voiceAiPrompts.name }).from(voiceAiPrompts).where(or(like(voiceAiPrompts.name, q), like(voiceAiPrompts.description, q))).limit(input.limit),
+      ]);
+
+      const results = [
+        ...campaignResults.map(r => ({ id: r.id, name: r.name, category: "campaign" as const, detail: r.type, url: `/campaigns/${r.id}` })),
+        ...listResults.map(r => ({ id: r.id, name: r.name, category: "contactList" as const, url: `/contact-lists/${r.id}` })),
+        ...scriptResults.map(r => ({ id: r.id, name: r.name, category: "script" as const, url: `/scripts` })),
+        ...callerIdResults.map(r => ({ id: r.id, name: r.name, category: "callerId" as const, url: `/caller-ids` })),
+        ...promptResults.map(r => ({ id: r.id, name: r.name, category: "voiceAiPrompt" as const, url: `/voice-ai` })),
+      ];
+
+      return { results: results.slice(0, input.limit) };
+    }),
+  }),
+
+  // ─── PBX Agent Auto-Update ────────────────────────────────────────────
+  agentAutoUpdate: router({
+    checkVersion: protectedProcedure.query(async () => {
+      const dbInst = await db.getDb();
+      if (!dbInst) return { currentVersion: null, latestVersion: "2.1.0", needsUpdate: false };
+      const { pbxAgents } = await import("../drizzle/schema");
+      const { desc } = await import("drizzle-orm");
+      const agents = await dbInst.select().from(pbxAgents).orderBy(desc(pbxAgents.lastHeartbeat)).limit(1);
+      const agent = agents[0];
+      const currentVersion = agent?.capabilities ? (JSON.parse(agent.capabilities as unknown as string)?.agentVersion || null) : null;
+      const latestVersion = "2.1.0";
+      return {
+        currentVersion,
+        latestVersion,
+        needsUpdate: currentVersion !== null && currentVersion !== latestVersion,
+        agentName: agent?.name || null,
+        agentId: agent?.id || null,
+      };
+    }),
+    update: adminProcedure.mutation(async ({ ctx }) => {
+      const { Client: SSHClient } = await import("ssh2");
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPass = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      if (!host || !sshUser || !sshPass) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "SSH credentials not configured" });
+      }
+      return new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => { conn.end(); resolve({ success: false, error: "SSH timeout (60s)" }); }, 60000);
+        conn.on("ready", () => {
+          // Stop the agent, pull latest code, restart
+          const cmd = `cd /opt/pbx-agent && systemctl stop pbx-agent 2>/dev/null; curl -sL "https://${host}:443/api/pbx/installer" -o /tmp/pbx-update.sh 2>/dev/null; bash /tmp/pbx-update.sh 2>&1 || (systemctl restart pbx-agent 2>&1); echo "UPDATE_DONE"`;
+          conn.exec(cmd, (err, stream) => {
+            if (err) { clearTimeout(timeout); conn.end(); resolve({ success: false, error: err.message }); return; }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", (code: number) => {
+              clearTimeout(timeout);
+              conn.end();
+              resolve({ success: code === 0 || code === null || output.includes("UPDATE_DONE"), output: output.trim().slice(0, 3000) });
+            });
+          });
+        });
+        conn.on("error", (err: Error) => { clearTimeout(timeout); resolve({ success: false, error: err.message }); });
+        conn.connect({ host, port: 22, username: sshUser, password: sshPass, readyTimeout: 15000 });
+      }).then(async (result) => {
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "agent.autoUpdate", resource: "pbx-agent", details: { success: result.success } });
+        return result;
+      });
+    }),
+  }),
+
+
+  // ─── Rate Limit Alerts ───────────────────────────────────────────────
+  rateLimits: router({
+    status: protectedProcedure.query(async () => {
+      const dbInst = await db.getDb();
+      if (!dbInst) return { activeCalls: 0, maxConcurrent: 50, cpsLimit: 5, callsLastMinute: 0, callsLastHour: 0, trunkCapacity: 100, utilizationPct: 0, alerts: [] };
+      const { callQueue, pbxAgents } = await import("../drizzle/schema");
+      const { eq, count, gte, and } = await import("drizzle-orm");
+      const now = Date.now();
+      const oneMinAgo = now - 60000;
+      const oneHourAgo = now - 3600000;
+
+      const [activeResult, agents, minuteResult, hourResult] = await Promise.all([
+        dbInst.select({ count: count() }).from(callQueue).where(eq(callQueue.status, "in_progress")),
+        dbInst.select().from(pbxAgents),
+        dbInst.select({ count: count() }).from(callQueue).where(and(gte(callQueue.createdAt, new Date(oneMinAgo)))),
+        dbInst.select({ count: count() }).from(callQueue).where(and(gte(callQueue.createdAt, new Date(oneHourAgo)))),
+      ]);
+
+      const activeCalls = activeResult[0]?.count ?? 0;
+      const totalMaxConcurrent = agents.reduce((sum, a) => sum + (a.maxCalls || 5), 0);
+      const totalCps = agents.reduce((sum, a) => sum + ((a as any).cpsLimit || 5), 0);
+      const trunkCapacity = Math.max(totalMaxConcurrent, 100);
+      const callsLastMinute = minuteResult[0]?.count ?? 0;
+      const callsLastHour = hourResult[0]?.count ?? 0;
+      const utilizationPct = trunkCapacity > 0 ? Math.round((activeCalls / trunkCapacity) * 100) : 0;
+
+      const alerts: { level: "warning" | "critical"; message: string }[] = [];
+      if (utilizationPct >= 90) alerts.push({ level: "critical", message: `Trunk utilization at ${utilizationPct}% (${activeCalls}/${trunkCapacity})` });
+      else if (utilizationPct >= 70) alerts.push({ level: "warning", message: `Trunk utilization at ${utilizationPct}% (${activeCalls}/${trunkCapacity})` });
+      if (callsLastMinute > totalCps * 50) alerts.push({ level: "warning", message: `High call volume: ${callsLastMinute} calls in last minute` });
+
+      return { activeCalls, maxConcurrent: totalMaxConcurrent, cpsLimit: totalCps, callsLastMinute, callsLastHour, trunkCapacity, utilizationPct, alerts };
     }),
   }),
 });
