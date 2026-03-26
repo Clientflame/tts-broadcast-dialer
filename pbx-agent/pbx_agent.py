@@ -23,6 +23,10 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
+# ─── Version ────────────────────────────────────────────────────────────────
+AGENT_VERSION = "1.5.0"  # Bump this on every agent update
+AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer"]
+
 # ─── Configuration ───────────────────────────────────────────────────────────
 CONFIG = {
     "api_url": os.environ.get("PBX_AGENT_API_URL", ""),  # e.g. https://your-app.manus.space/api/pbx
@@ -968,6 +972,8 @@ def heartbeat_loop():
                 current_active = len(active_calls)
             resp = api_request("heartbeat", method="POST", data={
                 "activeCalls": current_active,
+                "agentVersion": AGENT_VERSION,
+                "features": AGENT_FEATURES,
             })
             if resp:
                 consecutive_failures = 0
@@ -984,7 +990,7 @@ def heartbeat_loop():
 # ─── Main Loop ───────────────────────────────────────────────────────────────
 def main():
     log.info("=" * 60)
-    log.info("PBX Agent starting")
+    log.info(f"PBX Agent v{AGENT_VERSION} starting")
     log.info(f"API URL: {CONFIG['api_url']}")
     log.info(f"AMI: {CONFIG['ami_host']}:{CONFIG['ami_port']}")
     log.info(f"Max concurrent: {CONFIG['max_concurrent']}")

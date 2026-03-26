@@ -334,11 +334,19 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
     const agent = (req as any).pbxAgent;
     // Accept capabilities from PBX agent (e.g., voiceAiBridge: true)
     const capabilities = req.body.capabilities || undefined;
-    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, capabilities);
+    // Store agent version and features if provided
+    const agentVersion = req.body.agentVersion || null;
+    const agentFeatures = req.body.features || null;
+    const updatedCapabilities = {
+      ...capabilities,
+      ...(agentVersion ? { agentVersion } : {}),
+      ...(agentFeatures ? { agentFeatures } : {}),
+    };
+    await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, Object.keys(updatedCapabilities).length > 0 ? updatedCapabilities : capabilities);
     // Attempt auto-throttle ramp-up on each heartbeat
     await attemptRampUp(agent.agentId);
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
-    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax });
+    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.5.0" });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }

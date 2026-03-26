@@ -202,6 +202,12 @@ export const appRouter = router({
         if (!a.lastHeartbeat) return false;
         return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
+      // Check agent versions
+      const REQUIRED_VERSION = "1.5.0";
+      const outdatedAgents = onlineAgents.filter((a: any) => {
+        const caps = a.capabilities as any;
+        return !caps?.agentVersion || caps.agentVersion < REQUIRED_VERSION;
+      });
       return {
         connected: onlineAgents.length > 0,
         agents: agents.length,
@@ -209,6 +215,13 @@ export const appRouter = router({
         message: onlineAgents.length > 0
           ? `${onlineAgents.length} PBX agent(s) online`
           : "No PBX agents online",
+        requiredVersion: REQUIRED_VERSION,
+        outdatedAgents: outdatedAgents.length,
+        agentVersions: onlineAgents.map((a: any) => ({
+          name: a.name,
+          version: (a.capabilities as any)?.agentVersion || "unknown",
+          hasMultiSegment: ((a.capabilities as any)?.agentFeatures || []).includes("multi_segment_audio"),
+        })),
       };
     }),
     activeCampaigns: protectedProcedure.query(async () => {
@@ -622,6 +635,31 @@ export const appRouter = router({
       if (campaign.status !== "cancelled") throw new TRPCError({ code: "BAD_REQUEST", message: "Only cancelled campaigns can be reactivated" });
       await db.updateCampaign(input.id, { status: "draft" });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.reactivate", resource: "campaign", resourceId: input.id });
+      return { success: true };
+    }),
+    replay: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      if (campaign.status !== "completed" && campaign.status !== "cancelled") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Only completed or cancelled campaigns can be replayed" });
+      }
+      // Reset campaign stats and set to draft
+      await db.updateCampaign(input.id, {
+        status: "draft",
+        completedCalls: 0,
+        answeredCalls: 0,
+        failedCalls: 0,
+        startedAt: null,
+        completedAt: null,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "campaign.replay",
+        resource: "campaign",
+        resourceId: input.id,
+        details: { previousStatus: campaign.status },
+      });
       return { success: true };
     }),
     forceResume: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {

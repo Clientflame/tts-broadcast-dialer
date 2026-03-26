@@ -677,3 +677,6 @@
 - [x] Script preview on hover — tooltip/popover showing first few words of each segment when hovering over script row
 - [x] Script version history — track edits over time with schema, DB helpers, and revert capability
 - [x] Script performance metrics — answer rate, talk time, and call stats per script from call_logs
+- [x] Fix: Call scripts still only playing first TTS segment — added agent versioning + multi_audio feature detection + dashboard warning for outdated agents
+- [x] Add delete and bulk delete for Voice AI Conversations (single delete + checkbox select all + bulk delete)
+- [x] Allow campaigns to be replayed after completion (Replay Campaign button resets stats to draft)

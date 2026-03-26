@@ -998,6 +998,38 @@ export default function Home() {
                   {amiStatus.data?.connected ? "Connected" : "Disconnected"}
                 </Badge>
               </div>
+              {/* Agent version info */}
+              {amiStatus.data?.agentVersions && amiStatus.data.agentVersions.length > 0 && (
+                <div className="space-y-1">
+                  {amiStatus.data.agentVersions.map((av: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">{av.name || `Agent ${i+1}`}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono">v{av.version}</span>
+                        {av.version !== "unknown" && av.version >= (amiStatus.data?.requiredVersion || "1.5.0") ? (
+                          <CheckCircle2 className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <AlertTriangle className="h-3 w-3 text-amber-500" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(amiStatus.data?.outdatedAgents ?? 0) > 0 && (
+                <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs font-medium text-amber-600">Agent Update Required</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {amiStatus.data?.outdatedAgents} agent(s) need updating to v{amiStatus.data?.requiredVersion} for multi-segment script support.
+                        Use the Reinstall/Update button in System Health.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
               <Button variant="outline" size="sm" className="w-full mt-2" disabled={amiStatus.isFetching} onClick={() => { amiStatus.refetch(); toast.info("Refreshing status..."); }}>
                 <RefreshCw className={`h-3.5 w-3.5 mr-2 ${amiStatus.isFetching ? "animate-spin" : ""}`} />Refresh Status
               </Button>

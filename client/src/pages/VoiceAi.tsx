@@ -100,12 +100,29 @@ export default function VoiceAi() {
   const [editingPromptId, setEditingPromptId] = useState<number | null>(null);
   const [form, setForm] = useState<PromptForm>(DEFAULT_PROMPT);
   const [expandedConvo, setExpandedConvo] = useState<number | null>(null);
+  const [selectedConvos, setSelectedConvos] = useState<Set<number>>(new Set());
+  const [selectAllConvos, setSelectAllConvos] = useState(false);
 
   // tRPC queries
   const prompts = trpc.voiceAi.listPrompts.useQuery();
   const conversations = trpc.voiceAi.listConversations.useQuery({ limit: 50 });
   const analytics = trpc.voiceAi.getStats.useQuery();
   const utils = trpc.useUtils();
+
+  const deleteConvo = trpc.voiceAi.deleteConversation.useMutation({
+    onSuccess: () => { utils.voiceAi.listConversations.invalidate(); utils.voiceAi.getStats.invalidate(); toast.success("Conversation deleted"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const bulkDeleteConvos = trpc.voiceAi.bulkDeleteConversations.useMutation({
+    onSuccess: (r) => {
+      utils.voiceAi.listConversations.invalidate();
+      utils.voiceAi.getStats.invalidate();
+      setSelectedConvos(new Set());
+      setSelectAllConvos(false);
+      toast.success(`${r.deleted} conversation(s) deleted`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createPrompt = trpc.voiceAi.createPrompt.useMutation({
     onSuccess: () => { utils.voiceAi.listPrompts.invalidate(); setPromptDialogOpen(false); toast.success("Prompt created"); },
@@ -347,9 +364,29 @@ export default function VoiceAi() {
 
           {/* ─── Conversations Tab ─── */}
           <TabsContent value="conversations" className="mt-4">
-            <p className="text-sm text-muted-foreground mb-4">
-              Review AI conversation transcripts, sentiment analysis, and call outcomes.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-muted-foreground">
+                Review AI conversation transcripts, sentiment analysis, and call outcomes.
+              </p>
+              {selectedConvos.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">{selectedConvos.size} selected</Badge>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={bulkDeleteConvos.isPending}
+                    onClick={() => {
+                      if (confirm(`Delete ${selectedConvos.size} conversation(s)? This cannot be undone.`)) {
+                        bulkDeleteConvos.mutate({ ids: Array.from(selectedConvos) });
+                      }
+                    }}
+                  >
+                    {bulkDeleteConvos.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
+                    Delete Selected
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {conversations.isLoading ? (
               <div className="flex items-center justify-center py-12">
@@ -365,11 +402,42 @@ export default function VoiceAi() {
               </Card>
             ) : (
               <div className="space-y-3">
+                {/* Select all checkbox */}
+                <div className="flex items-center gap-3 px-1">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-border"
+                    checked={selectAllConvos && selectedConvos.size === (conversations.data?.length ?? 0)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectAllConvos(true);
+                        setSelectedConvos(new Set((conversations.data || []).map((c: any) => c.id)));
+                      } else {
+                        setSelectAllConvos(false);
+                        setSelectedConvos(new Set());
+                      }
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">Select all ({conversations.data?.length ?? 0})</span>
+                </div>
                 {conversations.data.map((c: any) => (
-                  <Card key={c.id} className="cursor-pointer" onClick={() => setExpandedConvo(expandedConvo === c.id ? null : c.id)}>
+                  <Card key={c.id} className={`cursor-pointer transition-colors ${selectedConvos.has(c.id) ? "border-primary/50 bg-primary/5" : ""}`} onClick={() => setExpandedConvo(expandedConvo === c.id ? null : c.id)}>
                     <CardContent className="pt-3 pb-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-border flex-shrink-0"
+                            checked={selectedConvos.has(c.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              const next = new Set(selectedConvos);
+                              if (e.target.checked) next.add(c.id); else next.delete(c.id);
+                              setSelectedConvos(next);
+                              setSelectAllConvos(next.size === (conversations.data?.length ?? 0));
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
                           <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
                             c.outcome === "success" ? "bg-emerald-500/10 text-emerald-500" :
                             c.outcome === "transferred" ? "bg-blue-500/10 text-blue-500" :
@@ -397,7 +465,23 @@ export default function VoiceAi() {
                             </div>
                           </div>
                         </div>
-                        {expandedConvo === c.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            disabled={deleteConvo.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm("Delete this conversation?")) {
+                                deleteConvo.mutate({ id: c.id });
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                          {expandedConvo === c.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </div>
                       </div>
 
                       {/* Expanded Transcript */}

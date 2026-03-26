@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -932,6 +932,11 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const replayCampaign = trpc.campaigns.replay.useMutation({
+    onSuccess: () => { utils.campaigns.list.invalidate(); utils.campaigns.get.invalidate(); utils.campaigns.stats.invalidate(); utils.dashboard.stats.invalidate(); toast.success("Campaign reset for replay — set to draft. Click Start to begin dialing."); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const deleteCampaign = trpc.campaigns.delete.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setDetailId(null); toast.success("Campaign deleted"); },
     onError: (e) => toast.error(e.message),
@@ -1198,6 +1203,20 @@ export default function Campaigns() {
               {c.status === "cancelled" && (
                 <Button variant="outline" onClick={() => reactivateCampaign.mutate({ id: c.id })} disabled={reactivateCampaign.isPending}>
                   <RotateCcw className="h-4 w-4 mr-2" />{reactivateCampaign.isPending ? "Reactivating..." : "Reactivate"}
+                </Button>
+              )}
+              {(c.status === "completed" || c.status === "cancelled") && (
+                <Button
+                  variant="outline"
+                  className="text-primary border-primary/30 hover:bg-primary/10"
+                  onClick={() => {
+                    if (confirm("Replay this campaign?\n\nThis will reset all call stats and set the campaign back to draft. You can then click Start to re-dial all contacts.\n\nPrevious call logs will be preserved for reporting.")) {
+                      replayCampaign.mutate({ id: c.id });
+                    }
+                  }}
+                  disabled={replayCampaign.isPending}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />{replayCampaign.isPending ? "Resetting..." : "Replay Campaign"}
                 </Button>
               )}
               {(c.status === "running" || c.status === "paused") && (

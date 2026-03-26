@@ -169,6 +169,21 @@ export const voiceAiRouter = router({
       return conv;
     }),
 
+  // ─── Delete Conversation ───────────────────────────────────────────
+  deleteConversation: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.deleteVoiceAiConversation(input.id);
+      return { success: true };
+    }),
+
+  bulkDeleteConversations: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1).max(10000) }))
+    .mutation(async ({ ctx, input }) => {
+      const deleted = await db.bulkDeleteVoiceAiConversations(input.ids);
+      return { success: true, deleted };
+    }),
+
   // ─── Analytics ──────────────────────────────────────────────────────
   getStats: protectedProcedure.query(async ({ ctx }) => {
     return db.getVoiceAiStats();

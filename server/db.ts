@@ -2604,6 +2604,20 @@ export async function updateVoiceAiConversation(id: number, data: Partial<Insert
   await db.update(voiceAiConversations).set(data).where(eq(voiceAiConversations.id, id));
 }
 
+export async function deleteVoiceAiConversation(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(voiceAiConversations).where(eq(voiceAiConversations.id, id));
+}
+
+export async function bulkDeleteVoiceAiConversations(ids: number[]) {
+  const db = await getDb();
+  if (!db) return 0;
+  if (ids.length === 0) return 0;
+  const result = await db.delete(voiceAiConversations).where(inArray(voiceAiConversations.id, ids));
+  return result[0]?.affectedRows ?? ids.length;
+}
+
 export async function getVoiceAiStats() {
   const db = await getDb();
   if (!db) return null;
