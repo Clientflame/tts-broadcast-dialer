@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray, notInArray, count, gte } from "drizzle-orm";
+import { eq, ne, and, desc, sql, inArray, notInArray, count, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -2048,6 +2048,7 @@ export async function getRecentCallActivity(limit = 50) {
   })
     .from(callQueue)
     .leftJoin(campaigns, eq(callQueue.campaignId, campaigns.id))
+    .where(ne(callQueue.audioName, "health-check"))
     .orderBy(desc(callQueue.updatedAt))
     .limit(limit);
 

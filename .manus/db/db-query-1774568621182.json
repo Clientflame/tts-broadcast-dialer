@@ -1,0 +1,210 @@
+{
+  "query": "SELECT id, phoneNumber, status, result, callerIdStr, campaignId, audioName, createdAt FROM call_queue WHERE phoneNumber LIKE '%*43%' OR phoneNumber LIKE '%\\\\*43%' ORDER BY updatedAt DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, phoneNumber, status, result, callerIdStr, campaignId, audioName, createdAt FROM call_queue WHERE phoneNumber LIKE '%*43%' OR phoneNumber LIKE '%\\\\*43%' ORDER BY updatedAt DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "120008",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254117",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 23:33:21"
+    },
+    {
+      "id": "120007",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254116",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 23:33:21"
+    },
+    {
+      "id": "120006",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254115",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 23:33:21"
+    },
+    {
+      "id": "120005",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254113",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 23:33:21"
+    },
+    {
+      "id": "120004",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254117",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 22:32:43"
+    },
+    {
+      "id": "120003",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254116",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 22:32:43"
+    },
+    {
+      "id": "120002",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254115",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 22:32:43"
+    },
+    {
+      "id": "120001",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254113",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 22:32:43"
+    },
+    {
+      "id": "90169",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254117",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 21:23:25"
+    },
+    {
+      "id": "90168",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254116",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 21:23:25"
+    },
+    {
+      "id": "90167",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254115",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 21:23:25"
+    },
+    {
+      "id": "90166",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254113",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 21:23:25"
+    },
+    {
+      "id": "90158",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254115",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90157",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254116",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90156",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254117",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90155",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "8339254113",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90154",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "5558394033",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90153",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "6668394069",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90152",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "6678394069",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    },
+    {
+      "id": "90151",
+      "phoneNumber": "*43",
+      "status": "completed",
+      "result": "answered",
+      "callerIdStr": "9508395419",
+      "campaignId": "0",
+      "audioName": "health-check",
+      "createdAt": "2026-03-26 20:22:46"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphoneNumber\tstatus\tresult\tcallerIdStr\tcampaignId\taudioName\tcreatedAt\n120008\t*43\tcompleted\tanswered\t8339254117\t0\thealth-check\t2026-03-26 23:33:21\n120007\t*43\tcompleted\tanswered\t8339254116\t0\thealth-check\t2026-03-26 23:33:21\n120006\t*43\tcompleted\tanswered\t8339254115\t0\thealth-check\t2026-03-26 23:33:21\n120005\t*43\tcompleted\tanswered\t8339254113\t0\thealth-check\t2026-03-26 23:33:21\n120004\t*43\tcompleted\tanswered\t8339254117\t0\thealth-check\t2026-03-26 22:32:43\n120003\t*43\tcompleted\tanswered\t8339254116\t0\thealth-check\t2026-03-26 22:32:43\n120002\t*43\tcompleted\tanswered\t8339254115\t0\thealth-check\t2026-03-26 22:32:43\n120001\t*43\tcompleted\tanswered\t8339254113\t0\thealth-check\t2026-03-26 22:32:43\n90169\t*43\tcompleted\tanswered\t8339254117\t0\thealth-check\t2026-03-26 21:23:25\n90168\t*43\tcompleted\tanswered\t8339254116\t0\thealth-check\t2026-03-26 21:23:25\n90167\t*43\tcompleted\tanswered\t8339254115\t0\thealth-check\t2026-03-26 21:23:25\n90166\t*43\tcompleted\tanswered\t8339254113\t0\thealth-check\t2026-03-26 21:23:25\n90158\t*43\tcompleted\tanswered\t8339254115\t0\thealth-check\t2026-03-26 20:22:46\n90157\t*43\tcompleted\tanswered\t8339254116\t0\thealth-check\t2026-03-26 20:22:46\n90156\t*43\tcompleted\tanswered\t8339254117\t0\thealth-check\t2026-03-26 20:22:46\n90155\t*43\tcompleted\tanswered\t8339254113\t0\thealth-check\t2026-03-26 20:22:46\n90154\t*43\tcompleted\tanswered\t5558394033\t0\thealth-check\t2026-03-26 20:22:46\n90153\t*43\tcompleted\tanswered\t6668394069\t0\thealth-check\t2026-03-26 20:22:46\n90152\t*43\tcompleted\tanswered\t6678394069\t0\thealth-check\t2026-03-26 20:22:46\n90151\t*43\tcompleted\tanswered\t9508395419\t0\thealth-check\t2026-03-26 20:22:46\n",
+  "stderr": "",
+  "execution_time_ms": 112
+}
