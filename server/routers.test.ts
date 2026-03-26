@@ -424,6 +424,20 @@ describe("freepbx.deleteAgent", () => {
   });
 });
 
+describe("freepbx.restartAgent", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.restartAgent({ agentId: "agent-test" })).rejects.toThrow();
+  });
+
+  it("throws NOT_FOUND for non-existent agent", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.freepbx.restartAgent({ agentId: "nonexistent-agent" })).rejects.toThrow();
+  });
+});
+
 describe("freepbx.queueStats", () => {
   it("requires authentication", async () => {
     const ctx = createPublicContext();

@@ -2143,6 +2143,86 @@ Return ONLY the message text, nothing else.`;
         const oneLiner = `curl -sSL "${input.origin}/api/pbx/install?key=${encodeURIComponent(apiKey)}" | bash`;
         return { oneLiner, apiUrl, apiKey, maxCalls, agentName: agent.name };
       }),
+
+    /** Restart PBX agent service on FreePBX server via SSH */
+    restartAgent: protectedProcedure
+      .input(z.object({ agentId: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+        const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+        const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+        if (!host || !sshUser || !sshPassword) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "SSH credentials not configured. Go to Settings > FreePBX to configure SSH access." });
+        }
+
+        const agent = await db.getPbxAgentByAgentId(input.agentId);
+        if (!agent) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        }
+
+        const { Client: SSHClient } = await import("ssh2");
+        const result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+          const conn = new SSHClient();
+          const timeout = setTimeout(() => {
+            conn.end();
+            resolve({ success: false, output: "", error: "SSH connection timed out after 30 seconds" });
+          }, 30000);
+
+          conn.on("ready", () => {
+            // Restart the pbx-agent service; also restart voice-ai-bridge if it exists
+            const cmd = `systemctl restart pbx-agent 2>&1; echo "PBX_EXIT=$?"; if systemctl is-enabled voice-ai-bridge 2>/dev/null; then systemctl restart voice-ai-bridge 2>&1; echo "BRIDGE_EXIT=$?"; fi; sleep 2; systemctl is-active pbx-agent 2>&1; echo "---"; systemctl is-active voice-ai-bridge 2>&1 || true`;
+            conn.exec(cmd, (err, stream) => {
+              if (err) {
+                clearTimeout(timeout);
+                conn.end();
+                resolve({ success: false, output: "", error: err.message });
+                return;
+              }
+              let output = "";
+              stream.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+              stream.on("close", (code: number) => {
+                clearTimeout(timeout);
+                conn.end();
+                const isSuccess = output.includes("PBX_EXIT=0") || output.includes("active");
+                resolve({
+                  success: isSuccess,
+                  output: output.trim(),
+                  error: !isSuccess ? `Restart may have failed. Exit code: ${code}` : undefined,
+                });
+              });
+            });
+          });
+
+          conn.on("error", (err: Error) => {
+            clearTimeout(timeout);
+            let errorMsg = err.message;
+            if (errorMsg.includes("Authentication")) errorMsg = "SSH authentication failed";
+            else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "SSH connection refused";
+            else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "SSH connection timed out";
+            resolve({ success: false, output: "", error: errorMsg });
+          });
+
+          conn.connect({
+            host,
+            port: 22,
+            username: sshUser,
+            password: sshPassword,
+            readyTimeout: 15000,
+          });
+        });
+
+        // Audit log
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          action: "freepbx.restartAgent",
+          resource: "pbx-agent",
+          details: { success: result.success, agentId: input.agentId, agentName: agent.name, host, error: result.error },
+        });
+
+        return result;
+      }),
   }),
 
   // ─── App Settings (TTS API keys, etc.) ─────────────────────────────────────

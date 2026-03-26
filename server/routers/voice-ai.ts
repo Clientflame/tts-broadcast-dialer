@@ -10,6 +10,7 @@ import { protectedProcedure } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "../db";
+import { generateVoiceAiInstaller } from "../services/voice-ai-installer";
 
 // ─── Voice AI Prompts ─────────────────────────────────────────────────────────
 
@@ -297,7 +298,7 @@ QUESTIONS:
 
   // ─── Installer-Based Deploy ──────────────────────────────────────────
 
-  /** Install Voice AI Bridge on FreePBX server via SSH */
+  /** Install Voice AI Bridge on FreePBX server via SSH — generates script server-side and pipes through SSH */
   installBridgeViaSSH: protectedProcedure
     .input(z.object({ origin: z.string().url() }))
     .mutation(async ({ ctx, input }) => {
@@ -320,21 +321,61 @@ QUESTIONS:
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No PBX agent registered. Register a PBX agent first on the FreePBX Integration page." });
       }
 
-      // 2. Build the install URL
-      const installUrl = `${input.origin}/api/voice-ai/install?key=${activeAgent.apiKey}`;
-      const installCommand = `curl -s '${installUrl}' | bash`;
+      // 2. Generate the installer script server-side (no curl round-trip needed)
+      const path = await import("path");
+      const fs = await import("fs");
+      let bridgeScript: string;
+      let dialplanConf: string;
+      try {
+        const bridgeDir = path.resolve(process.cwd(), "voice-ai-bridge");
+        bridgeScript = fs.readFileSync(path.join(bridgeDir, "voice_ai_bridge.py"), "utf-8");
+        dialplanConf = fs.readFileSync(path.join(bridgeDir, "extensions_voice_ai.conf"), "utf-8");
+      } catch {
+        try {
+          const bridgeDir = path.resolve(__dirname, "..", "..", "voice-ai-bridge");
+          bridgeScript = fs.readFileSync(path.join(bridgeDir, "voice_ai_bridge.py"), "utf-8");
+          dialplanConf = fs.readFileSync(path.join(bridgeDir, "extensions_voice_ai.conf"), "utf-8");
+        } catch {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not read Voice AI Bridge files on server" });
+        }
+      }
 
-      // 3. SSH into FreePBX and run the installer
+      const dashboardUrl = input.origin;
+      const dashboardApiUrl = `${dashboardUrl}/api/voice-ai`;
+      const ariUser = "voice-ai";
+      const ariPassword = "voice-ai-secret";
+      const bridgePort = 8090;
+      const openaiModel = "gpt-4o-realtime-preview";
+
+      const envContent = [
+        `OPENAI_API_KEY=${openaiKey}`,
+        `DASHBOARD_API_URL=${dashboardApiUrl}`,
+        `DASHBOARD_API_KEY=${activeAgent.apiKey}`,
+        `ARI_URL=http://localhost:8088`,
+        `ARI_USER=${ariUser}`,
+        `ARI_PASSWORD=${ariPassword}`,
+        `ARI_APP=voice-ai-bridge`,
+        `BRIDGE_PORT=${bridgePort}`,
+        `OPENAI_MODEL=${openaiModel}`,
+        `LOG_LEVEL=INFO`,
+      ].join("\n");
+
+      const installerScript = generateVoiceAiInstaller(
+        bridgeScript, dialplanConf, envContent, ariUser, ariPassword, dashboardUrl,
+      );
+
+      // 3. SSH into FreePBX and pipe the installer script directly via stdin (no curl needed)
       const { Client: SSHClient } = await import("ssh2");
       const result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
         const conn = new SSHClient();
         const timeout = setTimeout(() => {
           conn.end();
           resolve({ success: false, output: "", error: "SSH connection timed out after 120 seconds" });
-        }, 120000); // 2 minute timeout for full install
+        }, 120000);
 
         conn.on("ready", () => {
-          conn.exec(installCommand, (err, stream) => {
+          // Pipe the script directly through bash via stdin — no network round-trip
+          conn.exec("bash -s", (err, stream) => {
             if (err) {
               clearTimeout(timeout);
               conn.end();
@@ -350,10 +391,13 @@ QUESTIONS:
               const isSuccess = code === 0 || code === null || output.includes("Installation Complete");
               resolve({
                 success: isSuccess,
-                output: output.trim().slice(-3000), // Last 3000 chars of output
+                output: output.trim().slice(-3000),
                 error: !isSuccess ? `Exit code: ${code}` : undefined,
               });
             });
+            // Write the installer script to stdin and close
+            stream.write(installerScript);
+            stream.end();
           });
         });
 

@@ -1,0 +1,17 @@
+{
+  "query": "SELECT agentId, name, status, SUBSTRING(apiKey, 1, 15) as keyPrefix, lastHeartbeat FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT agentId, name, status, SUBSTRING(apiKey, 1, 15) as keyPrefix, lastHeartbeat FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5",
+  "rows": [
+    {
+      "agentId": "agent-6e59b17c",
+      "name": "Agent HD",
+      "status": "online",
+      "keyPrefix": "pbx-b253ca8d366",
+      "lastHeartbeat": "1774552400580"
+    }
+  ],
+  "messages": [],
+  "stdout": "agentId\tname\tstatus\tkeyPrefix\tlastHeartbeat\nagent-6e59b17c\tAgent HD\tonline\tpbx-b253ca8d366\t1774552400580\n",
+  "stderr": "",
+  "execution_time_ms": 80
+}

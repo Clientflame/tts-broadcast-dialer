@@ -233,7 +233,7 @@ export function createVoiceAiInstallerRouter(): Router {
   return router;
 }
 
-function generateVoiceAiInstaller(
+export function generateVoiceAiInstaller(
   bridgeScript: string,
   dialplanConf: string,
   envContent: string,

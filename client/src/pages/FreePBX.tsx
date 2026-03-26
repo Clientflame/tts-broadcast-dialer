@@ -409,6 +409,23 @@ export default function FreePBX() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const [restartingAgentId, setRestartingAgentId] = useState<string | null>(null);
+  const restartAgent = trpc.freepbx.restartAgent.useMutation({
+    onSuccess: (data) => {
+      setRestartingAgentId(null);
+      if (data.success) {
+        toast.success("PBX Agent restarted successfully!");
+      } else {
+        toast.error(`Restart failed: ${data.error || "Unknown error"}`);
+      }
+      // Refetch after a short delay to let the agent reconnect
+      setTimeout(() => { agents.refetch(); amiStatus.refetch(); }, 5000);
+    },
+    onError: (e: any) => {
+      setRestartingAgentId(null);
+      toast.error(e.message);
+    },
+  });
 
   const [agentName, setAgentName] = useState("");
   const [maxCalls, setMaxCalls] = useState(5);
@@ -788,6 +805,24 @@ export default function FreePBX() {
                               {showingInstaller ? "Hide" : "Re-install"}
                             </Button>
                           )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={restartingAgentId === agent.agentId}
+                            onClick={() => {
+                              if (confirm(`Restart PBX agent "${agent.name}" service on FreePBX? This will briefly interrupt any active calls.`)) {
+                                setRestartingAgentId(agent.agentId);
+                                restartAgent.mutate({ agentId: agent.agentId });
+                              }
+                            }}
+                          >
+                            {restartingAgentId === agent.agentId ? (
+                              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Restarting...</>
+                            ) : (
+                              <><RotateCcw className="h-3 w-3 mr-1" />Restart</>
+                            )}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

@@ -694,3 +694,5 @@
 - [x] Scheduled health checks — proactive SSH-based PBX/bridge ping every 5 minutes (bridge-health-scheduler)
 - [x] Global search command palette (Cmd+K) — search across campaigns, contacts, scripts, settings
 - [x] URGENT FIX: Call scripts only playing first TTS segment — FIXED via server-side MP3 concatenation (combinedUrl) as primary audioUrl, works on all PBX agent versions
+- [x] FIX: Voice AI Bridge Auto-install — FIXED by generating installer script server-side and piping through SSH stdin (eliminates curl round-trip dependency)
+- [x] Add PBX Agent restart button — restarts pbx-agent + voice-ai-bridge services via SSH, with confirmation dialog and loading state
