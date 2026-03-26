@@ -453,10 +453,16 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 
       if (scriptResult.success && scriptResult.audioUrls.length > 0) {
         audioUrls = scriptResult.audioUrls;
-        // Use first URL as the primary audioUrl for backward compatibility
-        variables.AUDIO_URL = scriptResult.audioUrls[0];
+        // Use server-side combined URL as the primary audioUrl
+        // This ensures ALL segments play even on old PBX agents without prepare_multi_audio
+        if (scriptResult.combinedUrl) {
+          variables.AUDIO_URL = scriptResult.combinedUrl;
+        } else {
+          // Fallback to first segment if server-side concat failed
+          variables.AUDIO_URL = scriptResult.audioUrls[0];
+        }
         variables.AUDIO_NAME = `script_${callLog.campaignId}_${callLog.contactId}`;
-        console.log(`[Dialer] Script audio generated: ${scriptResult.audioUrls.length} segments for contact ${callLog.contactId}`);
+        console.log(`[Dialer] Script audio generated: ${scriptResult.audioUrls.length} segments, combinedUrl=${!!scriptResult.combinedUrl} for contact ${callLog.contactId}`);
       } else {
         console.error(`[Dialer] Script audio generation failed:`, scriptResult.errors);
         // Fall back to static audio if available

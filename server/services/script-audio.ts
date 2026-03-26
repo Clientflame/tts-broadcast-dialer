@@ -34,6 +34,8 @@ export interface ContactData {
 export interface ScriptAudioResult {
   /** Ordered list of audio URLs for the PBX agent to concatenate */
   audioUrls: string[];
+  /** Single combined audio URL (all segments concatenated server-side) */
+  combinedUrl: string | null;
   /** Cache key for the stitched result */
   cacheKey: string;
   /** Whether all segments were generated successfully */
@@ -224,10 +226,36 @@ export async function generateScriptAudio(params: {
   const fullHash = createHash("md5")
     .update(audioUrls.join("|"))
     .digest("hex");
-  const cacheKey = `script-stitched/c${params.campaignId}_ct${params.contactId}_${fullHash}`;
+  const cacheKey = `script-stitched/c${params.campaignId}_ct${params.contactId}_${fullHash}.mp3`;
+
+  // Server-side concatenation: combine all segment MP3s into a single file
+  // This ensures playback works regardless of PBX agent version
+  let combinedUrl: string | null = null;
+  if (audioUrls.length > 1) {
+    try {
+      console.log(`[ScriptAudio] Concatenating ${audioUrls.length} segments server-side...`);
+      const buffers: Buffer[] = [];
+      for (const url of audioUrls) {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`Failed to fetch segment: ${resp.status}`);
+        buffers.push(Buffer.from(await resp.arrayBuffer()));
+      }
+      // MP3 frames are self-contained, so simple concatenation works
+      const combined = Buffer.concat(buffers);
+      const { url: stitchedUrl } = await storagePut(cacheKey, combined, "audio/mpeg");
+      combinedUrl = stitchedUrl;
+      console.log(`[ScriptAudio] Combined audio uploaded: ${cacheKey} (${combined.length} bytes)`);
+    } catch (err: any) {
+      console.error(`[ScriptAudio] Server-side concatenation failed: ${err.message}`);
+      // Fall through — audioUrls array is still available for PBX agent concatenation
+    }
+  } else if (audioUrls.length === 1) {
+    combinedUrl = audioUrls[0];
+  }
 
   return {
     audioUrls,
+    combinedUrl,
     cacheKey,
     success: errors.length === 0 && audioUrls.length > 0,
     errors,

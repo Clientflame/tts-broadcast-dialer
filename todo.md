@@ -693,3 +693,4 @@
 - [x] Rate limit alerts — trunk utilization widget on dashboard with warning/critical alerts
 - [x] Scheduled health checks — proactive SSH-based PBX/bridge ping every 5 minutes (bridge-health-scheduler)
 - [x] Global search command palette (Cmd+K) — search across campaigns, contacts, scripts, settings
+- [x] URGENT FIX: Call scripts only playing first TTS segment — FIXED via server-side MP3 concatenation (combinedUrl) as primary audioUrl, works on all PBX agent versions
