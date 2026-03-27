@@ -34,6 +34,7 @@ import Recordings from "./pages/Recordings";
 import VoiceAi from "./pages/VoiceAi";
 import AgentAssist from "./pages/AgentAssist";
 import AgentDashboard from "./pages/AgentDashboard";
+import SystemArchitecture from "./pages/SystemArchitecture";
 import CommandPalette from "./components/CommandPalette";
 
 function Router() {
@@ -67,6 +68,7 @@ function Router() {
       <Route path={"/voice-ai"} component={VoiceAi} />
       <Route path={"/agent-assist"} component={AgentAssist} />
       <Route path={"/agent"} component={AgentDashboard} />
+      <Route path={"/system-architecture"} component={SystemArchitecture} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />

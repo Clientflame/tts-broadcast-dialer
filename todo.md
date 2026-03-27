@@ -697,3 +697,4 @@
 - [x] FIX: Voice AI Bridge Auto-install — FIXED by generating installer script server-side and piping through SSH stdin (eliminates curl round-trip dependency)
 - [x] Add PBX Agent restart button — restarts pbx-agent + voice-ai-bridge services via SSH, with confirmation dialog and loading state
 - [x] Filter health check *43 calls out of Call Activity Feed — excluded audioName='health-check' from getRecentCallActivity query
+- [x] Create visual System Architecture page showing how the system works and core functions — 7 sections: layers, call flow, lifecycle, PBX communication, components, metrics, database schema
