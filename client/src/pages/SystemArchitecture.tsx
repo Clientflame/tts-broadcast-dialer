@@ -8,9 +8,12 @@ import {
   Server, Database, Cloud, Wifi, ArrowRight, ArrowDown, Zap, Shield,
   Clock, BarChart3, Bell, RefreshCw, Gauge, Monitor, FileText,
   Phone, Settings, ChevronRight, Radio, Layers, GitBranch,
-  CircleDot, Cpu, HardDrive, Globe, Lock, Headset, Workflow
+  CircleDot, Cpu, HardDrive, Globe, Lock, Headset, Workflow,
+  Printer, ExternalLink, Download
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 // ─── Flow Diagram: How a Call Gets Made ─────────────────────────────────────
 
@@ -499,20 +502,137 @@ function DatabaseOverview() {
   );
 }
 
+// ─── Tech Stack ─────────────────────────────────────────────────────────────
+
+function TechStack() {
+  const categories = [
+    {
+      title: "Frontend",
+      color: "from-sky-500 to-blue-500",
+      techs: [
+        { name: "React", version: "19.2", desc: "UI component library with hooks & concurrent features", url: "https://react.dev" },
+        { name: "TypeScript", version: "5.9", desc: "Strongly-typed JavaScript superset", url: "https://www.typescriptlang.org" },
+        { name: "Tailwind CSS", version: "4.1", desc: "Utility-first CSS framework", url: "https://tailwindcss.com" },
+        { name: "Vite", version: "7.1", desc: "Next-gen frontend build tool with HMR", url: "https://vite.dev" },
+        { name: "shadcn/ui", version: "—", desc: "Radix-based accessible component library", url: "https://ui.shadcn.com" },
+        { name: "Recharts", version: "2.15", desc: "Composable charting library for React", url: "https://recharts.org" },
+        { name: "Wouter", version: "3.3", desc: "Lightweight React router (1.5KB)", url: "https://github.com/molefrog/wouter" },
+        { name: "Framer Motion", version: "12.23", desc: "Production-ready animation library", url: "https://www.framer.com/motion" },
+      ]
+    },
+    {
+      title: "Backend",
+      color: "from-emerald-500 to-green-500",
+      techs: [
+        { name: "Node.js", version: "22.13", desc: "JavaScript runtime with V8 engine", url: "https://nodejs.org" },
+        { name: "Express", version: "4.21", desc: "Minimal web framework for Node.js", url: "https://expressjs.com" },
+        { name: "tRPC", version: "11.6", desc: "End-to-end typesafe API layer", url: "https://trpc.io" },
+        { name: "Drizzle ORM", version: "0.44", desc: "TypeScript ORM with SQL-like query builder", url: "https://orm.drizzle.team" },
+        { name: "Zod", version: "4.1", desc: "TypeScript-first schema validation", url: "https://zod.dev" },
+        { name: "SSH2", version: "1.17", desc: "SSH client for FreePBX remote management", url: "https://github.com/mscdex/ssh2" },
+        { name: "Jose", version: "6.1", desc: "JWT/JWS/JWE implementation for auth", url: "https://github.com/panva/jose" },
+        { name: "Nodemailer", version: "8.0", desc: "Email sending for notifications & verification", url: "https://nodemailer.com" },
+      ]
+    },
+    {
+      title: "Infrastructure",
+      color: "from-amber-500 to-orange-500",
+      techs: [
+        { name: "TiDB Cloud", version: "MySQL 8.0", desc: "Distributed MySQL-compatible cloud database", url: "https://tidbcloud.com" },
+        { name: "AWS S3", version: "SDK 3.x", desc: "Object storage for audio files & recordings", url: "https://aws.amazon.com/s3" },
+        { name: "FreePBX", version: "17", desc: "Open-source PBX management UI for Asterisk", url: "https://www.freepbx.org" },
+        { name: "Asterisk", version: "22.7", desc: "Open-source telephony engine (SIP/PJSIP)", url: "https://www.asterisk.org" },
+        { name: "Debian", version: "12", desc: "PBX server OS (Bookworm)", url: "https://www.debian.org" },
+      ]
+    },
+    {
+      title: "AI & APIs",
+      color: "from-violet-500 to-purple-500",
+      techs: [
+        { name: "OpenAI TTS", version: "tts-1-hd", desc: "High-quality text-to-speech (6 voices)", url: "https://platform.openai.com/docs/guides/text-to-speech" },
+        { name: "Google TTS", version: "v1", desc: "Cloud Text-to-Speech with WaveNet voices", url: "https://cloud.google.com/text-to-speech" },
+        { name: "OpenAI Realtime", version: "gpt-4o", desc: "Real-time voice AI conversations", url: "https://platform.openai.com/docs/guides/realtime" },
+        { name: "OpenAI Chat", version: "gpt-4o", desc: "LLM for script generation & agent assist", url: "https://platform.openai.com/docs/guides/chat" },
+      ]
+    },
+    {
+      title: "Dev Tools",
+      color: "from-rose-500 to-pink-500",
+      techs: [
+        { name: "pnpm", version: "10.4", desc: "Fast, disk-efficient package manager", url: "https://pnpm.io" },
+        { name: "Vitest", version: "2.1", desc: "Vite-native unit test framework", url: "https://vitest.dev" },
+        { name: "Drizzle Kit", version: "0.31", desc: "Database migration & schema push tool", url: "https://orm.drizzle.team/kit-docs/overview" },
+        { name: "TSX", version: "4.19", desc: "TypeScript execute — run TS files directly", url: "https://github.com/privatenumber/tsx" },
+        { name: "Prettier", version: "3.6", desc: "Opinionated code formatter", url: "https://prettier.io" },
+        { name: "ESBuild", version: "0.25", desc: "Ultra-fast JS/TS bundler for production", url: "https://esbuild.github.io" },
+      ]
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {categories.map((cat) => (
+        <div key={cat.title}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`h-1 w-8 rounded-full bg-gradient-to-r ${cat.color}`} />
+            <h3 className="font-semibold text-sm">{cat.title}</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {cat.techs.map((tech) => (
+              <a
+                key={tech.name}
+                href={tech.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border/60 hover:border-primary/40 hover:shadow-sm transition-all group"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{tech.name}</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">{tech.version}</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{tech.desc}</p>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-primary/60 transition-colors flex-shrink-0" />
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function SystemArchitecture() {
   const { user } = useAuth();
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <DashboardLayout>
-      <div className="container max-w-6xl py-6 space-y-8">
+      <div ref={printRef} className="container max-w-6xl py-6 space-y-8 print:max-w-none print:p-4">
         {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">System Architecture</h1>
-          <p className="text-muted-foreground mt-1">
-            Visual overview of how the AI TTS Broadcast Dialer works — from campaign creation to call completion.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">System Architecture</h1>
+            <p className="text-muted-foreground mt-1">
+              Visual overview of how the AI TTS Broadcast Dialer works — from campaign creation to call completion.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrint}
+            className="flex-shrink-0 gap-2 print:hidden"
+          >
+            <Printer className="h-4 w-4" />
+            Print / Export PDF
+          </Button>
         </div>
 
         {/* Architecture Layers */}
@@ -608,6 +728,22 @@ export default function SystemArchitecture() {
           </CardHeader>
           <CardContent>
             <KeyMetrics />
+          </CardContent>
+        </Card>
+
+        {/* Tech Stack */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" />
+              Tech Stack
+            </CardTitle>
+            <CardDescription>
+              Exact versions and documentation links for every technology in the system — click any item to view docs
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TechStack />
           </CardContent>
         </Card>
 

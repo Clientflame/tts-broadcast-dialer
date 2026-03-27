@@ -175,3 +175,66 @@
     }
   }
 }
+/* Print styles for System Architecture page */
+@media print {
+  /* Hide sidebar, header, footer, and non-essential UI */
+  [data-sidebar],
+  [data-slot="sidebar"],
+  nav,
+  header,
+  footer,
+  .print\\:hidden {
+    display: none !important;
+  }
+
+  /* Remove sidebar inset margin */
+  [data-slot="sidebar-inset"],
+  main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Ensure cards don't break across pages */
+  .card,
+  [class*="Card"] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Clean backgrounds for printing */
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Keep gradient backgrounds visible in print */
+  [class*="bg-gradient"] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Ensure badges are visible */
+  [class*="Badge"],
+  .badge {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Page margins */
+  @page {
+    margin: 0.75in;
+    size: letter;
+  }
+
+  /* Show URLs for links in print */
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 8px;
+    color: #666;
+    word-break: break-all;
+  }
+}
