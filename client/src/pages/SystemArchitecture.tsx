@@ -14,6 +14,8 @@ import {
 import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import html2canvas from "html2canvas-pro";
+import { jsPDF } from "jspdf";
 
 // ─── Flow Diagram: How a Call Gets Made ─────────────────────────────────────
 
@@ -608,10 +610,104 @@ function TechStack() {
 export default function SystemArchitecture() {
   const { user } = useAuth();
   const printRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
-  const handlePrint = useCallback(() => {
-    window.print();
-  }, []);
+  const handleExportPDF = useCallback(async () => {
+    if (!printRef.current || exporting) return;
+    setExporting(true);
+    const toastId = toast.loading("Generating PDF... this may take a moment");
+
+    try {
+      // Capture the content area as a high-res canvas
+      const element = printRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+        windowWidth: 1200, // Force desktop-width rendering for consistent output
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+
+      // Letter size in points: 612 x 792, with margins
+      const pdfWidth = 595.28; // A4 width in points
+      const pdfMargin = 28;
+      const contentWidth = pdfWidth - pdfMargin * 2;
+      const contentHeight = (imgHeight * contentWidth) / imgWidth;
+      const pageHeight = 841.89 - pdfMargin * 2; // A4 height minus margins
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+
+      // Add title
+      pdf.setFontSize(10);
+      pdf.setTextColor(150);
+      pdf.text(
+        `AI TTS Broadcast Dialer — System Architecture | Generated ${new Date().toLocaleDateString()}`,
+        pdfMargin,
+        pdfMargin - 8
+      );
+
+      // If content fits on one page
+      if (contentHeight <= pageHeight) {
+        pdf.addImage(imgData, "JPEG", pdfMargin, pdfMargin, contentWidth, contentHeight);
+      } else {
+        // Multi-page: slice the image across pages
+        let yOffset = 0;
+        let pageNum = 0;
+        while (yOffset < contentHeight) {
+          if (pageNum > 0) pdf.addPage();
+
+          // Calculate source slice in image coordinates
+          const sliceHeight = Math.min(pageHeight, contentHeight - yOffset);
+          const srcY = (yOffset / contentHeight) * imgHeight;
+          const srcH = (sliceHeight / contentHeight) * imgHeight;
+
+          // Create a slice canvas
+          const sliceCanvas = document.createElement("canvas");
+          sliceCanvas.width = imgWidth;
+          sliceCanvas.height = srcH;
+          const ctx = sliceCanvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(canvas, 0, srcY, imgWidth, srcH, 0, 0, imgWidth, srcH);
+            const sliceData = sliceCanvas.toDataURL("image/jpeg", 0.92);
+            pdf.addImage(sliceData, "JPEG", pdfMargin, pdfMargin, contentWidth, sliceHeight);
+          }
+
+          // Footer
+          pdf.setFontSize(8);
+          pdf.setTextColor(180);
+          pdf.text(
+            `Page ${pageNum + 1}`,
+            pdfWidth / 2,
+            841.89 - 12,
+            { align: "center" }
+          );
+
+          yOffset += pageHeight;
+          pageNum++;
+        }
+      }
+
+      pdf.save("system-architecture.pdf");
+      toast.success("PDF downloaded successfully", { id: toastId });
+    } catch (err) {
+      console.error("PDF export error:", err);
+      toast.error("Failed to generate PDF. Try using Print instead.", { id: toastId });
+      // Fallback to window.print on desktop
+      if (typeof window !== "undefined" && window.innerWidth > 768) {
+        window.print();
+      }
+    } finally {
+      setExporting(false);
+    }
+  }, [exporting]);
 
   return (
     <DashboardLayout>
@@ -627,11 +723,16 @@ export default function SystemArchitecture() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handlePrint}
+            onClick={handleExportPDF}
+            disabled={exporting}
             className="flex-shrink-0 gap-2 print:hidden"
           >
-            <Printer className="h-4 w-4" />
-            Print / Export PDF
+            {exporting ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {exporting ? "Generating..." : "Export PDF"}
           </Button>
         </div>
 

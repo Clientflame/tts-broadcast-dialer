@@ -700,3 +700,4 @@
 - [x] Create visual System Architecture page showing how the system works and core functions — 7 sections: layers, call flow, lifecycle, PBX communication, components, metrics, database schema
 - [x] Add printable/exportable PDF version of System Architecture page — Print/Export PDF button with @media print CSS (hides sidebar, preserves colors, page breaks)
 - [x] Add Tech Stack section with exact versions and documentation links — 31 technologies across 5 categories (Frontend, Backend, Infrastructure, AI & APIs, Dev Tools) with clickable doc links
+- [x] FIX: System Architecture Print/Export not working on mobile — replaced window.print() with html2canvas + jsPDF for direct file download that works on all devices
