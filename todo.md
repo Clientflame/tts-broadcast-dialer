@@ -701,3 +701,5 @@
 - [x] Add printable/exportable PDF version of System Architecture page — Print/Export PDF button with @media print CSS (hides sidebar, preserves colors, page breaks)
 - [x] Add Tech Stack section with exact versions and documentation links — 31 technologies across 5 categories (Frontend, Backend, Infrastructure, AI & APIs, Dev Tools) with clickable doc links
 - [x] FIX: System Architecture Print/Export not working on mobile — replaced window.print() with html2canvas + jsPDF for direct file download that works on all devices
+- [x] Add sticky table of contents with anchor links to System Architecture page — 9 section pills with IntersectionObserver-based active highlighting and horizontal scroll for mobile
+- [x] Add API Reference section documenting 6 PBX Agent REST endpoints (poll, report, heartbeat, config, stats, health-check-result) with auth info, request/response schemas, call object shape, and error codes

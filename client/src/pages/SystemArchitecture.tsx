@@ -11,11 +11,356 @@ import {
   CircleDot, Cpu, HardDrive, Globe, Lock, Headset, Workflow,
   Printer, ExternalLink, Download
 } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import html2canvas from "html2canvas-pro";
 import { jsPDF } from "jspdf";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+
+// ─── Table of Contents ─────────────────────────────────────────────────────
+
+const TOC_SECTIONS = [
+  { id: "layers", label: "System Layers", icon: Layers },
+  { id: "call-flow", label: "Call Flow", icon: GitBranch },
+  { id: "lifecycle", label: "Lifecycle", icon: RefreshCw },
+  { id: "pbx-comm", label: "PBX Communication", icon: Wifi },
+  { id: "components", label: "Components", icon: Cpu },
+  { id: "parameters", label: "Parameters", icon: Settings },
+  { id: "api-reference", label: "API Reference", icon: Globe },
+  { id: "tech-stack", label: "Tech Stack", icon: Layers },
+  { id: "database", label: "Database", icon: Database },
+];
+
+function TableOfContents() {
+  const [activeId, setActiveId] = useState<string>("");
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the first visible section
+        const visible = entries.filter(e => e.isIntersecting);
+        if (visible.length > 0) {
+          // Pick the one closest to the top
+          visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+          setActiveId(visible[0].target.id);
+        }
+      },
+      { rootMargin: "-80px 0px -60% 0px", threshold: 0.1 }
+    );
+
+    TOC_SECTIONS.forEach(({ id }) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  return (
+    <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b print:hidden -mx-4 px-4 md:-mx-6 md:px-6">
+      <ScrollArea className="w-full">
+        <div className="flex items-center gap-1.5 py-2 min-w-max">
+          <span className="text-xs font-medium text-muted-foreground mr-1 hidden sm:inline">Jump to:</span>
+          {TOC_SECTIONS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => scrollTo(id)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap ${
+                activeId === id
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+            </button>
+          ))}
+        </div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+    </div>
+  );
+}
+
+// ─── API Reference ─────────────────────────────────────────────────────────
+
+function ApiReference() {
+  const [expandedEndpoint, setExpandedEndpoint] = useState<string | null>(null);
+
+  const endpoints = [
+    {
+      method: "POST",
+      path: "/api/pbx/poll",
+      title: "Poll for Pending Calls",
+      desc: "PBX agent calls this every 2-3 seconds to fetch work. Uses weighted load balancing across agents.",
+      color: "bg-green-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>", "Content-Type": "application/json" },
+        body: {
+          activeCalls: "number — Current active calls on this agent",
+          campaignMaxCalls: "number (optional) — Per-campaign concurrent limit",
+          capabilities: "object (optional) — Agent capabilities (e.g., { voiceAiBridge: true })",
+        },
+      },
+      response: {
+        calls: "Call[] — Array of call objects to originate",
+        cpsLimit: "number — Calls per second limit",
+        cpsPacingMs: "number — Milliseconds between calls",
+        maxConcurrent: "number — Max concurrent calls for this agent",
+      },
+      callShape: {
+        id: "number — Queue item ID",
+        phoneNumber: "string — Number to dial",
+        callerIdStr: "string — Caller ID to use",
+        audioUrl: "string — Combined MP3 URL (primary)",
+        audioUrls: "string[] | null — Individual segment URLs (backup)",
+        audioName: "string — Audio file name",
+        campaignId: "number — Campaign ID",
+        callLogId: "number — Call log ID for result reporting",
+        amdEnabled: "boolean — Answering machine detection",
+        voicemailAudioUrl: "string | null — Voicemail drop audio",
+        recordingEnabled: "boolean — Record this call",
+        routingMode: "string — 'tts_only' | 'live_agent' | 'voice_ai'",
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/pbx/report",
+      title: "Report Call Result",
+      desc: "PBX agent reports back after each call completes. Updates queue, call logs, campaign stats, DID health, and triggers auto-throttle.",
+      color: "bg-blue-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>", "Content-Type": "application/json" },
+        body: {
+          queueId: "number — Queue item ID from poll response",
+          result: "string — 'answered' | 'no-answer' | 'busy' | 'failed' | 'congestion' | 'completed'",
+          details: "object (optional) — { duration, answeredAt, asteriskChannel, dtmfResponse, amdResult, error }",
+        },
+      },
+      response: {
+        success: "boolean — true on success",
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/pbx/heartbeat",
+      title: "Agent Heartbeat",
+      desc: "Keeps the agent marked as online. Sent every 10-15 seconds. Also triggers auto-throttle ramp-up checks.",
+      color: "bg-purple-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>", "Content-Type": "application/json" },
+        body: {
+          activeCalls: "number — Current active calls",
+          capabilities: "object (optional) — { voiceAiBridge: boolean }",
+          agentVersion: "string (optional) — Agent software version",
+          features: "object (optional) — Feature flags",
+        },
+      },
+      response: {
+        status: "string — 'ok'",
+        serverTime: "number — Server timestamp (ms)",
+        effectiveMaxCalls: "number — Current max concurrent (may be throttled)",
+        requiredVersion: "string — Minimum required agent version",
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/pbx/config",
+      title: "Get Dialplan Config",
+      desc: "Fetched on agent startup to configure Asterisk dialplan context, trunk, and audio directory.",
+      color: "bg-amber-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>" },
+        body: {},
+      },
+      response: {
+        dialplanContext: "string — 'tts-broadcast'",
+        trunkName: "string — 'vitel-outbound'",
+        audioDir: "string — '/var/lib/asterisk/sounds/custom/broadcast'",
+        defaultTimeout: "number — 30000 (ms)",
+      },
+    },
+    {
+      method: "GET",
+      path: "/api/pbx/stats",
+      title: "Queue Statistics",
+      desc: "Returns current call queue statistics and all registered agent statuses.",
+      color: "bg-cyan-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>" },
+        body: {},
+      },
+      response: {
+        queue: "object — { pending, claimed, completed, failed }",
+        agents: "Agent[] — All registered PBX agents with status",
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/pbx/health-check-result",
+      title: "DID Health Check Result",
+      desc: "Reports the result of a DID health check (echo test *43). Auto-disables DIDs after consecutive failures.",
+      color: "bg-red-500",
+      request: {
+        headers: { "Authorization": "Bearer <agent-api-key>", "Content-Type": "application/json" },
+        body: {
+          callerIdId: "number — Caller ID record ID",
+          result: "string — 'healthy' | 'degraded' | 'failed'",
+          details: "string (optional) — Additional details about the check",
+        },
+      },
+      response: {
+        success: "boolean — true on success",
+        autoDisabled: "boolean — true if DID was auto-disabled due to failures",
+      },
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Auth Info */}
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Lock className="h-4 w-4 text-amber-500" />
+          <span className="font-semibold text-sm">Authentication</span>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          All endpoints require a <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">Bearer</code> token in the <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">Authorization</code> header.
+          Each PBX agent is assigned a unique API key on registration. The middleware validates the key and attaches the agent context to the request.
+        </p>
+        <div className="mt-2 bg-zinc-900 text-zinc-100 rounded-md p-3 text-xs font-mono">
+          Authorization: Bearer pbx_a1b2c3d4e5f6...
+        </div>
+      </div>
+
+      {/* Base URL */}
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Globe className="h-4 w-4 text-blue-500" />
+          <span className="font-semibold text-sm">Base URL</span>
+        </div>
+        <div className="bg-zinc-900 text-zinc-100 rounded-md p-3 text-xs font-mono">
+          https://vai26.407hosted.com/api/pbx
+        </div>
+      </div>
+
+      {/* Endpoints */}
+      <div className="space-y-3">
+        {endpoints.map((ep) => {
+          const isExpanded = expandedEndpoint === ep.path;
+          return (
+            <div key={ep.path} className="rounded-lg border overflow-hidden">
+              <button
+                onClick={() => setExpandedEndpoint(isExpanded ? null : ep.path)}
+                className="w-full flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors text-left"
+              >
+                <Badge className={`${ep.color} text-white font-mono text-xs px-2 py-0.5`}>
+                  {ep.method}
+                </Badge>
+                <code className="text-sm font-mono font-medium">{ep.path}</code>
+                <span className="text-sm text-muted-foreground ml-auto mr-2 hidden sm:inline">{ep.title}</span>
+                <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+              </button>
+
+              {isExpanded && (
+                <div className="border-t px-4 pb-4 pt-3 space-y-4 bg-muted/10">
+                  <p className="text-sm text-muted-foreground">{ep.desc}</p>
+
+                  {/* Request */}
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Request</h4>
+                    <div className="bg-zinc-900 text-zinc-100 rounded-md p-3 text-xs font-mono space-y-1 overflow-x-auto">
+                      {Object.entries(ep.request.headers).map(([k, v]) => (
+                        <div key={k}><span className="text-blue-400">{k}:</span> {v}</div>
+                      ))}
+                      {Object.keys(ep.request.body).length > 0 && (
+                        <>
+                          <div className="border-t border-zinc-700 my-2" />
+                          <div className="text-zinc-400">// Body (JSON)</div>
+                          <div>{"\u007B"}</div>
+                          {Object.entries(ep.request.body).map(([k, v]) => (
+                            <div key={k} className="pl-4">
+                              <span className="text-emerald-400">"{k}"</span>: <span className="text-zinc-400">{v}</span>
+                            </div>
+                          ))}
+                          <div>{"\u007D"}</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Response */}
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Response (200 OK)</h4>
+                    <div className="bg-zinc-900 text-zinc-100 rounded-md p-3 text-xs font-mono space-y-1 overflow-x-auto">
+                      <div>{"\u007B"}</div>
+                      {Object.entries(ep.response).map(([k, v]) => (
+                        <div key={k} className="pl-4">
+                          <span className="text-emerald-400">"{k}"</span>: <span className="text-zinc-400">{v}</span>
+                        </div>
+                      ))}
+                      <div>{"\u007D"}</div>
+                    </div>
+                  </div>
+
+                  {/* Call object shape (for poll endpoint) */}
+                  {(ep as any).callShape && (
+                    <div>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Call Object Shape</h4>
+                      <div className="bg-zinc-900 text-zinc-100 rounded-md p-3 text-xs font-mono space-y-1 overflow-x-auto">
+                        <div>{"\u007B"}</div>
+                        {Object.entries((ep as any).callShape).map(([k, v]) => (
+                          <div key={k} className="pl-4">
+                            <span className="text-emerald-400">"{k}"</span>: <span className="text-zinc-400">{v as string}</span>
+                          </div>
+                        ))}
+                        <div>{"\u007D"}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Error Responses */}
+      <div className="rounded-lg border bg-muted/30 p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Shield className="h-4 w-4 text-red-500" />
+          <span className="font-semibold text-sm">Error Responses</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-xs">401</Badge>
+            <span className="text-muted-foreground">Missing or invalid authorization header</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-xs">403</Badge>
+            <span className="text-muted-foreground">Invalid API key</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-xs">400</Badge>
+            <span className="text-muted-foreground">Missing required fields</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-xs">500</Badge>
+            <span className="text-muted-foreground">Internal server error</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Flow Diagram: How a Call Gets Made ─────────────────────────────────────
 
@@ -736,8 +1081,11 @@ export default function SystemArchitecture() {
           </Button>
         </div>
 
+        {/* Table of Contents */}
+        <TableOfContents />
+
         {/* Architecture Layers */}
-        <Card>
+        <Card id="layers">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Layers className="h-5 w-5 text-primary" />
@@ -753,7 +1101,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* How a Call Gets Made */}
-        <Card>
+        <Card id="call-flow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <GitBranch className="h-5 w-5 text-primary" />
@@ -769,7 +1117,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* Campaign Lifecycle */}
-        <Card>
+        <Card id="lifecycle">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <RefreshCw className="h-5 w-5 text-primary" />
@@ -785,7 +1133,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* PBX Agent Communication */}
-        <Card>
+        <Card id="pbx-comm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Wifi className="h-5 w-5 text-primary" />
@@ -801,7 +1149,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* Core System Components */}
-        <Card>
+        <Card id="components">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Cpu className="h-5 w-5 text-primary" />
@@ -817,7 +1165,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* Key System Parameters */}
-        <Card>
+        <Card id="parameters">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-primary" />
@@ -833,7 +1181,7 @@ export default function SystemArchitecture() {
         </Card>
 
         {/* Tech Stack */}
-        <Card>
+        <Card id="tech-stack">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Layers className="h-5 w-5 text-primary" />
@@ -848,8 +1196,24 @@ export default function SystemArchitecture() {
           </CardContent>
         </Card>
 
+        {/* API Reference */}
+        <Card id="api-reference">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-primary" />
+              API Reference
+            </CardTitle>
+            <CardDescription>
+              PBX Agent REST API endpoints — authentication, request/response schemas, and error codes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ApiReference />
+          </CardContent>
+        </Card>
+
         {/* Database Schema */}
-        <Card>
+        <Card id="database">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5 text-primary" />
