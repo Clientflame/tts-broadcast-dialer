@@ -715,3 +715,5 @@
 - [x] Build automated install.sh script wrapping the 23-step client deployment checklist — 14-step interactive installer with color output, credential generation, MySQL/MinIO/Nginx/SSL/PM2/UFW/backup/update scripts
 - [x] Add nodemailer to self-hosted branch for SMTP notification support — installed and notification.ts rewritten for SMTP
 - [x] Create Client Onboarding Checklist page — expanded from 5 to 8 steps (added API Keys, Voice AI Bridge, System Health), Quick Reference card with copyable URLs
+- [x] Add Client Branding section to Settings — logo upload (base64→S3), app name, primary/accent colors, tagline, live preview. Backend: getBranding (public) + uploadLogo (admin) tRPC procedures
+- [x] Build Deployment Status admin page — client_deployments table (21 columns), full CRUD tRPC router with heartbeat endpoint, stats summary, expandable rows with system metrics (disk/memory/CPU), PBX integration status, SSL expiry, contact info. 14 new vitest tests

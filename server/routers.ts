@@ -2368,6 +2368,41 @@ Return ONLY the message text, nothing else.`;
       };
     }),
 
+    /** Get branding settings (public - needed for all users to see the brand) */
+    getBranding: publicProcedure.query(async () => {
+      const [appName, logoUrl, primaryColor, accentColor, tagline] = await Promise.all([
+        db.getAppSetting("branding_app_name"),
+        db.getAppSetting("branding_logo_url"),
+        db.getAppSetting("branding_primary_color"),
+        db.getAppSetting("branding_accent_color"),
+        db.getAppSetting("branding_tagline"),
+      ]);
+      return {
+        appName: appName || "AI TTS Broadcast Dialer",
+        logoUrl: logoUrl || null,
+        primaryColor: primaryColor || "#16a34a",
+        accentColor: accentColor || "#f97316",
+        tagline: tagline || "Intelligent Voice Broadcasting Platform",
+      };
+    }),
+
+    /** Upload logo image (admin only) - accepts base64 */
+    uploadLogo: adminProcedure.input(z.object({
+      base64: z.string().min(1),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/svg+xml", "image/webp"]),
+      fileName: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      const { storagePut } = await import("./storage");
+      const buffer = Buffer.from(input.base64, "base64");
+      if (buffer.length > 2 * 1024 * 1024) throw new Error("Logo must be under 2MB");
+      const ext = input.mimeType.split("/")[1] === "svg+xml" ? "svg" : input.mimeType.split("/")[1];
+      const fileKey = `branding/logo-${Date.now()}.${ext}`;
+      const { url } = await storagePut(fileKey, buffer, input.mimeType);
+      await db.upsertAppSetting("branding_logo_url", url, "Client logo URL");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "branding.uploadLogo", resource: "appSettings", details: { url, size: buffer.length } });
+      return { url };
+    }),
+
     /** Reconnect AMI with fresh settings from DB (admin only) */
     freepbxReconnect: adminProcedure.mutation(async ({ ctx }) => {
       const { reconnectAMI } = await import("./services/ami");
@@ -2921,6 +2956,113 @@ Return ONLY the message text, nothing else.`;
       if (callsLastMinute > totalCps * 50) alerts.push({ level: "warning", message: `High call volume: ${callsLastMinute} calls in last minute` });
 
       return { activeCalls, maxConcurrent: totalMaxConcurrent, cpsLimit: totalCps, callsLastMinute, callsLastHour, trunkCapacity, utilizationPct, alerts };
+    }),
+  }),
+
+  // ─── Client Deployments (Admin Dashboard) ──────────────────────────────
+  deployments: router({
+    /** List all client deployments (admin only) */
+    list: adminProcedure.query(async () => {
+      return db.listClientDeployments();
+    }),
+
+    /** Get a single deployment by ID */
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const deployment = await db.getClientDeployment(input.id);
+      if (!deployment) throw new TRPCError({ code: "NOT_FOUND", message: "Deployment not found" });
+      return deployment;
+    }),
+
+    /** Create a new client deployment record */
+    create: adminProcedure.input(z.object({
+      clientName: z.string().min(1).max(255),
+      serverIp: z.string().min(1).max(45),
+      domain: z.string().max(255).optional(),
+      version: z.string().max(50).optional(),
+      environment: z.enum(["production", "staging", "development"]).default("production"),
+      pbxHost: z.string().max(255).optional(),
+      notes: z.string().optional(),
+      contactEmail: z.string().email().optional(),
+      contactPhone: z.string().max(20).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const id = await db.createClientDeployment({
+        ...input,
+        domain: input.domain || null,
+        version: input.version || null,
+        pbxHost: input.pbxHost || null,
+        notes: input.notes || null,
+        contactEmail: input.contactEmail || null,
+        contactPhone: input.contactPhone || null,
+        status: "provisioning",
+        installedAt: Date.now(),
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.create", resource: "clientDeployment", resourceId: id, details: { clientName: input.clientName, serverIp: input.serverIp } });
+      return { id };
+    }),
+
+    /** Update an existing deployment */
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      clientName: z.string().min(1).max(255).optional(),
+      serverIp: z.string().min(1).max(45).optional(),
+      domain: z.string().max(255).nullable().optional(),
+      version: z.string().max(50).nullable().optional(),
+      environment: z.enum(["production", "staging", "development"]).optional(),
+      status: z.enum(["online", "offline", "degraded", "maintenance", "provisioning"]).optional(),
+      pbxHost: z.string().max(255).nullable().optional(),
+      pbxAgentVersion: z.string().max(50).nullable().optional(),
+      bridgeStatus: z.enum(["connected", "disconnected", "unknown"]).optional(),
+      sslExpiry: z.number().nullable().optional(),
+      notes: z.string().nullable().optional(),
+      contactEmail: z.string().email().nullable().optional(),
+      contactPhone: z.string().max(20).nullable().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateClientDeployment(id, data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.update", resource: "clientDeployment", resourceId: id, details: data });
+      return { success: true };
+    }),
+
+    /** Delete a deployment record */
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteClientDeployment(input.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.delete", resource: "clientDeployment", resourceId: input.id });
+      return { success: true };
+    }),
+
+    /** Heartbeat endpoint for client installations to report status (public with API key auth) */
+    heartbeat: publicProcedure.input(z.object({
+      deploymentId: z.number(),
+      apiKey: z.string().min(1),
+      version: z.string().optional(),
+      status: z.enum(["online", "offline", "degraded", "maintenance"]).optional(),
+      diskUsagePercent: z.number().min(0).max(100).optional(),
+      memoryUsageMb: z.number().min(0).optional(),
+      cpuUsagePercent: z.number().min(0).max(100).optional(),
+      pbxAgentVersion: z.string().optional(),
+      bridgeStatus: z.enum(["connected", "disconnected", "unknown"]).optional(),
+    })).mutation(async ({ input }) => {
+      // Simple API key check — use the deployment heartbeat key from app settings
+      const expectedKey = await db.getAppSetting("deployment_heartbeat_api_key");
+      if (!expectedKey || input.apiKey !== expectedKey) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+      }
+      const { deploymentId, apiKey, ...data } = input;
+      await db.updateDeploymentHeartbeat(deploymentId, data);
+      return { success: true };
+    }),
+
+    /** Get deployment summary stats */
+    stats: adminProcedure.query(async () => {
+      const deployments = await db.listClientDeployments();
+      const now = Date.now();
+      const fiveMinAgo = now - 5 * 60 * 1000;
+      const online = deployments.filter(d => d.status === "online" && d.lastHeartbeat && d.lastHeartbeat > fiveMinAgo).length;
+      const degraded = deployments.filter(d => d.status === "degraded").length;
+      const offline = deployments.filter(d => d.status === "offline" || (d.lastHeartbeat && d.lastHeartbeat < fiveMinAgo && d.status === "online")).length;
+      const maintenance = deployments.filter(d => d.status === "maintenance").length;
+      const provisioning = deployments.filter(d => d.status === "provisioning").length;
+      return { total: deployments.length, online, degraded, offline, maintenance, provisioning };
     }),
   }),
 });
