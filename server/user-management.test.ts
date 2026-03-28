@@ -96,6 +96,46 @@ describe("userManagement.deleteUser", () => {
   });
 });
 
+describe("userManagement.bulkDeleteUsers", () => {
+  it("prevents bulk delete when all selected users include only self", async () => {
+    const { ctx } = createAdminContext(1);
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.userManagement.bulkDeleteUsers({ userIds: [1] })
+    ).rejects.toThrow("No valid users to delete");
+  });
+
+  it("rejects non-admin users", async () => {
+    const { ctx } = createUserContext(2);
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.userManagement.bulkDeleteUsers({ userIds: [3, 4, 5] })
+    ).rejects.toThrow(); // Should throw FORBIDDEN
+  });
+
+  it("rejects empty array", async () => {
+    const { ctx } = createAdminContext(1);
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(
+      caller.userManagement.bulkDeleteUsers({ userIds: [] })
+    ).rejects.toThrow(); // Zod min(1) validation
+  });
+
+  it("validates input schema accepts array of numbers", async () => {
+    const { ctx } = createAdminContext(1);
+    const caller = appRouter.createCaller(ctx);
+
+    // Should not throw for valid input shape (may throw for non-existent users, but not for schema)
+    // We just verify the schema accepts the right shape
+    await expect(
+      caller.userManagement.bulkDeleteUsers({ userIds: [999] })
+    ).resolves.toBeDefined(); // User 999 doesn't exist but schema is valid, returns deletedCount: 0
+  });
+});
+
 describe("userManagement.adminResetPassword", () => {
   it("rejects non-admin users", async () => {
     const { ctx } = createUserContext(2);

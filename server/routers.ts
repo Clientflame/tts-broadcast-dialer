@@ -1528,6 +1528,33 @@ Return ONLY the message text, nothing else.`;
       return { success: true };
     }),
 
+    /** Bulk delete users (admin only) */
+    bulkDeleteUsers: adminProcedure.input(z.object({
+      userIds: z.array(z.number()).min(1).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      // Filter out the current admin's ID to prevent self-deletion
+      const idsToDelete = input.userIds.filter(id => id !== ctx.user.id);
+      if (idsToDelete.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "No valid users to delete (you cannot delete your own account)" });
+      }
+      const deletedUsers: Array<{ id: number; email: string | null; name: string | null }> = [];
+      for (const userId of idsToDelete) {
+        const targetUser = await db.getUserById(userId);
+        if (targetUser) {
+          await db.deleteUser(userId);
+          deletedUsers.push({ id: userId, email: targetUser.email, name: targetUser.name });
+        }
+      }
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "user.bulkDelete",
+        resource: "user",
+        details: { count: deletedUsers.length, deletedUsers: deletedUsers.map(u => ({ id: u.id, email: u.email, name: u.name })) },
+      });
+      return { success: true, deletedCount: deletedUsers.length, skipped: input.userIds.length - idsToDelete.length };
+    }),
+
     /** Admin reset password for any user (admin only) */
     adminResetPassword: adminProcedure.input(z.object({
       userId: z.number(),

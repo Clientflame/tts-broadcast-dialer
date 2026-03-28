@@ -11,7 +11,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useState, useMemo } from "react";
-import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal, Headphones, Link2, Unlink } from "lucide-react";
+import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal, Headphones, Link2, Unlink, CheckSquare, Square, MinusSquare } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
 import { validatePassword } from "../../../shared/passwordValidation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -134,6 +136,39 @@ export default function UserManagement() {
   const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null);
   const [resetPasswordValue, setResetPasswordValue] = useState("");
   const [skipVerification, setSkipVerification] = useState(false);
+
+  // Bulk selection state
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showSingleDeleteConfirm, setShowSingleDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
+
+  const bulkDeleteUsers = trpc.userManagement.bulkDeleteUsers.useMutation({
+    onSuccess: (data) => {
+      toast.success(`${data.deletedCount} user(s) deleted${data.skipped > 0 ? ` (${data.skipped} skipped — can't delete yourself)` : ""}`);
+      setSelectedUserIds(new Set());
+      utils.userManagement.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const toggleSelectUser = (userId: number) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUserIds.size === filteredUsers.length) {
+      setSelectedUserIds(new Set());
+    } else {
+      setSelectedUserIds(new Set(filteredUsers.map(u => u.id)));
+    }
+  };
+
+  const selectableForDelete = Array.from(selectedUserIds).filter(id => id !== user?.id);
 
   const resendVerification = trpc.localAuth.resendVerification.useMutation({
     onSuccess: (data) => {
@@ -291,10 +326,51 @@ export default function UserManagement() {
               <Input className="pl-9" placeholder="Search users..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
+            {/* Bulk action bar */}
+            {selectedUserIds.size > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <span className="text-sm font-medium">
+                  {selectedUserIds.size} user{selectedUserIds.size > 1 ? "s" : ""} selected
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    if (selectableForDelete.length === 0) {
+                      toast.error("No valid users to delete (you cannot delete your own account)");
+                      return;
+                    }
+                    setShowBulkDeleteConfirm(true);
+                  }}
+                  disabled={bulkDeleteUsers.isPending}
+                >
+                  {bulkDeleteUsers.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Deleting...</>
+                  ) : (
+                    <><Trash2 className="h-4 w-4 mr-1" />Delete Selected ({selectableForDelete.length})</>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedUserIds(new Set())}
+                >
+                  Clear Selection
+                </Button>
+              </div>
+            )}
+
             <div className="rounded-lg border overflow-hidden overflow-x-auto">
               <table className="w-full min-w-[700px]">
                 <thead className="bg-muted/50">
                   <tr>
+                    <th className="p-3 w-10">
+                      <Checkbox
+                        checked={filteredUsers.length > 0 && selectedUserIds.size === filteredUsers.length}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all users"
+                      />
+                    </th>
                     <th className="text-left p-3 text-sm font-medium">User</th>
                     <th className="text-left p-3 text-sm font-medium">Email</th>
                     <th className="text-left p-3 text-sm font-medium">Login Method</th>
@@ -307,7 +383,14 @@ export default function UserManagement() {
                 </thead>
                 <tbody>
                   {filteredUsers.map(u => (
-                    <tr key={u.id} className="border-t hover:bg-muted/30">
+                    <tr key={u.id} className={`border-t hover:bg-muted/30 ${selectedUserIds.has(u.id) ? "bg-primary/5" : ""}`}>
+                      <td className="p-3 w-10">
+                        <Checkbox
+                          checked={selectedUserIds.has(u.id)}
+                          onCheckedChange={() => toggleSelectUser(u.id)}
+                          aria-label={`Select ${u.name || u.email}`}
+                        />
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
@@ -442,9 +525,7 @@ export default function UserManagement() {
                                   toast.error("You cannot delete your own account");
                                   return;
                                 }
-                                if (confirm(`Delete user "${u.name || u.email}"? This action cannot be undone.`)) {
-                                  deleteUser.mutate({ userId: u.id });
-                                }
+                                setShowSingleDeleteConfirm({ id: u.id, name: u.name || u.email || "this user" });
                               }}
                               disabled={u.id === user?.id}
                             >
@@ -457,11 +538,64 @@ export default function UserManagement() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No users found</td></tr>
+                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No users found</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            {/* Single Delete Confirmation Dialog */}
+            <AlertDialog open={showSingleDeleteConfirm !== null} onOpenChange={(open) => { if (!open) setShowSingleDeleteConfirm(null); }}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete User</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete <strong>{showSingleDeleteConfirm?.name}</strong>? This action cannot be undone. All associated data will be permanently removed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      if (showSingleDeleteConfirm) {
+                        deleteUser.mutate({ userId: showSingleDeleteConfirm.id });
+                        setShowSingleDeleteConfirm(null);
+                      }
+                    }}
+                  >
+                    Delete User
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            {/* Bulk Delete Confirmation Dialog */}
+            <AlertDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {selectableForDelete.length} User{selectableForDelete.length > 1 ? "s" : ""}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete {selectableForDelete.length} user{selectableForDelete.length > 1 ? "s" : ""} and all their associated data. This action cannot be undone.
+                    {selectedUserIds.has(user?.id || 0) && (
+                      <span className="block mt-2 text-amber-600 font-medium">Note: Your own account will be skipped.</span>
+                    )}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => {
+                      bulkDeleteUsers.mutate({ userIds: selectableForDelete });
+                      setShowBulkDeleteConfirm(false);
+                    }}
+                  >
+                    Delete {selectableForDelete.length} User{selectableForDelete.length > 1 ? "s" : ""}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             {/* Admin Reset Password Dialog */}
             <Dialog open={resetPasswordUserId !== null} onOpenChange={(open) => { if (!open) { setResetPasswordUserId(null); setResetPasswordValue(""); } }}>

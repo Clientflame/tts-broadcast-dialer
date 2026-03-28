@@ -705,3 +705,5 @@
 - [x] Add API Reference section documenting 6 PBX Agent REST endpoints (poll, report, heartbeat, config, stats, health-check-result) with auth info, request/response schemas, call object shape, and error codes
 - [x] FIX: Voice AI Bridge shows "Not installed" on dashboard — FIXED: rewrote getBridgeStatus to use bridge_health_checks table (SSH probes) instead of agent capabilities field which never reported voiceAiBridge
 - [x] FIX: Voice AI Bridge Auto-Install — server-side pipe approach already in place; root cause of "Not installed" was the status detection, not the installer itself. Also filtered health checks from area code distribution.
+- [x] Add single user delete functionality to User Management page — with AlertDialog confirmation, prevents self-deletion
+- [x] Add bulk delete (multi-select) functionality to User Management page — checkbox column, select all, bulk action bar, confirmation dialog, skips self-deletion
