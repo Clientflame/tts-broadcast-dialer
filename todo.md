@@ -707,3 +707,5 @@
 - [x] FIX: Voice AI Bridge Auto-Install — server-side pipe approach already in place; root cause of "Not installed" was the status detection, not the installer itself. Also filtered health checks from area code distribution.
 - [x] Add single user delete functionality to User Management page — with AlertDialog confirmation, prevents self-deletion
 - [x] Add bulk delete (multi-select) functionality to User Management page — checkbox column, select all, bulk action bar, confirmation dialog, skips self-deletion
+- [x] Add "Last Active" column to User Management showing when each user last performed an action — added lastActiveAt to schema, auto-updated via protectedProcedure middleware (throttled 1/min), relative time display
+- [x] Prepare cloud hosting specs recommendation for Vultr and Hostinger — researched plans and prepared tier recommendations

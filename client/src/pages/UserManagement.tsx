@@ -378,6 +378,7 @@ export default function UserManagement() {
                     <th className="text-left p-3 text-sm font-medium">Groups</th>
                     <th className="text-left p-3 text-sm font-medium">Linked Agent</th>
                     <th className="text-left p-3 text-sm font-medium">Last Login</th>
+                    <th className="text-left p-3 text-sm font-medium">Last Active</th>
                     <th className="text-left p-3 text-sm font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -497,6 +498,19 @@ export default function UserManagement() {
                       <td className="p-3 text-sm text-muted-foreground">
                         {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleDateString() : "-"}
                       </td>
+                      <td className="p-3 text-sm text-muted-foreground">
+                        {u.lastActiveAt ? (() => {
+                          const diff = Date.now() - new Date(u.lastActiveAt).getTime();
+                          const mins = Math.floor(diff / 60000);
+                          if (mins < 1) return <span className="text-green-600 font-medium">Just now</span>;
+                          if (mins < 60) return <span className="text-green-600 font-medium">{mins}m ago</span>;
+                          const hours = Math.floor(mins / 60);
+                          if (hours < 24) return `${hours}h ago`;
+                          const days = Math.floor(hours / 24);
+                          if (days < 7) return `${days}d ago`;
+                          return new Date(u.lastActiveAt).toLocaleDateString();
+                        })() : <span className="text-muted-foreground/50">Never</span>}
+                      </td>
                       <td className="p-3">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -538,7 +552,7 @@ export default function UserManagement() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No users found</td></tr>
+                    <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">No users found</td></tr>
                   )}
                 </tbody>
               </table>

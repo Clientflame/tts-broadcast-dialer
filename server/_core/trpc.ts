@@ -10,12 +10,36 @@ const t = initTRPC.context<TrpcContext>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
+// Throttle lastActiveAt updates to once per minute per user to avoid DB spam
+const lastActiveCache = new Map<number, number>();
+const ACTIVITY_THROTTLE_MS = 60_000;
+
+async function updateLastActive(userId: number) {
+  const now = Date.now();
+  const lastUpdate = lastActiveCache.get(userId) || 0;
+  if (now - lastUpdate < ACTIVITY_THROTTLE_MS) return;
+  lastActiveCache.set(userId, now);
+  try {
+    const { users } = await import("../../drizzle/schema");
+    const { getDb } = await import("../db");
+    const { eq } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return;
+    await db.update(users).set({ lastActiveAt: new Date() }).where(eq(users.id, userId));
+  } catch {
+    // Non-critical — don't block the request
+  }
+}
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next } = opts;
 
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   }
+
+  // Fire-and-forget lastActiveAt update (throttled)
+  updateLastActive(ctx.user.id);
 
   return next({
     ctx: {
