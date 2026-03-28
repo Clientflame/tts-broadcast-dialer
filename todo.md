@@ -717,3 +717,9 @@
 - [x] Create Client Onboarding Checklist page — expanded from 5 to 8 steps (added API Keys, Voice AI Bridge, System Health), Quick Reference card with copyable URLs
 - [x] Add Client Branding section to Settings — logo upload (base64→S3), app name, primary/accent colors, tagline, live preview. Backend: getBranding (public) + uploadLogo (admin) tRPC procedures
 - [x] Build Deployment Status admin page — client_deployments table (21 columns), full CRUD tRPC router with heartbeat endpoint, stats summary, expandable rows with system metrics (disk/memory/CPU), PBX integration status, SSL expiry, contact info. 14 new vitest tests
+- [ ] Test self-hosted deployment on Hostinger VPS (187.124.94.97) — SSH in, run install.sh, verify all services
+- [ ] Verify DNS A record for app.407hosted.com points to 187.124.94.97
+- [ ] Verify SSL auto-configures via Certbot on VPS
+- [ ] Test all features in self-hosted mode (MinIO storage, direct OpenAI API, MySQL database, standalone auth)
+- [ ] Verify FreePBX connectivity from VPS static IP
+- [x] FIX: Self-hosted Docker deployment login redirect loop — cookie sameSite:none rejected by browsers on plain HTTP. Fixed: sameSite:lax for HTTP, sameSite:none for HTTPS. Added trust proxy for reverse proxy support. 7 new cookie tests, all 558 passing.
