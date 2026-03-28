@@ -726,3 +726,14 @@
 - [x] FIX: Dashboard button not working on self-hosted deployment after fresh install — onboarding auto-redirect now uses sessionStorage so it only fires once per browser session, clicking Dashboard in sidebar always works
 - [x] FIX: PBX Agent single-command copy button not working in self-hosted mode — navigator.clipboard requires HTTPS; created shared clipboard.ts utility with execCommand fallback for HTTP. Fixed in FreePBX.tsx, AiGenerator.tsx, Onboarding.tsx
 - [x] FIX: PBX Agent not registering on self-hosted deployment — (1) Dockerfile missing COPY for pbx-agent/ and voice-ai-bridge/ directories so install endpoint returned 500, (2) protocol detection defaulted to 'https' instead of 'http' for self-hosted. Fixed Dockerfile, pbx-api.ts, voice-ai-installer.ts
+- [x] Update FreePBX connection to new fresh install at 187.124.153.234 (replacing 45.77.75.198)
+- [x] Configure AMI user on fresh FreePBX at 187.124.153.234 — created 'dialer' user in manager_custom.conf, bindaddr=0.0.0.0, full read/write permissions
+- [x] Whitelist dialer server IP (187.124.94.97) on new FreePBX firewall — iptables rule + Responsive Firewall trusted zone
+- [ ] Update .env on self-hosted VPS (187.124.94.97) with new FreePBX IP — user needs to run: nano /opt/tts-dialer/.env
+- [x] Add export functionality for Audio/TTS files (JSON metadata + audio URLs)
+- [x] Add import functionality for Audio/TTS files (upload JSON to recreate entries)
+- [x] Add export functionality for Voice AI configurations (JSON with all settings)
+- [x] Add import functionality for Voice AI configurations (upload JSON to recreate)
+- [x] Add export functionality for Call Scripts (JSON with script content and segments)
+- [x] Add import functionality for Call Scripts (upload JSON to recreate scripts)
+- [x] Add import/export UI buttons on Audio/TTS, Voice AI, and Call Scripts pages — shared ImportExportButtons component, 13 new vitest tests, all 571 passing

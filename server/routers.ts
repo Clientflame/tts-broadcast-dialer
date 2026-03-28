@@ -491,6 +491,59 @@ export const appRouter = router({
         : await generateVoiceSample(input.voice as any, input.speed);
       return { url: result.url };
     }),
+    // ─── Export / Import ─────────────────────────────────────────────
+    exportAll: protectedProcedure.query(async ({ ctx }) => {
+      const files = await db.getAudioFiles();
+      const exportData = files.map(f => ({
+        name: f.name,
+        text: f.text,
+        voice: f.voice,
+        s3Url: f.s3Url,
+        s3Key: f.s3Key,
+        duration: f.duration,
+        fileSize: f.fileSize,
+        status: f.status,
+      }));
+      return { version: "1.0", type: "audio_files", exportedAt: Date.now(), count: exportData.length, data: exportData };
+    }),
+    importAll: protectedProcedure.input(z.object({
+      data: z.array(z.object({
+        name: z.string(),
+        text: z.string(),
+        voice: z.string(),
+        s3Url: z.string().nullable().optional(),
+        s3Key: z.string().nullable().optional(),
+        duration: z.number().nullable().optional(),
+        fileSize: z.number().nullable().optional(),
+        status: z.enum(["generating", "ready", "failed"]).optional(),
+      })),
+      skipDuplicates: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFiles();
+      const existingNames = new Set(existing.map(f => f.name.toLowerCase()));
+      let imported = 0;
+      let skipped = 0;
+      for (const item of input.data) {
+        if (input.skipDuplicates && existingNames.has(item.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        await db.createAudioFile({
+          userId: ctx.user.id,
+          name: item.name,
+          text: item.text,
+          voice: item.voice,
+          s3Url: item.s3Url || null,
+          s3Key: item.s3Key || null,
+          duration: item.duration || null,
+          fileSize: item.fileSize || null,
+          status: item.s3Url ? "ready" : "failed",
+        });
+        imported++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.import", resource: "audioFile", details: { imported, skipped, total: input.data.length } });
+      return { success: true, imported, skipped, total: input.data.length };
+    }),
   }),
 
   campaigns: router({
@@ -1949,6 +2002,78 @@ Return ONLY the message text, nothing else.`;
     scriptMetrics: protectedProcedure.input(z.object({ scriptId: z.number() })).query(async ({ input }) => {
       const rows = await db.getScriptPerformanceMetrics(input.scriptId);
       return rows[0] || null;
+    }),
+    // ─── Export / Import ─────────────────────────────────────────────
+    exportAll: protectedProcedure.query(async ({ ctx }) => {
+      const scripts = await db.getCallScripts();
+      const exportData = scripts.map(s => ({
+        name: s.name,
+        description: s.description,
+        callbackNumber: s.callbackNumber,
+        segments: s.segments,
+        status: s.status,
+        estimatedDuration: s.estimatedDuration,
+      }));
+      return { version: "1.0", type: "call_scripts", exportedAt: Date.now(), count: exportData.length, data: exportData };
+    }),
+    importAll: protectedProcedure.input(z.object({
+      data: z.array(z.object({
+        name: z.string(),
+        description: z.string().nullable().optional(),
+        callbackNumber: z.string().nullable().optional(),
+        segments: z.array(z.object({
+          id: z.string(),
+          type: z.enum(["tts", "recorded"]),
+          position: z.number(),
+          text: z.string().optional(),
+          voice: z.string().optional(),
+          provider: z.enum(["openai", "google"]).optional(),
+          speed: z.string().optional(),
+          audioFileId: z.number().optional(),
+          audioName: z.string().optional(),
+          audioUrl: z.string().optional(),
+        })),
+        status: z.enum(["draft", "active", "archived"]).optional(),
+        estimatedDuration: z.number().nullable().optional(),
+      })),
+      skipDuplicates: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getCallScripts();
+      const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
+      let imported = 0;
+      let skipped = 0;
+      for (const item of input.data) {
+        if (input.skipDuplicates && existingNames.has(item.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        const result = await db.createCallScript({
+          userId: ctx.user.id,
+          name: item.name,
+          description: item.description || null,
+          callbackNumber: item.callbackNumber || null,
+          segments: item.segments as ScriptSegment[],
+          status: item.status || "active",
+          estimatedDuration: item.estimatedDuration || null,
+        });
+        // Create initial version for imported script
+        await db.createScriptVersion({
+          scriptId: result.id,
+          version: 1,
+          userId: ctx.user.id,
+          userName: ctx.user.name || "Unknown",
+          changeType: "created",
+          changeSummary: "Imported from backup",
+          name: item.name,
+          description: item.description || null,
+          callbackNumber: item.callbackNumber || null,
+          segments: item.segments as ScriptSegment[],
+          status: item.status || "active",
+        });
+        imported++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.import", resource: "callScript", details: { imported, skipped, total: input.data.length } });
+      return { success: true, imported, skipped, total: input.data.length };
     }),
   }),
 

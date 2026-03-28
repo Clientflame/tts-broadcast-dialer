@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic } from "lucide-react";
+import { ImportExportButtons } from "@/components/ImportExportButtons";
 
 const OPENAI_VOICE_OPTIONS = [
   { id: "alloy", name: "Alloy", desc: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
@@ -231,6 +232,8 @@ export default function Audio() {
     onError: (e) => toast.error(e.message),
   });
 
+  const importAudioMut = trpc.audio.importAll.useMutation();
+
   const quickTestMut = trpc.quickTest.dial.useMutation({
     onSuccess: (r) => {
       if (r.success) { toast.success("Test call initiated! Your phone should ring shortly."); setQuickTestOpen(false); }
@@ -264,6 +267,20 @@ export default function Audio() {
             <p className="text-muted-foreground mt-1 text-sm">Generate AI voice messages using OpenAI or Google Cloud TTS</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <ImportExportButtons
+              label="Audio Files"
+              expectedType="audio_files"
+              onExport={async () => {
+                const result = await utils.audio.exportAll.fetch();
+                return result;
+              }}
+              onImport={async (data, skipDuplicates) => {
+                const result = await importAudioMut.mutateAsync({ data, skipDuplicates });
+                return result;
+              }}
+              isImporting={importAudioMut.isPending}
+              onImportSuccess={() => utils.audio.list.invalidate()}
+            />
             <Button variant="outline" size="sm" onClick={() => utils.audio.list.invalidate()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
             </Button>

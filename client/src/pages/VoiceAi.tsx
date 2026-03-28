@@ -20,6 +20,7 @@ import {
   Rocket, RefreshCw, CheckCircle2, XCircle, Terminal, Upload, Server,
   Activity, ArrowUpCircle, ArrowDownCircle, AlertTriangle, History,
 } from "lucide-react";
+import { ImportExportButtons } from "@/components/ImportExportButtons";
 
 const OPENAI_VOICES = [
   { id: "coral", label: "Coral", desc: "Warm, natural (recommended)" },
@@ -108,6 +109,7 @@ export default function VoiceAi() {
   const conversations = trpc.voiceAi.listConversations.useQuery({ limit: 50 });
   const analytics = trpc.voiceAi.getStats.useQuery();
   const utils = trpc.useUtils();
+  const importPromptsMut = trpc.voiceAi.importPrompts.useMutation();
 
   const deleteConvo = trpc.voiceAi.deleteConversation.useMutation({
     onSuccess: () => { utils.voiceAi.listConversations.invalidate(); utils.voiceAi.getStats.invalidate(); toast.success("Conversation deleted"); },
@@ -223,6 +225,23 @@ export default function VoiceAi() {
               Manage AI conversation prompts, view transcripts, and track performance
             </p>
           </div>
+        </div>
+
+        <div className="flex justify-end">
+          <ImportExportButtons
+            label="Voice AI Prompts"
+            expectedType="voice_ai_prompts"
+            onExport={async () => {
+              const result = await utils.voiceAi.exportPrompts.fetch();
+              return result;
+            }}
+            onImport={async (data, skipDuplicates) => {
+              const result = await importPromptsMut.mutateAsync({ data, skipDuplicates });
+              return result;
+            }}
+            isImporting={importPromptsMut.isPending}
+            onImportSuccess={() => utils.voiceAi.listPrompts.invalidate()}
+          />
         </div>
 
         {/* Stats Cards */}

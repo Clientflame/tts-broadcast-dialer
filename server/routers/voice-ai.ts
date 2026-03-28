@@ -684,6 +684,90 @@ QUESTIONS:
         createdAt: (item as any).createdAt ? Number((item as any).createdAt) : null,
       };
     }),
+
+  // ─── Export / Import ───────────────────────────────────────────────
+  exportPrompts: protectedProcedure.query(async ({ ctx }) => {
+    const prompts = await db.getVoiceAiPrompts();
+    const exportData = prompts.map(p => ({
+      name: p.name,
+      description: p.description,
+      systemPrompt: p.systemPrompt,
+      openingMessage: p.openingMessage,
+      voice: p.voice,
+      language: p.language,
+      temperature: p.temperature,
+      maxTurnDuration: p.maxTurnDuration,
+      maxConversationDuration: p.maxConversationDuration,
+      silenceTimeout: p.silenceTimeout,
+      requireAiDisclosure: p.requireAiDisclosure,
+      requireMiniMiranda: p.requireMiniMiranda,
+      miniMirandaText: p.miniMirandaText,
+      escalateOnDtmf: p.escalateOnDtmf,
+      escalateKeywords: p.escalateKeywords,
+      enabledTools: p.enabledTools,
+      isDefault: p.isDefault,
+    }));
+    return { version: "1.0", type: "voice_ai_prompts", exportedAt: Date.now(), count: exportData.length, data: exportData };
+  }),
+
+  importPrompts: protectedProcedure
+    .input(z.object({
+      data: z.array(z.object({
+        name: z.string(),
+        description: z.string().nullable().optional(),
+        systemPrompt: z.string(),
+        openingMessage: z.string().nullable().optional(),
+        voice: z.string().default("coral"),
+        language: z.string().default("en"),
+        temperature: z.string().default("0.7"),
+        maxTurnDuration: z.number().default(120),
+        maxConversationDuration: z.number().default(300),
+        silenceTimeout: z.number().default(10),
+        requireAiDisclosure: z.number().default(1),
+        requireMiniMiranda: z.number().default(0),
+        miniMirandaText: z.string().nullable().optional(),
+        escalateOnDtmf: z.string().default("#"),
+        escalateKeywords: z.array(z.string()).nullable().optional(),
+        enabledTools: z.array(z.string()).nullable().optional(),
+        isDefault: z.number().default(0),
+      })),
+      skipDuplicates: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.getVoiceAiPrompts();
+      const existingNames = new Set(existing.map(p => p.name.toLowerCase()));
+      let imported = 0;
+      let skipped = 0;
+      for (const item of input.data) {
+        if (input.skipDuplicates && existingNames.has(item.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        await db.createVoiceAiPrompt({
+          userId: ctx.user.id,
+          name: item.name,
+          description: item.description || null,
+          systemPrompt: item.systemPrompt,
+          openingMessage: item.openingMessage || null,
+          voice: item.voice,
+          language: item.language,
+          temperature: item.temperature,
+          maxTurnDuration: item.maxTurnDuration,
+          maxConversationDuration: item.maxConversationDuration,
+          silenceTimeout: item.silenceTimeout,
+          requireAiDisclosure: item.requireAiDisclosure,
+          requireMiniMiranda: item.requireMiniMiranda,
+          miniMirandaText: item.miniMirandaText || null,
+          escalateOnDtmf: item.escalateOnDtmf,
+          escalateKeywords: item.escalateKeywords || null,
+          enabledTools: item.enabledTools || null,
+          isDefault: item.isDefault,
+        });
+        imported++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "voiceai.import", resource: "voiceAiPrompt", details: { imported, skipped, total: input.data.length } });
+      return { success: true, imported, skipped, total: input.data.length };
+    }),
 });
 
 // ─── Supervisor Router ────────────────────────────────────────────────────────
