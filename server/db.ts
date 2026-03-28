@@ -2274,6 +2274,7 @@ export async function getAreaCodeDistribution(campaignId?: number, hours: number
     FROM call_queue
     WHERE result IS NOT NULL
       AND createdAt >= ${since}
+      AND audioName != 'health-check'
       ${campaignFilter}
     GROUP BY areaCode
     ORDER BY total DESC

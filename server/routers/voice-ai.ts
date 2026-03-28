@@ -192,24 +192,48 @@ export const voiceAiRouter = router({
 
   // ─── Voice AI Bridge Status ─────────────────────────────────────────
   getBridgeStatus: protectedProcedure.query(async ({ ctx }) => {
-    // Check if the Voice AI bridge service is running on the FreePBX server
-    // This is done via the PBX agent's heartbeat which reports bridge status
+    // Check bridge status using the bridge_health_checks table (SSH-based probes)
+    // which is far more reliable than agent capabilities reporting
     try {
-      const agents = await db.getPbxAgents();
-      const onlineAgent = agents.find((a: any) => {
-        if (!a.lastHeartbeat) return false;
-        return Date.now() - new Date(a.lastHeartbeat).getTime() < 60000;
+      // 1. Check recent bridge health checks (last 10 minutes)
+      const tenMinAgo = Date.now() - 10 * 60 * 1000;
+      const recentChecks = await db.getBridgeHealthChecks(5);
+      const recentHealthy = recentChecks.find((c: any) => {
+        const checkedAt = typeof c.checkedAt === 'string' ? parseInt(c.checkedAt, 10) : Number(c.checkedAt);
+        return checkedAt > tenMinAgo && c.status === 'healthy';
       });
-      if (!onlineAgent) {
-        return { status: "offline" as const, message: "PBX agent not connected" };
+      
+      if (recentHealthy) {
+        // Bridge is confirmed healthy via SSH health check
+        const agents = await db.getPbxAgents();
+        const onlineAgent = agents.find((a: any) => {
+          if (!a.lastHeartbeat) return false;
+          const hb = typeof a.lastHeartbeat === 'string' ? parseInt(a.lastHeartbeat, 10) : Number(a.lastHeartbeat);
+          return Date.now() - hb < 120000;
+        });
+        return { 
+          status: "online" as const, 
+          message: "Voice AI bridge is running", 
+          agentName: onlineAgent?.name || "FreePBX" 
+        };
       }
-      // The PBX agent reports voice_ai_bridge status in its capabilities
-      const capabilities = (onlineAgent as any).capabilities;
-      if (capabilities && typeof capabilities === "object" && (capabilities as any).voiceAiBridge) {
-        return { status: "online" as const, message: "Voice AI bridge is running", agentName: onlineAgent.name };
+      
+      // 2. Check if there are ANY health checks ever (bridge was installed at some point)
+      const allChecks = await db.getBridgeHealthChecks(1);
+      if (allChecks.length > 0) {
+        // Bridge was installed but last check is stale — it's offline, not "not installed"
+        const lastCheck = allChecks[0];
+        const lastCheckedAt = typeof lastCheck.checkedAt === 'string' ? parseInt(lastCheck.checkedAt as string, 10) : Number(lastCheck.checkedAt);
+        const minutesAgo = Math.round((Date.now() - lastCheckedAt) / 60000);
+        return { 
+          status: "offline" as const, 
+          message: `Bridge last seen ${minutesAgo} min ago (${lastCheck.status})` 
+        };
       }
-      return { status: "not_installed" as const, message: "Voice AI bridge not installed on PBX agent" };
-    } catch {
+      
+      // 3. No health checks at all — truly not installed
+      return { status: "not_installed" as const, message: "Voice AI bridge not detected" };
+    } catch (err) {
       return { status: "unknown" as const, message: "Could not check bridge status" };
     }
   }),

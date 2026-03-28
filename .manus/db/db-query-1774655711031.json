@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, name, capabilities, lastHeartbeat, status FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, name, capabilities, lastHeartbeat, status FROM pbx_agents ORDER BY lastHeartbeat DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "60014",
+      "name": "Agent HD",
+      "capabilities": "{\"agentFeatures\": [\"multi_segment_audio\", \"amd\", \"voicemail_drop\", \"ivr_payment\", \"call_recording\", \"live_agent_transfer\"], \"agentVersion\": \"1.5.0\"}",
+      "lastHeartbeat": "1774655709992",
+      "status": "online"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tcapabilities\tlastHeartbeat\tstatus\n60014\tAgent HD\t{\"agentFeatures\": [\"multi_segment_audio\", \"amd\", \"voicemail_drop\", \"ivr_payment\", \"call_recording\", \"live_agent_transfer\"], \"agentVersion\": \"1.5.0\"}\t1774655709992\tonline\n",
+  "stderr": "",
+  "execution_time_ms": 103
+}

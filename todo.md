@@ -703,3 +703,5 @@
 - [x] FIX: System Architecture Print/Export not working on mobile — replaced window.print() with html2canvas + jsPDF for direct file download that works on all devices
 - [x] Add sticky table of contents with anchor links to System Architecture page — 9 section pills with IntersectionObserver-based active highlighting and horizontal scroll for mobile
 - [x] Add API Reference section documenting 6 PBX Agent REST endpoints (poll, report, heartbeat, config, stats, health-check-result) with auth info, request/response schemas, call object shape, and error codes
+- [x] FIX: Voice AI Bridge shows "Not installed" on dashboard — FIXED: rewrote getBridgeStatus to use bridge_health_checks table (SSH probes) instead of agent capabilities field which never reported voiceAiBridge
+- [x] FIX: Voice AI Bridge Auto-Install — server-side pipe approach already in place; root cause of "Not installed" was the status detection, not the installer itself. Also filtered health checks from area code distribution.

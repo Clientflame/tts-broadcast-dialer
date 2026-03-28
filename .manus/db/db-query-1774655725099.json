@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, agentId, status, responseTimeMs, errorMessage, checkedAt FROM bridge_health_checks ORDER BY checkedAt DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, agentId, status, responseTimeMs, errorMessage, checkedAt FROM bridge_health_checks ORDER BY checkedAt DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "30351",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "627",
+      "errorMessage": "NULL",
+      "checkedAt": "1774655558707"
+    },
+    {
+      "id": "30350",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "4734",
+      "errorMessage": "NULL",
+      "checkedAt": "1774655542983"
+    },
+    {
+      "id": "30349",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "11610",
+      "errorMessage": "NULL",
+      "checkedAt": "1774655509264"
+    },
+    {
+      "id": "30348",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "5501",
+      "errorMessage": "NULL",
+      "checkedAt": "1774655501785"
+    },
+    {
+      "id": "30347",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "4543",
+      "errorMessage": "NULL",
+      "checkedAt": "1774655242791"
+    },
+    {
+      "id": "30346",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "2791",
+      "errorMessage": "NULL",
+      "checkedAt": "1774654988530"
+    },
+    {
+      "id": "30345",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "3814",
+      "errorMessage": "NULL",
+      "checkedAt": "1774654942062"
+    },
+    {
+      "id": "30344",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "6901",
+      "errorMessage": "NULL",
+      "checkedAt": "1774654692632"
+    },
+    {
+      "id": "30343",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "3316",
+      "errorMessage": "NULL",
+      "checkedAt": "1774654641564"
+    },
+    {
+      "id": "30342",
+      "agentId": "45.77.75.198",
+      "status": "healthy",
+      "responseTimeMs": "3184",
+      "errorMessage": "NULL",
+      "checkedAt": "1774654389471"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tagentId\tstatus\tresponseTimeMs\terrorMessage\tcheckedAt\n30351\t45.77.75.198\thealthy\t627\tNULL\t1774655558707\n30350\t45.77.75.198\thealthy\t4734\tNULL\t1774655542983\n30349\t45.77.75.198\thealthy\t11610\tNULL\t1774655509264\n30348\t45.77.75.198\thealthy\t5501\tNULL\t1774655501785\n30347\t45.77.75.198\thealthy\t4543\tNULL\t1774655242791\n30346\t45.77.75.198\thealthy\t2791\tNULL\t1774654988530\n30345\t45.77.75.198\thealthy\t3814\tNULL\t1774654942062\n30344\t45.77.75.198\thealthy\t6901\tNULL\t1774654692632\n30343\t45.77.75.198\thealthy\t3316\tNULL\t1774654641564\n30342\t45.77.75.198\thealthy\t3184\tNULL\t1774654389471\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

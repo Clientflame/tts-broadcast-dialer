@@ -215,7 +215,7 @@ function SystemHealthWidget() {
         : bridgeStatus.data?.status === "not_installed"
         ? "Not installed"
         : bridgeStatus.data?.status === "offline"
-        ? "PBX agent offline"
+        ? (bridgeStatus.data?.message || "Bridge offline")
         : "Checking...",
       ok: bridgeStatus.data?.status === "online",
     },
