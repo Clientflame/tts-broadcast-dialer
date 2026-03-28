@@ -148,9 +148,9 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The dialer will be available at `http://YOUR_SERVER_IP:3000`.
+The dialer will be available at `http://YOUR_SERVER_IP` (port 80 by default).
 
-> **Port conflict note:** FreePBX uses port 80 (Apache) and the dialer uses port 3000 by default. These do not conflict. If you want the dialer on port 80 instead, you can set up a reverse proxy (see the Troubleshooting section) or change the FreePBX Apache port.
+> **Port conflict note:** The dialer uses port 80 by default. If FreePBX is on the same server (Apache also uses port 80), the setup script will detect the conflict and offer to move Apache to port 8080. Alternatively, you can set `APP_PORT=3000` in your `.env` to use a different port.
 
 ---
 
@@ -189,7 +189,7 @@ Ensure these ports are open between the two servers:
 |---|---|---|---|
 | 5038 | TCP | Dialer → FreePBX | AMI (Asterisk Manager Interface) |
 | 22 | TCP | Dialer → FreePBX | SSH (audio file sync) |
-| 3000 | TCP | Users → Dialer | Web dashboard |
+| 80 | TCP | Users → Dialer | Web dashboard |
 | 80/443 | TCP | Users → FreePBX | FreePBX admin panel |
 | 5060 | UDP | SIP Provider → FreePBX | SIP signaling |
 | 10000-20000 | UDP | SIP Provider → FreePBX | RTP media (voice) |
@@ -351,7 +351,7 @@ After confirming the review summary, it installs Docker (if needed), configures 
 
 ### Step 3: Verify
 
-Open `http://YOUR_SERVER_IP:3000` in a browser. Create your admin account on the setup page, then the onboarding wizard will guide you through connecting to FreePBX, importing DIDs, uploading contacts, and creating your first campaign.
+Open `http://YOUR_SERVER_IP` in a browser. Create your admin account on the setup page, then the onboarding wizard will guide you through connecting to FreePBX, importing DIDs, uploading contacts, and creating your first campaign.
 
 ---
 
@@ -368,7 +368,7 @@ When you enter a domain name during the setup wizard (Step 5), the script automa
 3. Opens ports **80** and **443** in the firewall
 4. Caddy automatically obtains and renews Let's Encrypt SSL certificates
 
-The result is that your dialer is accessible at `https://your-domain.com` with a valid SSL certificate, while also remaining accessible at `http://IP:3000` for direct access.
+The result is that your dialer is accessible at `https://your-domain.com` with a valid SSL certificate, while also remaining accessible at `http://IP` for direct access.
 
 ### Prerequisites
 
@@ -501,7 +501,7 @@ sed -i '/^DOMAIN=/d' .env
 docker compose stop caddy
 docker compose rm -f caddy
 
-# Access via http://IP:3000 again
+# Access via http://IP again (port 80)
 ```
 
 ---
@@ -723,7 +723,7 @@ docker exec -i tts-dialer-db mysql -u root -p<ROOT_PASSWORD> tts_dialer < backup
 For monitoring all client servers from a single dashboard, consider installing [Uptime Kuma](https://github.com/louislam/uptime-kuma) on a separate small VPS ($5/mo). Add each client's health endpoint:
 
 ```
-http://client-ip:3000/api/trpc/health
+http://client-ip/api/trpc/health
 ```
 
 Uptime Kuma will alert you via email, Slack, or Discord when a client server goes down.
@@ -736,7 +736,7 @@ Uptime Kuma will alert you via email, Slack, or Discord when a client server goe
 |---|---|---|
 | Container won't start | `docker compose logs dialer` | Check DATABASE_URL and env vars |
 | Database connection timeout | `docker compose logs db` | Wait for MySQL to initialize (first run takes ~30s) |
-| Health check failing | `docker inspect tts-dialer` | Check if port 3000 is accessible |
+| Health check failing | `docker inspect tts-dialer` | Check if port 80 is accessible |
 | AMI connection refused | `telnet FREEPBX_IP 5038` | Check bindaddr in manager.conf, firewall rules, and AMI user permit field |
 | AMI auth failed | Check AMI username/password | Verify in FreePBX → Settings → Asterisk Manager Users |
 | SSH connection to FreePBX fails | `ssh PBX_USER@FREEPBX_IP` | Check SSH credentials and firewall port 22 |
@@ -744,7 +744,7 @@ Uptime Kuma will alert you via email, Slack, or Discord when a client server goe
 | No audio on calls | Check TTS API keys | Verify OPENAI_API_KEY or GOOGLE_TTS_API_KEY in .env |
 | Image pull fails | `docker login ghcr.io` | Authenticate with GitHub token (needs `read:packages` scope) |
 | Disk full | `docker system prune -a` | Remove old images and volumes |
-| Port 3000 conflict (all-in-one) | `netstat -tlnp \| grep 3000` | Change APP_PORT in .env to another port |
+| Port 80 conflict (all-in-one) | `netstat -tlnp \| grep :80` | Change APP_PORT in .env to another port (e.g., 3000) |
 | FreePBX web panel not loading | `fwconsole restart` | Restart FreePBX services |
 | SSL certificate not provisioning | `docker compose logs caddy` | Ensure DNS A record points to server IP, ports 80/443 open |
 | Caddy port 80 conflict (all-in-one) | `netstat -tlnp \| grep :80` | Stop Apache (`systemctl stop apache2`) or change its port |
@@ -774,8 +774,8 @@ a2enmod proxy proxy_http ssl
 cat > /etc/apache2/sites-available/dialer.conf << EOF
 <VirtualHost *:80>
     ServerName dialer.example.com
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    ProxyPass / http://127.0.0.1:80/
+    ProxyPassReverse / http://127.0.0.1:80/
 </VirtualHost>
 EOF
 
@@ -809,7 +809,7 @@ certbot --apache -d dialer.example.com
 | `OPENAI_API_KEY` | Optional | OpenAI API key for TTS |
 | `JWT_SECRET` | Yes | Session signing secret (auto-generated) |
 | `TZ` | No | Timezone (default: America/New_York) |
-| `APP_PORT` | No | App port (default: 3000) |
+| `APP_PORT` | No | Host port (default: 80). Container always runs on 3000 internally. |
 | `DOMAIN` | No | Domain name for HTTPS via Caddy (e.g., dialer.yourcompany.com). Leave empty to skip SSL |
 | `UPDATE_CHECK_INTERVAL` | No | Watchtower check interval in seconds (default: 86400) |
 | `SKIP_MIGRATIONS` | No | Set to "true" to skip auto-migrations on startup |

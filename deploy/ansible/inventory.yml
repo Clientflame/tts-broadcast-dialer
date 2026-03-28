@@ -24,7 +24,7 @@ all:
         abc_marketing:
           ansible_host: 149.28.xxx.xxx
           client_name: "ABC Marketing"
-          app_port: 3000
+          app_port: 80
           pbx_host: "149.28.xxx.xxx"
           # version_pin: "v1.3.0"  # Uncomment to pin to a specific version
 
@@ -32,12 +32,12 @@ all:
         # xyz_agency:
         #   ansible_host: 207.148.xxx.xxx
         #   client_name: "XYZ Agency"
-        #   app_port: 3000
+        #   app_port: 80
         #   pbx_host: "207.148.xxx.xxx"
 
         # --- Your Test Server ---
         # test_server:
         #   ansible_host: 45.77.75.198
         #   client_name: "Internal Test"
-        #   app_port: 3000
+        #   app_port: 80
         #   pbx_host: "45.77.75.198"

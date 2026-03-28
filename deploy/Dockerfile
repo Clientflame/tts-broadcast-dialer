@@ -73,7 +73,8 @@ RUN chmod +x ./entrypoint.sh
 ENV NODE_ENV=production
 ENV TZ=America/New_York
 
-# The app reads PORT from env, default 3000
+# The app reads PORT from env, default 3000 (internal)
+# Host mapping defaults to port 80 via docker-compose
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

@@ -745,3 +745,4 @@
 - [x] Update PBX agent installer to automatically deploy correct dialplan (AUDIOFILE variable) in extensions_custom.conf
 - [x] Update PBX agent installer to automatically enable ARI (ari_general_custom.conf) during installation
 - [x] Update PBX agent installer to configure voice-ai-bridge dialplan context during installation
+- [x] Update Docker deployment to expose app on port 80 instead of port 3000 for dedicated server
