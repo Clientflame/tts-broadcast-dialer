@@ -723,3 +723,6 @@
 - [ ] Test all features in self-hosted mode (MinIO storage, direct OpenAI API, MySQL database, standalone auth)
 - [ ] Verify FreePBX connectivity from VPS static IP
 - [x] FIX: Self-hosted Docker deployment login redirect loop — cookie sameSite:none rejected by browsers on plain HTTP. Fixed: sameSite:lax for HTTP, sameSite:none for HTTPS. Added trust proxy for reverse proxy support. 7 new cookie tests, all 558 passing.
+- [x] FIX: Dashboard button not working on self-hosted deployment after fresh install — onboarding auto-redirect now uses sessionStorage so it only fires once per browser session, clicking Dashboard in sidebar always works
+- [x] FIX: PBX Agent single-command copy button not working in self-hosted mode — navigator.clipboard requires HTTPS; created shared clipboard.ts utility with execCommand fallback for HTTP. Fixed in FreePBX.tsx, AiGenerator.tsx, Onboarding.tsx
+- [x] FIX: PBX Agent not registering on self-hosted deployment — (1) Dockerfile missing COPY for pbx-agent/ and voice-ai-bridge/ directories so install endpoint returned 500, (2) protocol detection defaulted to 'https' instead of 'http' for self-hosted. Fixed Dockerfile, pbx-api.ts, voice-ai-installer.ts

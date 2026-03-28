@@ -758,15 +758,18 @@ export default function Home() {
 
   const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user && user?.role === "admin", refetchInterval: 10000 });
 
-  // Auto-redirect to onboarding if setup is incomplete and not dismissed
+  // Auto-redirect to onboarding ONLY on initial page load (not when navigating back from sidebar)
+  // Uses sessionStorage so it only triggers once per browser session
   const onboardingStatus = trpc.onboarding.status.useQuery(undefined, { enabled: !!user && user?.role === "admin" });
   useEffect(() => {
     if (
       onboardingStatus.data &&
       !onboardingStatus.data.isComplete &&
       typeof window !== "undefined" &&
-      localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "true"
+      localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "true" &&
+      !sessionStorage.getItem("onboarding_shown")
     ) {
+      sessionStorage.setItem("onboarding_shown", "true");
       setLocation("/onboarding");
     }
   }, [onboardingStatus.data, setLocation]);

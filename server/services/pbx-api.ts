@@ -562,7 +562,8 @@ installerRouter.get("/install", async (req: any, res: any) => {
   }
 
   // Build the API URL from the request
-  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  // Default to "http" for self-hosted deployments without reverse proxy
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
   const host = req.headers["x-forwarded-host"] || req.headers.host;
   const apiUrl = `${protocol}://${host}/api/pbx`;
   const maxCalls = agent.maxCalls ?? 5;

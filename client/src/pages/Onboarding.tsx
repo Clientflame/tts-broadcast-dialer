@@ -242,9 +242,14 @@ function StepCard({
 }
 
 function QuickRefItem({ label, value, icon, copyable }: { label: string; value: string; icon: React.ReactNode; copyable?: boolean }) {
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value);
-    toast.success(`Copied ${label} URL`);
+  const handleCopy = async () => {
+    const { copyToClipboard } = await import("@/lib/clipboard");
+    const ok = await copyToClipboard(value);
+    if (ok) {
+      toast.success(`Copied ${label} URL`);
+    } else {
+      toast.error("Failed to copy — please select the text and copy manually");
+    }
   };
   return (
     <div className="flex items-center gap-2 rounded-lg bg-background/60 px-3 py-2 text-sm">
