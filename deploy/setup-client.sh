@@ -270,7 +270,7 @@ fi
 # ============================================================
 print_header "4/7  Server Settings"
 
-prompt APP_PORT "Web app port" "80" ""
+prompt APP_PORT "Web app port" "3000" ""
 
 echo ""
 echo -e "  ${DIM}Timezone (for scheduling and call logs):${NC}"
@@ -316,11 +316,7 @@ if [ -n "$PORT_80_CONFLICT" ] || [ -n "$PORT_443_CONFLICT" ]; then
   echo -e "  ${DIM}SSL via Caddy requires ports 80 and 443 to be free.${NC}"
   echo ""
   echo -e "  Options:"
-  if [ "$APP_PORT" = "80" ]; then
-    echo -e "    ${BOLD}1${NC}) Skip SSL — access via http://IP (recommended for now)"
-  else
-    echo -e "    ${BOLD}1${NC}) Skip SSL — access via http://IP:${APP_PORT} (recommended for now)"
-  fi
+  echo -e "    ${BOLD}1${NC}) Skip SSL — access via http://IP:${APP_PORT} (recommended for now)"
   echo -e "    ${BOLD}2${NC}) Free ports 80/443 — move Apache to port 8080, then enable SSL"
   echo ""
   read -p "  Choose (1-2, default: 1): " SSL_CONFLICT_CHOICE
@@ -360,11 +356,7 @@ if [ -z "$PORT_80_CONFLICT" ] && [ -z "$PORT_443_CONFLICT" ]; then
   echo -e "    ${DIM}2. The DNS A record points to this server's IP: ${BOLD}$(hostname -I | awk '{print $1}')${NC}"
   echo -e "    ${DIM}3. Ports 80 and 443 are available (they are!)${NC}"
   echo ""
-  if [ "$APP_PORT" = "80" ]; then
-    echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP instead.${NC}"
-  else
-    echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP:${APP_PORT} instead.${NC}"
-  fi
+  echo -e "  ${DIM}Leave blank to skip SSL and access via http://IP:${APP_PORT} instead.${NC}"
   echo ""
 
   prompt APP_DOMAIN "Domain name (e.g., dialer.yourcompany.com)" "" ""
@@ -588,7 +580,7 @@ services:
     container_name: tts-dialer
     restart: unless-stopped
     ports:
-      - "\${APP_PORT:-80}:3000"
+      - "\${APP_PORT:-3000}:3000"
     env_file:
       - .env
     volumes:
@@ -956,17 +948,9 @@ echo ""
 echo -e "  ${BOLD}Open your dialer:${NC}"
 if [ -n "$APP_DOMAIN" ]; then
   echo -e "  ${CYAN}➜  https://${APP_DOMAIN}${NC}"
-  if [ "$APP_PORT" = "80" ]; then
-    echo -e "  ${DIM}Also available at: http://$(hostname -I | awk '{print $1}')${NC}"
-  else
-    echo -e "  ${DIM}Also available at: http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
-  fi
+  echo -e "  ${DIM}Also available at: http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
 else
-  if [ "$APP_PORT" = "80" ]; then
-    echo -e "  ${CYAN}➜  http://$(hostname -I | awk '{print $1}')${NC}"
-  else
-    echo -e "  ${CYAN}➜  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
-  fi
+  echo -e "  ${CYAN}➜  http://$(hostname -I | awk '{print $1}'):${APP_PORT}${NC}"
 fi
 echo ""
 echo -e "  ${BOLD}First time?${NC} Create your admin account on the setup page,"

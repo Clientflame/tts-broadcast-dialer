@@ -746,3 +746,4 @@
 - [x] Update PBX agent installer to automatically enable ARI (ari_general_custom.conf) during installation
 - [x] Update PBX agent installer to configure voice-ai-bridge dialplan context during installation
 - [x] Update Docker deployment to expose app on port 80 instead of port 3000 for dedicated server
+- [x] Revert default port back to 3000 (port 80 conflicts with Caddy in SSL setups)
