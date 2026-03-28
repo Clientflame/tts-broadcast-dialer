@@ -2708,16 +2708,34 @@ Return ONLY the message text, nothing else.`;
       const contactLists = await db.getContactLists();
       const hasContacts = contactLists.some((l: any) => (l.contactCount ?? 0) > 0);
 
-      // Step 5: Campaign created
+      // Step 5: API Keys configured (at least OpenAI or Google TTS)
+      const hasOpenAI = !!process.env.OPENAI_API_KEY;
+      const hasGoogleTTS = !!process.env.GOOGLE_TTS_API_KEY;
+      const hasApiKeys = hasOpenAI || hasGoogleTTS;
+      const apiKeyDetail = hasApiKeys
+        ? [hasOpenAI && "OpenAI", hasGoogleTTS && "Google TTS"].filter(Boolean).join(" + ")
+        : undefined;
+
+      // Step 6: Voice AI Bridge installed
+      const bridgeChecks = await db.getBridgeHealthChecks(1);
+      const hasBridge = bridgeChecks.length > 0 && bridgeChecks[0].status === "healthy";
+
+      // Step 7: Campaign created
       const campaigns = await db.getCampaigns();
       const hasCampaigns = campaigns.length > 0;
+
+      // Step 8: System health — all critical services up
+      const systemHealthy = pbxOnline && hasCallerIds && hasApiKeys;
 
       const steps = [
         { id: "account", label: "Create Account", completed: accountCreated },
         { id: "pbx", label: "Connect FreePBX", completed: pbxConnected, detail: pbxOnline ? "Online" : pbxConnected ? "Registered (offline)" : undefined },
         { id: "callerIds", label: "Add Caller IDs", completed: hasCallerIds, detail: hasCallerIds ? `${callerIds.length} DID(s)` : undefined },
         { id: "contacts", label: "Import Contacts", completed: hasContacts, detail: hasContacts ? `${contactLists.length} list(s)` : undefined },
+        { id: "apiKeys", label: "Configure API Keys", completed: hasApiKeys, detail: apiKeyDetail },
+        { id: "voiceAiBridge", label: "Install Voice AI Bridge", completed: hasBridge, detail: hasBridge ? "Connected" : undefined },
         { id: "campaign", label: "Create Campaign", completed: hasCampaigns, detail: hasCampaigns ? `${campaigns.length} campaign(s)` : undefined },
+        { id: "systemHealth", label: "System Health Check", completed: systemHealthy, detail: systemHealthy ? "All systems go" : undefined },
       ];
 
       const completedCount = steps.filter(s => s.completed).length;

@@ -713,3 +713,5 @@
 - [x] Create self-hosted branch with code modifications for storage.ts, llm.ts, voiceTranscription.ts, imageGeneration.ts, notification.ts — pushed to GitHub as `self-hosted` branch
 - [x] Install @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner dependencies — added to package.json
 - [x] Build automated install.sh script wrapping the 23-step client deployment checklist — 14-step interactive installer with color output, credential generation, MySQL/MinIO/Nginx/SSL/PM2/UFW/backup/update scripts
+- [x] Add nodemailer to self-hosted branch for SMTP notification support — installed and notification.ts rewritten for SMTP
+- [x] Create Client Onboarding Checklist page — expanded from 5 to 8 steps (added API Keys, Voice AI Bridge, System Health), Quick Reference card with copyable URLs
