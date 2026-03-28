@@ -710,3 +710,6 @@
 - [x] Add "Last Active" column to User Management showing when each user last performed an action — added lastActiveAt to schema, auto-updated via protectedProcedure middleware (throttled 1/min), relative time display
 - [x] Prepare cloud hosting specs recommendation for Vultr and Hostinger — researched plans and prepared tier recommendations
 - [x] Create FULL self-hosted deployment package for Hostinger KVM 4 VPS (187.124.94.97, Ubuntu 22.04, app.407hosted.com) — 21-section guide with service replacement matrix, MinIO storage, local MySQL, standalone auth, PM2, Nginx SSL, backup strategy, client install checklist
+- [x] Create self-hosted branch with code modifications for storage.ts, llm.ts, voiceTranscription.ts, imageGeneration.ts, notification.ts — pushed to GitHub as `self-hosted` branch
+- [x] Install @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner dependencies — added to package.json
+- [x] Build automated install.sh script wrapping the 23-step client deployment checklist — 14-step interactive installer with color output, credential generation, MySQL/MinIO/Nginx/SSL/PM2/UFW/backup/update scripts
