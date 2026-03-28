@@ -742,3 +742,6 @@
 - [x] FIX: Calls connect but no audio plays on self-hosted deployment (both TTS and Voice AI) — Two issues: (1) Dialplan used ${AUDIO_FILE} but PBX agent sets AUDIOFILE (no underscore), fixed in extensions_custom.conf. (2) ARI was disabled (enabled=no in ari_general_additional.conf), enabled via ari_general_custom.conf, voice-ai-bridge now connected.
 - [x] FIX: Campaigns with call scripts not dialing out on self-hosted deployment — isWithinTimeWindow didn't handle overnight windows (e.g. 09:00-02:00). Fixed with OR logic for overnight spans. Added diagnostic logging for time window, campaign status, and Intl midnight normalization.
 - [x] FIX: PBX agent version showing v1.5.0 on dashboard instead of v1.5.3 — updated AGENT_VERSION in pbx_agent.py to 1.5.3 and applied on live FreePBX server
+- [x] Update PBX agent installer to automatically deploy correct dialplan (AUDIOFILE variable) in extensions_custom.conf
+- [x] Update PBX agent installer to automatically enable ARI (ari_general_custom.conf) during installation
+- [x] Update PBX agent installer to configure voice-ai-bridge dialplan context during installation
