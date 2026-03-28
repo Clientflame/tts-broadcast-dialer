@@ -1,5 +1,5 @@
 /**
- * Image generation helper using internal ImageService
+ * Self-Hosted Image generation helper using OpenAI DALL-E API directly
  *
  * Example usage:
  *   const { url: imageUrl } = await generateImage({
@@ -16,7 +16,6 @@
  *   });
  */
 import { storagePut } from "server/storage";
-import { ENV } from "./env";
 
 export type GenerateImageOptions = {
   prompt: string;
@@ -34,33 +33,29 @@ export type GenerateImageResponse = {
 export async function generateImage(
   options: GenerateImageOptions
 ): Promise<GenerateImageResponse> {
-  if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
-  }
-  if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  // Build the full URL by appending the service path to the base URL
-  const baseUrl = ENV.forgeApiUrl.endsWith("/")
-    ? ENV.forgeApiUrl
-    : `${ENV.forgeApiUrl}/`;
-  const fullUrl = new URL(
-    "images.v1.ImageService/GenerateImage",
-    baseUrl
-  ).toString();
+  const baseUrl = process.env.OPENAI_API_BASE_URL
+    ? process.env.OPENAI_API_BASE_URL.replace(/\/$/, "")
+    : "https://api.openai.com";
+
+  // Use DALL-E 3 for generation
+  const fullUrl = `${baseUrl}/v1/images/generations`;
 
   const response = await fetch(fullUrl, {
     method: "POST",
     headers: {
-      accept: "application/json",
       "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
+      model: "dall-e-3",
       prompt: options.prompt,
-      original_images: options.originalImages || [],
+      n: 1,
+      size: "1024x1024",
+      response_format: "b64_json",
     }),
   });
 
@@ -72,19 +67,17 @@ export async function generateImage(
   }
 
   const result = (await response.json()) as {
-    image: {
-      b64Json: string;
-      mimeType: string;
-    };
+    data: Array<{ b64_json: string; revised_prompt?: string }>;
   };
-  const base64Data = result.image.b64Json;
+
+  const base64Data = result.data[0].b64_json;
   const buffer = Buffer.from(base64Data, "base64");
 
-  // Save to S3
+  // Save to S3/MinIO
   const { url } = await storagePut(
     `generated/${Date.now()}.png`,
     buffer,
-    result.image.mimeType
+    "image/png"
   );
   return {
     url,

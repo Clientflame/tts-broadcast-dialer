@@ -210,12 +210,12 @@ const normalizeToolChoice = (
 };
 
 const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+  process.env.OPENAI_API_BASE_URL && process.env.OPENAI_API_BASE_URL.trim().length > 0
+    ? `${process.env.OPENAI_API_BASE_URL.replace(/\/$/, "")}/v1/chat/completions`
+    : "https://api.openai.com/v1/chat/completions";
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
+  if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 };
@@ -316,7 +316,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
     },
     body: JSON.stringify(payload),
   });
