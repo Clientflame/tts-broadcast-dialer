@@ -1,4 +1,4 @@
-import { storagePut } from "../storage";
+import { storagePut, resolveStorageUrl } from "../storage";
 import { nanoid } from "nanoid";
 import { Client as SSHClient } from "ssh2";
 import { getAppSetting } from "../db";
@@ -431,7 +431,7 @@ export async function transferAudioToFreePBX(params: {
 
   // Step 1: Download from S3
   console.log("[TTS Transfer] Downloading from S3...");
-  const response = await fetch(params.s3Url);
+  const response = await fetch(resolveStorageUrl(params.s3Url));
   if (!response.ok) {
     throw new Error(`Failed to download audio from S3 (${response.status}): ${response.statusText}`);
   }

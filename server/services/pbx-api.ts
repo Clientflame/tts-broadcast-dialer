@@ -31,6 +31,18 @@ async function authenticateAgent(req: Request, res: Response, next: NextFunction
 
 pbxRouter.use(authenticateAgent);
 
+// Helper: resolve relative storage URLs to absolute URLs using the request's origin
+// This is needed for self-hosted deployments where audio URLs are relative (/api/storage/...)
+// but the PBX agent on a different server needs full URLs to download them
+function resolveUrlForAgent(url: string | null, req: Request): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  // Build origin from request headers
+  const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000';
+  return `${protocol}://${host}${url}`;
+}
+
 // ─── Poll for pending calls ─────────────────────────────────────────────────
 // PBX agent calls this every 2-3 seconds to get work
 // Uses weighted load balancing: each agent gets calls proportional to its available capacity
@@ -139,8 +151,8 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         channel: c.channel,
         context: c.context,
         callerIdStr: c.callerIdStr,
-        audioUrl: c.audioUrl,
-        audioUrls: c.audioUrls || null,
+        audioUrl: resolveUrlForAgent(c.audioUrl, req),
+        audioUrls: c.audioUrls ? c.audioUrls.map((u: string) => resolveUrlForAgent(u, req)!) : null,
         audioName: c.audioName,
         variables: c.variables || {},
         priority: c.priority,
@@ -148,7 +160,7 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         callLogId: c.callLogId,
         // AMD / Voicemail drop (from campaign settings)
         amdEnabled: !!(campaign as any)?.amdEnabled,
-        voicemailAudioUrl: (campaign as any)?.voicemailAudioUrl || (c as any).voicemailAudioUrl || null,
+        voicemailAudioUrl: resolveUrlForAgent((campaign as any)?.voicemailAudioUrl || (c as any).voicemailAudioUrl || null, req),
         voicemailMessage: (campaign as any)?.voicemailMessage || null,
         // IVR Payment (from campaign settings)
         ivrPaymentEnabled: !!(campaign as any)?.ivrPaymentEnabled,

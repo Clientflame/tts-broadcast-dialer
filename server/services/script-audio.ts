@@ -11,7 +11,7 @@
  * keeping the web server free of audio processing dependencies.
  */
 
-import { storagePut } from "../storage";
+import { storagePut, resolveStorageUrl } from "../storage";
 import { nanoid } from "nanoid";
 import type { ScriptSegment } from "../../drizzle/schema";
 import {
@@ -236,7 +236,7 @@ export async function generateScriptAudio(params: {
       console.log(`[ScriptAudio] Concatenating ${audioUrls.length} segments server-side...`);
       const buffers: Buffer[] = [];
       for (const url of audioUrls) {
-        const resp = await fetch(url);
+        const resp = await fetch(resolveStorageUrl(url));
         if (!resp.ok) throw new Error(`Failed to fetch segment: ${resp.status}`);
         buffers.push(Buffer.from(await resp.arrayBuffer()));
       }

@@ -737,3 +737,4 @@
 - [x] Add export functionality for Call Scripts (JSON with script content and segments)
 - [x] Add import functionality for Call Scripts (upload JSON to recreate scripts)
 - [x] Add import/export UI buttons on Audio/TTS, Voice AI, and Call Scripts pages — shared ImportExportButtons component, 13 new vitest tests, all 571 passing
+- [x] FIX: Self-hosted script preview fails with "Storage proxy credentials missing" — added local filesystem storage fallback (data/storage/ dir), Express route to serve files, resolveStorageUrl() for server-side fetch, relative URLs for browser, absolute URLs for PBX agent. All 558 tests passing
