@@ -767,3 +767,4 @@
 - [x] FIX: Bash syntax error in SSH MySQL commands — replaced complex grep -oP with simple awk -F'"' '{print $4}' approach across all 6 mysqlCmd instances to avoid escaping issues through JS template literal -> SSH -> bash chain
 - [x] FIX: Only 1 of 8 inbound routes being created — added batch INSERT with per-route logging and stderr checking, fallback to individual inserts on error
 - [x] FIX: INSERT INTO incoming using non-existent columns (faxenabled, faxdetection, legacy_email, grptime, grpnum) — updated to match actual FreePBX 17 table schema
+- [x] FIX: privacyman column is tinyint(1) not varchar — changed 'no' to 0 in INSERT statements

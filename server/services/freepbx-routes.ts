@@ -320,7 +320,7 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
     const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
 
     insertStatements.push(
-      `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 'no')`
+      `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 0)`
     );
   }
 
@@ -345,7 +345,7 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
         const safeDest = route.destination.replace(/'/g, "").replace(/"/g, "");
         const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
 
-        const singleQuery = `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 'no')`;
+        const singleQuery = `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 0)`;
 
         try {
           const r = await sshExec(config, mysqlCmd(singleQuery));
