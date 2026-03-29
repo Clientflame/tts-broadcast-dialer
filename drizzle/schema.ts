@@ -989,3 +989,29 @@ export const clientDeployments = mysqlTable("client_deployments", {
 
 export type ClientDeployment = typeof clientDeployments.$inferSelect;
 export type InsertClientDeployment = typeof clientDeployments.$inferInsert;
+
+// ─── DID Cost Transactions ──────────────────────────────────────────────────
+export const didCostTransactions = mysqlTable("did_cost_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  callerIdId: int("callerIdId"), // nullable — DID may have been deleted
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  type: mysqlEnum("type", [
+    "purchase",        // DID purchase from Vitelity
+    "monthly_rental",  // Monthly DID rental fee
+    "cnam_lookup",     // CNAM lookup charge
+    "cnam_lidb",       // CNAM LIDB (outbound caller name) charge
+    "release",         // Credit back on DID release
+    "minutes",         // Per-minute usage charge
+    "other",
+  ]).notNull(),
+  amount: varchar("amount", { length: 20 }).notNull(), // e.g., "1.50", negative for credits
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  description: text("description"),
+  referenceId: varchar("referenceId", { length: 255 }), // e.g., Vitelity order ID
+  transactionDate: bigint("transactionDate", { mode: "number" }).notNull(), // UTC ms
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DidCostTransaction = typeof didCostTransactions.$inferSelect;
+export type InsertDidCostTransaction = typeof didCostTransactions.$inferInsert;

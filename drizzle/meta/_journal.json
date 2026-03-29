@@ -295,6 +295,13 @@
       "when": 1774805804880,
       "tag": "0041_third_mac_gargan",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1774808782145,
+      "tag": "0042_uneven_karnak",
+      "breakpoints": true
     }
   ]
 }

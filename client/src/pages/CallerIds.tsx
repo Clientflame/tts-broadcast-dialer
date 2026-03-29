@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download, Settings } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -721,6 +721,38 @@ export default function CallerIds() {
     onError: (e) => toast.error(`Bulk CNAM lookup failed: ${e.message}`),
   });
 
+  // Release DIDs
+  const [showRelease, setShowRelease] = useState(false);
+  const [releaseFromVitelity, setReleaseFromVitelity] = useState(true);
+  const [releaseFromFreepbx, setReleaseFromFreepbx] = useState(true);
+  const bulkReleaseMut = trpc.callerIds.bulkReleaseDIDs.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      const released = r.results.filter(x => x.vitelityReleased).length;
+      const deleted = r.results.filter(x => x.dbDeleted).length;
+      const errors = r.results.filter(x => x.error).length;
+      toast.success(`${deleted} DID(s) removed${released > 0 ? `, ${released} released from Vitelity` : ""}${errors > 0 ? `, ${errors} errors` : ""}`);
+      setShowRelease(false);
+      setSelected(new Set());
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Sync settings
+  const [showSyncSettings, setShowSyncSettings] = useState(false);
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [syncInterval, setSyncInterval] = useState(60);
+  const { data: syncSettings } = trpc.callerIds.getSyncSettings.useQuery(undefined, {
+    enabled: showSyncSettings,
+  });
+  const updateSyncSettingsMut = trpc.callerIds.updateSyncSettings.useMutation({
+    onSuccess: () => {
+      toast.success("Sync settings updated");
+      setShowSyncSettings(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   // Parse FreePBX destination string to human-readable label
   const destToLabel = (dest: string): string => {
     if (!dest) return "Not set";
@@ -1091,6 +1123,9 @@ export default function CallerIds() {
                     : <><Search className="h-4 w-4 mr-1" /> CNAM Lookup ({selected.size})</>
                   }
                 </Button>
+                <Button variant="destructive" size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={() => setShowRelease(true)}>
+                  <Trash2 className="h-4 w-4 mr-1" /> Release DIDs ({selected.size})
+                </Button>
               </>
             )}
             <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate()} disabled={healthCheckMut.isPending}>
@@ -1109,6 +1144,9 @@ export default function CallerIds() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => { setSyncLoading(true); setSyncResult(null); syncMut.mutate(); }} disabled={syncLoading}>
               {syncLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Syncing...</> : <><RefreshCw className="h-4 w-4 mr-1" /> Sync Vitelity</>}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowSyncSettings(true); }} title="Auto-Sync Settings">
+              <Settings className="h-4 w-4" />
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
@@ -2680,6 +2718,144 @@ export default function CallerIds() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Release DIDs Confirmation Dialog */}
+      <Dialog open={showRelease} onOpenChange={setShowRelease}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <AlertTriangle className="h-5 w-5" /> Release DIDs
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently release the selected DIDs. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-muted rounded-lg p-3">
+              <p className="text-sm font-medium mb-2">{selected.size} DID(s) selected:</p>
+              <div className="text-xs font-mono space-y-0.5 max-h-32 overflow-y-auto">
+                {callerIds.filter(c => selected.has(c.id)).map(c => (
+                  <div key={c.id}>{c.phoneNumber}{c.label ? ` (${c.label})` : ""}</div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Release from Vitelity</p>
+                  <p className="text-xs text-muted-foreground">Cancel the DID with your carrier</p>
+                </div>
+                <Switch checked={releaseFromVitelity} onCheckedChange={setReleaseFromVitelity} />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Delete from FreePBX</p>
+                  <p className="text-xs text-muted-foreground">Remove inbound routes from PBX</p>
+                </div>
+                <Switch checked={releaseFromFreepbx} onCheckedChange={setReleaseFromFreepbx} />
+              </div>
+            </div>
+            {!releaseFromVitelity && !releaseFromFreepbx && (
+              <p className="text-xs text-muted-foreground">DIDs will only be removed from the local database.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRelease(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              className="bg-orange-600 hover:bg-orange-700"
+              disabled={bulkReleaseMut.isPending}
+              onClick={() => {
+                bulkReleaseMut.mutate({
+                  ids: Array.from(selected),
+                  releaseFromVitelity,
+                  deleteFromFreepbx: releaseFromFreepbx,
+                });
+              }}
+            >
+              {bulkReleaseMut.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Releasing...</> : `Release ${selected.size} DID(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync Settings Dialog */}
+      <Dialog open={showSyncSettings} onOpenChange={(open) => {
+        setShowSyncSettings(open);
+        if (open && syncSettings) {
+          setSyncEnabled(syncSettings.enabled);
+          setSyncInterval(syncSettings.intervalMinutes);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" /> Auto-Sync Settings
+            </DialogTitle>
+            <DialogDescription>
+              Configure automatic synchronization with your Vitelity DID inventory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Enable Auto-Sync</p>
+                <p className="text-xs text-muted-foreground">Automatically sync DIDs from Vitelity on a schedule</p>
+              </div>
+              <Switch checked={syncEnabled} onCheckedChange={setSyncEnabled} />
+            </div>
+            {syncEnabled && (
+              <div className="space-y-2">
+                <Label>Sync Interval</Label>
+                <Select value={String(syncInterval)} onValueChange={(v) => setSyncInterval(Number(v))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">Every 5 minutes</SelectItem>
+                    <SelectItem value="15">Every 15 minutes</SelectItem>
+                    <SelectItem value="30">Every 30 minutes</SelectItem>
+                    <SelectItem value="60">Every hour</SelectItem>
+                    <SelectItem value="360">Every 6 hours</SelectItem>
+                    <SelectItem value="720">Every 12 hours</SelectItem>
+                    <SelectItem value="1440">Every 24 hours</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {syncSettings && (
+              <div className="bg-muted rounded-lg p-3 space-y-1">
+                <p className="text-xs font-medium">Last Sync</p>
+                {syncSettings.lastRun ? (
+                  <p className="text-xs text-muted-foreground">{new Date(syncSettings.lastRun).toLocaleString()}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Never synced</p>
+                )}
+                {syncSettings.lastResult && (
+                  <p className="text-xs">
+                    +{syncSettings.lastResult.added} added, -{syncSettings.lastResult.removed} removed, {syncSettings.lastResult.matched} matched
+                    {syncSettings.lastResult.error && <span className="text-destructive"> (Error: {syncSettings.lastResult.error})</span>}
+                  </p>
+                )}
+                {syncSettings.isRunning && (
+                  <p className="text-xs text-blue-500 flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Sync in progress...</p>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSyncSettings(false)}>Cancel</Button>
+            <Button
+              disabled={updateSyncSettingsMut.isPending}
+              onClick={() => {
+                updateSyncSettingsMut.mutate({ enabled: syncEnabled, intervalMinutes: syncInterval });
+              }}
+            >
+              {updateSyncSettingsMut.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</> : "Save Settings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

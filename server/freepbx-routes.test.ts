@@ -71,7 +71,7 @@ describe("FreePBX Inbound Routes Service", () => {
   });
 
   it("should check for existing routes before creating new ones", () => {
-    expect(source).toContain("SELECT extension FROM incoming WHERE extension IN");
+    expect(source).toContain("SELECT extension, description, destination, pricid FROM incoming WHERE extension IN");
   });
 
   it("should handle duplicate key errors gracefully", () => {

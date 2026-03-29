@@ -820,3 +820,18 @@
 - [x] Backend: searchAvailableTollFreeDIDs, purchaseTollFreeDID, bulkPurchaseTollFreeDIDs
 - [x] Frontend: Toll-free tab in Purchase DIDs dialog
 - [x] Vitest tests for auto-sync, pool count, and toll-free purchasing (32 tests)
+- [x] Scheduled auto-sync — automatic Vitelity inventory sync on configurable interval
+- [x] Backend: cron/interval-based sync job with configurable frequency
+- [x] Settings UI: auto-sync toggle, interval selector (5min to 24hr), last sync display
+- [x] Sync history log with timestamps and results
+- [x] DID cost tracking dashboard — aggregate costs per DID on Analytics page
+- [x] Database: didCostTransactions schema for tracking DID costs (purchase, CNAM lookups, monthly fees, release credits)
+- [x] Backend: cost aggregation queries and procedures (getCostSummary with configurable time range)
+- [x] Frontend: cost dashboard with pie chart, bar chart, per-DID cost breakdown table, search/sort
+- [x] Cost transaction logging on CNAM lookups ($0.01/lookup), DID purchases, toll-free purchases, and releases
+- [x] Bulk DID release — release/cancel DIDs back to Vitelity from Caller IDs page
+- [x] Backend: bulkReleaseDIDs procedure via Vitelity removeDID API with per-DID results
+- [x] Frontend: Release button in selection toolbar with bulk release support
+- [x] Confirmation dialog before releasing DIDs (warns about permanent removal, toggles for Vitelity/FreePBX)
+- [x] Auto-remove inbound routes from FreePBX when releasing DIDs
+- [x] Vitest tests for auto-sync, cost tracking, and bulk release (69 new tests)

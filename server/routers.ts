@@ -1542,6 +1542,22 @@ export const appRouter = router({
         },
       });
 
+      // Log cost transaction for DID purchase
+      try {
+        const database = await db.getDb();
+        if (database) {
+          const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+          await database.insert(dctTable).values({
+            userId: ctx.user.id,
+            phoneNumber,
+            type: "purchase",
+            amount: "1.00", // Default purchase cost
+            description: `Purchased DID ${phoneNumber} from Vitelity`,
+            transactionDate: Date.now(),
+          });
+        }
+      } catch {}
+
       return {
         purchase: purchaseResult,
         route: routeResult,
@@ -1630,6 +1646,25 @@ export const appRouter = router({
         },
       });
 
+      // Log cost transactions for purchased DIDs
+      if (purchasedDids.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = purchasedDids.map(r => ({
+              userId: ctx.user.id,
+              phoneNumber: r.did.startsWith("1") ? r.did : `1${r.did}`,
+              type: "purchase" as const,
+              amount: "1.00",
+              description: `Purchased DID from Vitelity (bulk)`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
+
       return { results, callerIds: callerIdResult, inboundRoutes: inboundRouteResult };
     }),
 
@@ -1662,6 +1697,25 @@ export const appRouter = router({
         resource: "callerId",
         details: { did: input.did, name: result.name, success: result.success },
       });
+
+      // Log cost transaction for CNAM lookup ($0.01 per lookup)
+      if (result.success) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            await database.insert(dctTable).values({
+              userId: ctx.user.id,
+              callerIdId: input.callerIdId || null,
+              phoneNumber: input.did,
+              type: "cnam_lookup",
+              amount: "0.01",
+              description: `CNAM lookup: ${result.name || "N/A"}`,
+              transactionDate: Date.now(),
+            });
+          }
+        } catch {}
+      }
 
       return result;
     }),
@@ -1698,6 +1752,27 @@ export const appRouter = router({
         resource: "callerId",
         details: { count: input.dids.length, successful: results.filter(r => r.success).length },
       });
+
+      // Log cost transactions for successful CNAM lookups ($0.01 each)
+      const successfulLookups = results.filter(r => r.success);
+      if (successfulLookups.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = successfulLookups.map((r, i) => ({
+              userId: ctx.user.id,
+              callerIdId: input.dids[i]?.callerIdId || null,
+              phoneNumber: r.did,
+              type: "cnam_lookup" as const,
+              amount: "0.01",
+              description: `CNAM lookup: ${r.name || "N/A"}`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
 
       return results;
     }),
@@ -1783,6 +1858,22 @@ export const appRouter = router({
         details: { did: input.did, routed, routeCreated, label: input.label },
       });
 
+      // Log cost transaction for toll-free DID purchase
+      try {
+        const database = await db.getDb();
+        if (database) {
+          const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+          await database.insert(dctTable).values({
+            userId: ctx.user.id,
+            phoneNumber,
+            type: "purchase",
+            amount: "2.00", // Toll-free typically costs more
+            description: `Purchased toll-free DID ${phoneNumber} from Vitelity`,
+            transactionDate: Date.now(),
+          });
+        }
+      } catch {}
+
       return { purchased: true, routed, routeCreated };
     }),
 
@@ -1859,6 +1950,25 @@ export const appRouter = router({
           label: input.label,
         },
       });
+
+      // Log cost transactions for purchased toll-free DIDs
+      if (purchasedDIDs.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = purchasedDIDs.map(r => ({
+              userId: ctx.user.id,
+              phoneNumber: r.did.length === 10 ? `1${r.did}` : r.did,
+              type: "purchase" as const,
+              amount: "2.00",
+              description: `Purchased toll-free DID from Vitelity (bulk)`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
 
       return { results, purchased: purchasedDIDs.length, failed: results.filter(r => !r.purchased).length };
     }),
@@ -1937,6 +2047,167 @@ export const appRouter = router({
         result.push({ label, count });
       }
       return result;
+    }),
+
+    // ── Vitelity Sync Settings ──
+    getSyncSettings: adminProcedure.query(async () => {
+      const { getSyncStatus } = await import("./services/vitelity-sync");
+      return getSyncStatus();
+    }),
+
+    updateSyncSettings: adminProcedure.input(z.object({
+      enabled: z.boolean(),
+      intervalMinutes: z.number().min(5).max(1440),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting("vitelity_sync_enabled", input.enabled ? "1" : "0", "Enable Vitelity auto-sync", 0, ctx.user.id);
+      await db.upsertAppSetting("vitelity_sync_interval_minutes", String(input.intervalMinutes), "Vitelity sync interval in minutes", 0, ctx.user.id);
+
+      if (input.enabled) {
+        const { startSyncScheduler } = await import("./services/vitelity-sync");
+        await startSyncScheduler(ctx.user.id);
+      } else {
+        const { stopSyncScheduler } = await import("./services/vitelity-sync");
+        stopSyncScheduler();
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "vitelity.sync_settings_updated",
+        resource: "settings",
+        details: { enabled: input.enabled, intervalMinutes: input.intervalMinutes },
+      });
+
+      return { success: true };
+    }),
+
+    runSyncNow: adminProcedure.mutation(async ({ ctx }) => {
+      const { performSync } = await import("./services/vitelity-sync");
+      return performSync(ctx.user.id);
+    }),
+
+    // ── DID Cost Transactions ──
+    getCostSummary: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(365).optional(),
+    }).optional()).query(async ({ ctx, input }) => {
+      const days = input?.days || 30;
+      const since = Date.now() - days * 24 * 60 * 60 * 1000;
+      const database = await db.getDb();
+      if (!database) return { transactions: [], totals: {} };
+      const { didCostTransactions } = await import("../drizzle/schema");
+      const { gte } = await import("drizzle-orm");
+      const txns = await database
+        .select()
+        .from(didCostTransactions)
+        .where(gte(didCostTransactions.transactionDate, since));
+      // Aggregate by type
+      const totals: Record<string, number> = {};
+      for (const t of txns) {
+        const amt = parseFloat(t.amount) || 0;
+        totals[t.type] = (totals[t.type] || 0) + amt;
+      }
+      // Aggregate by DID
+      const byDid: Record<string, { phoneNumber: string; total: number; breakdown: Record<string, number> }> = {};
+      for (const t of txns) {
+        const amt = parseFloat(t.amount) || 0;
+        if (!byDid[t.phoneNumber]) {
+          byDid[t.phoneNumber] = { phoneNumber: t.phoneNumber, total: 0, breakdown: {} };
+        }
+        byDid[t.phoneNumber].total += amt;
+        byDid[t.phoneNumber].breakdown[t.type] = (byDid[t.phoneNumber].breakdown[t.type] || 0) + amt;
+      }
+      return {
+        transactions: txns,
+        totals,
+        byDid: Object.values(byDid).sort((a, b) => b.total - a.total),
+        grandTotal: Object.values(totals).reduce((s, v) => s + v, 0),
+      };
+    }),
+
+    // ── Bulk Release DIDs to Vitelity ──
+    bulkReleaseDIDs: adminProcedure.input(z.object({
+      ids: z.array(z.number()).min(1),
+      releaseFromVitelity: z.boolean().default(true),
+      deleteFromFreepbx: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const callerIdsList = await db.getCallerIds();
+      const toRelease = callerIdsList.filter(c => input.ids.includes(c.id));
+      if (toRelease.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "No matching caller IDs" });
+
+      const results: Array<{ phoneNumber: string; vitelityReleased: boolean; freepbxDeleted: boolean; dbDeleted: boolean; error?: string }> = [];
+
+      for (const did of toRelease) {
+        const result: { phoneNumber: string; vitelityReleased: boolean; freepbxDeleted: boolean; dbDeleted: boolean; error?: string } = {
+          phoneNumber: did.phoneNumber,
+          vitelityReleased: false,
+          freepbxDeleted: false,
+          dbDeleted: false,
+        };
+
+        // Release from Vitelity
+        if (input.releaseFromVitelity) {
+          try {
+            const { removeDID } = await import("./services/vitelity");
+            await removeDID(did.phoneNumber);
+            result.vitelityReleased = true;
+          } catch (err: unknown) {
+            result.error = `Vitelity release failed: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+
+        // Delete from FreePBX
+        if (input.deleteFromFreepbx) {
+          try {
+            const { deleteInboundRoutes } = await import("./services/freepbx-routes");
+            await deleteInboundRoutes([did.phoneNumber]);
+            result.freepbxDeleted = true;
+          } catch (err: unknown) {
+            result.error = (result.error ? result.error + "; " : "") + `FreePBX delete failed: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+
+        // Delete from DB
+        try {
+          await db.deleteCallerId(did.id);
+          result.dbDeleted = true;
+        } catch (err: unknown) {
+          result.error = (result.error ? result.error + "; " : "") + `DB delete failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+
+        // Log cost transaction (credit)
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            await database.insert(dctTable).values({
+              userId: ctx.user.id,
+              callerIdId: did.id,
+              phoneNumber: did.phoneNumber,
+              type: "release",
+              amount: "0.00",
+              description: `Released DID${input.releaseFromVitelity ? " from Vitelity" : ""}${input.deleteFromFreepbx ? " and FreePBX" : ""}`,
+              transactionDate: Date.now(),
+            });
+          }
+        } catch {}
+
+        results.push(result);
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkRelease",
+        resource: "callerIds",
+        details: {
+          count: toRelease.length,
+          released: results.filter(r => r.vitelityReleased).length,
+          freepbxDeleted: results.filter(r => r.freepbxDeleted).length,
+          dbDeleted: results.filter(r => r.dbDeleted).length,
+        },
+      });
+
+      return { results };
     }),
   }),
 
