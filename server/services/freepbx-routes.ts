@@ -111,12 +111,10 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
 
   // We use `mysql --batch --skip-column-names` for clean tab-separated output
   // FreePBX stores its config in the `asterisk` database
-  // Extract credentials from freepbx.conf - handles both single and double quote formats:
-  //   $amp_conf["AMPDBUSER"] = "freepbxuser";  (double quotes)
-  //   $amp_conf['AMPDBUSER'] = 'freepbxuser';  (single quotes)
+  // Extract credentials using awk - handles both single and double quote formats
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk --batch --skip-column-names -e "${query}"`;
 
   // Run all queries in a single SSH session for speed and reliability
@@ -267,8 +265,8 @@ export async function checkExistingRoutes(dids: string[]): Promise<Map<string, b
   for (const did of dids) result.set(did, false);
 
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk --batch --skip-column-names -e "${query}"`;
 
   try {
@@ -299,8 +297,8 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
   const results: InboundRouteResult[] = [];
 
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk -e "${query}"`;
 
   // First, check which routes already exist
@@ -374,8 +372,8 @@ export async function deleteInboundRoutes(dids: string[]): Promise<{ deleted: nu
   let deleted = 0;
 
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk -e "${query}"`;
 
   const didList = dids.map(d => `'${d.replace(/'/g, "")}'`).join(",");
@@ -407,8 +405,8 @@ export async function updateInboundRoute(did: string, updates: { destination?: s
   const config = await getSSHConfig();
 
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk -e "${query}"`;
 
   const setClauses: string[] = [];
@@ -456,8 +454,8 @@ export async function listInboundRoutes(): Promise<ExistingInboundRoute[]> {
   const config = await getSSHConfig();
 
   const mysqlCmd = (query: string) =>
-    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
-    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP '["\x27][^"\x27]*["\x27]' | tail -1 | tr -d '"\x27') ` +
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
     `asterisk --batch --skip-column-names -e "${query}"`;
 
   try {
