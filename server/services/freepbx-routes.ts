@@ -311,24 +311,72 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
   // cidnum, extension, destination, faxenabled, faxdetection, legacy_email, 
   // mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, 
   // ringing, fanswer, privacyman
+  // Build all INSERT statements and run them in a single SSH session
+  // This avoids opening 8 separate SSH connections which can cause timeouts
+  const insertStatements: string[] = [];
   for (const route of newRoutes) {
     const safeDid = route.did.replace(/'/g, "").replace(/"/g, "");
-    const safeDesc = route.description.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    const safeDesc = route.description.replace(/'/g, "").replace(/"/g, "");
     const safeDest = route.destination.replace(/'/g, "").replace(/"/g, "");
-    const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "\\'").replace(/"/g, '\\"') : "";
+    const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
 
-    const query = `INSERT INTO incoming (cidnum, extension, destination, faxenabled, faxdetection, legacy_email, mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'disabled', 'none', '', 'default', '${safeDesc}', 0, 0, 0, '${safeCidPrefix}', '', 'default', '', 'no')`;
+    insertStatements.push(
+      `INSERT INTO incoming (cidnum, extension, destination, faxenabled, faxdetection, legacy_email, mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'disabled', 'none', '', 'default', '${safeDesc}', 0, 0, 0, '${safeCidPrefix}', '', 'default', '', 'no')`
+    );
+  }
 
-    try {
-      await sshExec(config, mysqlCmd(query));
-      results.push({ did: route.did, success: true });
-    } catch (e: any) {
-      // Check for duplicate key error
-      if (e.message?.includes("Duplicate entry")) {
-        results.push({ did: route.did, success: true, alreadyExists: true });
-      } else {
-        results.push({ did: route.did, success: false, error: e.message || "Unknown error" });
+  // Execute all INSERTs in a single MySQL command separated by semicolons
+  const batchQuery = insertStatements.join("; ");
+  console.log(`[FreePBX Routes] Inserting ${newRoutes.length} routes in batch...`);
+
+  try {
+    const result = await sshExec(config, mysqlCmd(batchQuery), 45000);
+    console.log(`[FreePBX Routes] Batch INSERT stdout: ${result.stdout.substring(0, 500)}`);
+    if (result.stderr) {
+      console.log(`[FreePBX Routes] Batch INSERT stderr: ${result.stderr.substring(0, 500)}`);
+    }
+
+    // If stderr contains ERROR, some or all inserts failed
+    if (result.stderr && result.stderr.includes("ERROR")) {
+      console.error(`[FreePBX Routes] Batch INSERT had errors, falling back to individual inserts`);
+      // Fall back to individual inserts to identify which ones fail
+      for (const route of newRoutes) {
+        const safeDid = route.did.replace(/'/g, "").replace(/"/g, "");
+        const safeDesc = route.description.replace(/'/g, "").replace(/"/g, "");
+        const safeDest = route.destination.replace(/'/g, "").replace(/"/g, "");
+        const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
+
+        const singleQuery = `INSERT INTO incoming (cidnum, extension, destination, faxenabled, faxdetection, legacy_email, mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'disabled', 'none', '', 'default', '${safeDesc}', 0, 0, 0, '${safeCidPrefix}', '', 'default', '', 'no')`;
+
+        try {
+          const r = await sshExec(config, mysqlCmd(singleQuery));
+          if (r.stderr && r.stderr.includes("ERROR")) {
+            console.error(`[FreePBX Routes] INSERT failed for ${route.did}: ${r.stderr.substring(0, 200)}`);
+            results.push({ did: route.did, success: false, error: r.stderr.substring(0, 200) });
+          } else {
+            console.log(`[FreePBX Routes] INSERT OK for ${route.did}`);
+            results.push({ did: route.did, success: true });
+          }
+        } catch (e: any) {
+          console.error(`[FreePBX Routes] INSERT exception for ${route.did}: ${e.message}`);
+          if (e.message?.includes("Duplicate entry")) {
+            results.push({ did: route.did, success: true, alreadyExists: true });
+          } else {
+            results.push({ did: route.did, success: false, error: e.message || "Unknown error" });
+          }
+        }
       }
+    } else {
+      // All inserts succeeded
+      for (const route of newRoutes) {
+        results.push({ did: route.did, success: true });
+      }
+    }
+  } catch (e: any) {
+    console.error(`[FreePBX Routes] Batch INSERT failed: ${e.message}`);
+    // Mark all as failed
+    for (const route of newRoutes) {
+      results.push({ did: route.did, success: false, error: e.message || "Unknown error" });
     }
   }
 
