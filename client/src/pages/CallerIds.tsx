@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -70,6 +70,213 @@ function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, conse
   );
 }
 
+// ─── Destination Type Labels ─────────────────────────────────────────────────
+
+const DEST_TYPE_LABELS: Record<string, string> = {
+  extension: "Extensions",
+  queue: "Call Queues",
+  ring_group: "Ring Groups",
+  ivr: "IVR Menus",
+  voicemail: "Voicemail",
+  announcement: "Announcements",
+  terminate: "Terminate",
+};
+
+// ─── Inbound Route Config Panel ──────────────────────────────────────────────
+
+interface InboundRouteEntry {
+  phoneNumber: string;
+  label?: string;
+  destination: string;
+  description: string;
+  cidPrefix: string;
+}
+
+function InboundRouteConfigPanel({
+  entries,
+  onEntriesChange,
+  destinations,
+  destinationsLoading,
+}: {
+  entries: InboundRouteEntry[];
+  onEntriesChange: (entries: InboundRouteEntry[]) => void;
+  destinations: any[];
+  destinationsLoading: boolean;
+}) {
+  const [showPerNumber, setShowPerNumber] = useState(false);
+  const [globalDest, setGlobalDest] = useState("none");
+  const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
+  const [globalCidPrefix, setGlobalCidPrefix] = useState("");
+
+  // Group destinations by type
+  const grouped = useMemo(() => {
+    const groups: Record<string, typeof destinations> = {};
+    for (const d of destinations) {
+      if (!groups[d.type]) groups[d.type] = [];
+      groups[d.type].push(d);
+    }
+    return groups;
+  }, [destinations]);
+
+  // Apply global settings to all entries
+  const applyToAll = (dest: string, desc: string, prefix: string) => {
+    onEntriesChange(entries.map(e => ({
+      ...e,
+      destination: dest,
+      description: desc,
+      cidPrefix: prefix,
+    })));
+  };
+
+  const handleGlobalDestChange = (val: string) => {
+    setGlobalDest(val);
+    applyToAll(val, globalDesc, globalCidPrefix);
+  };
+
+  const handleGlobalDescChange = (val: string) => {
+    setGlobalDesc(val);
+    applyToAll(globalDest, val, globalCidPrefix);
+  };
+
+  const handleGlobalCidPrefixChange = (val: string) => {
+    setGlobalCidPrefix(val);
+    applyToAll(globalDest, globalDesc, val);
+  };
+
+  const updateEntry = (idx: number, field: keyof InboundRouteEntry, value: string) => {
+    const updated = [...entries];
+    updated[idx] = { ...updated[idx], [field]: value };
+    onEntriesChange(updated);
+  };
+
+  if (destinationsLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading FreePBX destinations...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+      <div className="flex items-center gap-2">
+        <Route className="h-4 w-4 text-primary" />
+        <span className="font-medium text-sm">Inbound Route Configuration</span>
+        <Badge variant="outline" className="text-xs">Optional</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Auto-create inbound routes on FreePBX so return calls to these DIDs are routed to the right destination.
+      </p>
+
+      {/* Global settings */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs">Destination (all numbers)</Label>
+            <Select value={globalDest} onValueChange={handleGlobalDestChange}>
+              <SelectTrigger className="mt-1">
+                <SelectValue placeholder="Select destination..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No inbound route</SelectItem>
+                {Object.entries(grouped).map(([type, dests]) => (
+                  <div key={type}>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                      {DEST_TYPE_LABELS[type] || type}
+                    </div>
+                    {dests.map((d: any) => (
+                      <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </div>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Route Label</Label>
+            <Input
+              className="mt-1"
+              value={globalDesc}
+              onChange={e => handleGlobalDescChange(e.target.value)}
+              placeholder="TTS Dialer"
+            />
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs">CID Name Prefix (optional)</Label>
+          <Input
+            className="mt-1"
+            value={globalCidPrefix}
+            onChange={e => handleGlobalCidPrefixChange(e.target.value)}
+            placeholder="e.g. CB: or TTS:"
+          />
+          <p className="text-xs text-muted-foreground mt-1">Prepended to caller name on inbound calls (e.g. "CB: John Smith")</p>
+        </div>
+      </div>
+
+      {/* Per-number toggle */}
+      {entries.length > 1 && (
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs gap-1"
+            onClick={() => setShowPerNumber(!showPerNumber)}
+          >
+            {showPerNumber ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {showPerNumber ? "Hide" : "Show"} per-number settings ({entries.length} numbers)
+          </Button>
+
+          {showPerNumber && (
+            <div className="mt-2 space-y-2 max-h-60 overflow-y-auto">
+              {entries.map((entry, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 bg-background rounded border text-xs">
+                  <span className="font-mono w-28 shrink-0">{entry.phoneNumber}</span>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <Select
+                    value={entry.destination}
+                    onValueChange={(val) => updateEntry(idx, "destination", val)}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No route</SelectItem>
+                      {Object.entries(grouped).map(([type, dests]) => (
+                        <div key={type}>
+                          <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground bg-muted/50">
+                            {DEST_TYPE_LABELS[type] || type}
+                          </div>
+                          {dests.map((d: any) => (
+                            <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="h-8 text-xs w-28"
+                    value={entry.description}
+                    onChange={e => updateEntry(idx, "description", e.target.value)}
+                    placeholder="Label"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function CallerIds() {
   const utils = trpc.useUtils();
   const { data: callerIds = [], isLoading } = trpc.callerIds.list.useQuery();
@@ -85,7 +292,28 @@ export default function CallerIds() {
       } else {
         toast.success(`${r.count} caller IDs added`);
       }
-      setShowBulk(false); setBulkText("");
+      setShowBulk(false); setBulkText(""); setBulkRouteEntries([]);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const bulkCreateWithRoutesMut = trpc.callerIds.bulkCreateWithRoutes.useMutation({
+    onSuccess: (r: any) => {
+      utils.callerIds.list.invalidate();
+      const cidMsg = r.callerIds.duplicatesOmitted > 0
+        ? `${r.callerIds.count} caller IDs added (${r.callerIds.duplicatesOmitted} dupes skipped)`
+        : `${r.callerIds.count} caller IDs added`;
+      if (r.inboundRoutes) {
+        const { created, skipped, failed } = r.inboundRoutes.summary;
+        const routeMsg = [
+          created > 0 ? `${created} route(s) created` : null,
+          skipped > 0 ? `${skipped} already existed` : null,
+          failed > 0 ? `${failed} failed` : null,
+        ].filter(Boolean).join(", ");
+        toast.success(`${cidMsg}. Routes: ${routeMsg}`);
+      } else {
+        toast.success(cidMsg);
+      }
+      setShowBulk(false); setBulkText(""); setBulkRouteEntries([]);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -98,7 +326,6 @@ export default function CallerIds() {
   const healthCheckMut = trpc.callerIds.triggerHealthCheck.useMutation({
     onSuccess: (r) => {
       toast.success(r.message);
-      // Poll for results after a delay
       setTimeout(() => utils.callerIds.list.invalidate(), 5000);
       setTimeout(() => utils.callerIds.list.invalidate(), 15000);
       setTimeout(() => utils.callerIds.list.invalidate(), 30000);
@@ -115,13 +342,42 @@ export default function CallerIds() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Fetch FreePBX destinations when bulk dialog opens
+  const [fetchDests, setFetchDests] = useState(false);
+  const { data: destinations = [], isLoading: destsLoading } = trpc.callerIds.getFreePBXDestinations.useQuery(undefined, {
+    enabled: fetchDests,
+    staleTime: 60000, // Cache for 1 minute
+  });
+
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [phone, setPhone] = useState("");
   const [label, setLabel] = useState("");
   const [bulkText, setBulkText] = useState("");
+  const [bulkRouteEntries, setBulkRouteEntries] = useState<InboundRouteEntry[]>([]);
+  const [showRouteConfig, setShowRouteConfig] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Parse bulk text into route entries whenever text changes
+  const parseBulkEntries = (text: string): InboundRouteEntry[] => {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+    return lines.map(line => {
+      const parts = line.split(",").map(p => p.trim());
+      return {
+        phoneNumber: parts[0],
+        label: parts[1] || undefined,
+        destination: "none",
+        description: "TTS Dialer",
+        cidPrefix: "",
+      };
+    }).filter(e => e.phoneNumber);
+  };
+
+  const handleBulkTextChange = (text: string) => {
+    setBulkText(text);
+    setBulkRouteEntries(parseBulkEntries(text));
+  };
 
   const handleAdd = () => {
     if (!phone.trim()) return;
@@ -129,13 +385,36 @@ export default function CallerIds() {
   };
 
   const handleBulkAdd = () => {
-    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) return;
-    const entries = lines.map(line => {
-      const parts = line.split(",").map(p => p.trim());
-      return { phoneNumber: parts[0], label: parts[1] || undefined };
-    });
-    bulkCreateMut.mutate({ entries });
+    if (bulkRouteEntries.length === 0) {
+      const entries = parseBulkEntries(bulkText);
+      if (entries.length === 0) return;
+      // No route config — use simple bulk create
+      bulkCreateMut.mutate({ entries: entries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })) });
+      return;
+    }
+
+    // Check if any entries have inbound routes configured
+    const hasRoutes = bulkRouteEntries.some(e => e.destination && e.destination !== "none");
+
+    if (hasRoutes) {
+      // Use the combined endpoint
+      bulkCreateWithRoutesMut.mutate({
+        entries: bulkRouteEntries.map(e => ({
+          phoneNumber: e.phoneNumber,
+          label: e.label,
+          inboundRoute: e.destination && e.destination !== "none" ? {
+            destination: e.destination,
+            description: e.description || "TTS Dialer",
+            cidPrefix: e.cidPrefix || undefined,
+          } : undefined,
+        })),
+      });
+    } else {
+      // No routes — simple bulk create
+      bulkCreateMut.mutate({
+        entries: bulkRouteEntries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })),
+      });
+    }
   };
 
   const handleCSVImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,7 +430,19 @@ export default function CallerIds() {
         return { phoneNumber: parts[0], label: parts[1] || undefined };
       }).filter(e => e.phoneNumber);
       if (entries.length === 0) { toast.error("No valid entries found"); return; }
-      bulkCreateMut.mutate({ entries });
+      // Pre-populate the bulk dialog with CSV data for route configuration
+      const routeEntries: InboundRouteEntry[] = entries.map(e => ({
+        phoneNumber: e.phoneNumber,
+        label: e.label,
+        destination: "none",
+        description: "TTS Dialer",
+        cidPrefix: "",
+      }));
+      setBulkText(entries.map(e => e.label ? `${e.phoneNumber}, ${e.label}` : e.phoneNumber).join("\n"));
+      setBulkRouteEntries(routeEntries);
+      setFetchDests(true);
+      setShowRouteConfig(true);
+      setShowBulk(true);
     };
     reader.readAsText(file);
     if (fileRef.current) fileRef.current.value = "";
@@ -173,6 +464,8 @@ export default function CallerIds() {
   const failedCount = callerIds.filter(c => c.healthStatus === "failed").length;
   const autoDisabledCount = callerIds.filter(c => c.autoDisabled === 1).length;
   const uncheckedCount = callerIds.filter(c => c.healthStatus === "unknown").length;
+
+  const isBulkPending = bulkCreateMut.isPending || bulkCreateWithRoutesMut.isPending;
 
   return (
     <DashboardLayout>
@@ -201,20 +494,63 @@ export default function CallerIds() {
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
               <Upload className="h-4 w-4 mr-1" /> Import CSV
             </Button>
-            <Dialog open={showBulk} onOpenChange={setShowBulk}>
+            <Dialog open={showBulk} onOpenChange={(open) => {
+              setShowBulk(open);
+              if (open) setFetchDests(true);
+              if (!open) { setShowRouteConfig(false); setBulkRouteEntries([]); }
+            }}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm"><Upload className="h-4 w-4 mr-1" /> Bulk Add</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Bulk Add Caller IDs</DialogTitle>
-                  <DialogDescription>Enter one caller ID per line. Format: phone_number, label (optional). Duplicates will be automatically skipped.</DialogDescription>
+                  <DialogDescription>
+                    Enter one caller ID per line. Format: phone_number, label (optional). Duplicates will be automatically skipped.
+                  </DialogDescription>
                 </DialogHeader>
-                <Textarea value={bulkText} onChange={e => setBulkText(e.target.value)} rows={10} placeholder={"4071234567, Main Line\n4079876543, Sales\n8001234567"} />
+                <Textarea
+                  value={bulkText}
+                  onChange={e => handleBulkTextChange(e.target.value)}
+                  rows={8}
+                  placeholder={"4071234567, Main Line\n4079876543, Sales\n8001234567"}
+                />
+                {bulkRouteEntries.length > 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    {bulkRouteEntries.length} number(s) parsed
+                  </div>
+                )}
+
+                {/* Inbound Route Config Toggle */}
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={showRouteConfig}
+                    onCheckedChange={setShowRouteConfig}
+                  />
+                  <Label className="text-sm cursor-pointer" onClick={() => setShowRouteConfig(!showRouteConfig)}>
+                    Create inbound routes on FreePBX
+                  </Label>
+                </div>
+
+                {showRouteConfig && bulkRouteEntries.length > 0 && (
+                  <InboundRouteConfigPanel
+                    entries={bulkRouteEntries}
+                    onEntriesChange={setBulkRouteEntries}
+                    destinations={destinations}
+                    destinationsLoading={destsLoading}
+                  />
+                )}
+
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowBulk(false)}>Cancel</Button>
-                  <Button onClick={handleBulkAdd} disabled={bulkCreateMut.isPending}>
-                    {bulkCreateMut.isPending ? "Adding..." : "Add All"}
+                  <Button onClick={handleBulkAdd} disabled={isBulkPending}>
+                    {isBulkPending ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Adding...</>
+                    ) : showRouteConfig && bulkRouteEntries.some(e => e.destination !== "none") ? (
+                      <><Route className="h-4 w-4 mr-1" /> Add with Routes</>
+                    ) : (
+                      "Add All"
+                    )}
                   </Button>
                 </DialogFooter>
               </DialogContent>

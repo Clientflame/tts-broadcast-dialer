@@ -21,6 +21,7 @@ import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
+import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -1133,6 +1134,119 @@ export const appRouter = router({
       callerIdStr: z.string().min(1),
     })).query(async ({ ctx, input }) => {
       return db.getDidCampaignBreakdown(input.callerIdStr);
+    }),
+
+    // ─── Inbound Route Management ────────────────────────────────────────
+
+    /** Fetch available FreePBX destinations (queues, ring groups, IVRs, extensions, etc.) */
+    getFreePBXDestinations: adminProcedure.query(async () => {
+      return fetchFreePBXDestinations();
+    }),
+
+    /** List existing inbound routes on FreePBX */
+    listInboundRoutes: adminProcedure.query(async () => {
+      return listInboundRoutes();
+    }),
+
+    /** Check which DIDs already have inbound routes */
+    checkInboundRoutes: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).query(async ({ input }) => {
+      const existing = await checkExistingRoutes(input.dids);
+      return Object.fromEntries(existing);
+    }),
+
+    /** Create inbound routes on FreePBX for imported DIDs */
+    createInboundRoutes: adminProcedure.input(z.object({
+      routes: z.array(z.object({
+        did: z.string().min(1).max(20),
+        destination: z.string().min(1), // FreePBX destination format e.g. "ext-queues,400,1"
+        description: z.string().max(255).default("TTS Dialer"),
+        cidPrefix: z.string().max(50).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const results = await createInboundRoutes(input.routes);
+      const created = results.filter(r => r.success && !r.alreadyExists).length;
+      const skipped = results.filter(r => r.alreadyExists).length;
+      const failed = results.filter(r => !r.success).length;
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.createInboundRoutes",
+        resource: "callerId",
+        details: { created, skipped, failed, total: input.routes.length },
+      });
+      return { results, summary: { created, skipped, failed } };
+    }),
+
+    /** Delete inbound routes from FreePBX */
+    deleteInboundRoutes: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await deleteInboundRoutes(input.dids);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.deleteInboundRoutes",
+        resource: "callerId",
+        details: { deleted: result.deleted, dids: input.dids },
+      });
+      return result;
+    }),
+
+    /** Bulk create caller IDs AND inbound routes in one step */
+    bulkCreateWithRoutes: adminProcedure.input(z.object({
+      entries: z.array(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        label: z.string().max(255).optional(),
+        inboundRoute: z.object({
+          destination: z.string().min(1),
+          description: z.string().max(255).default("TTS Dialer"),
+          cidPrefix: z.string().max(50).optional(),
+        }).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller IDs in our database
+      const callerIdData = input.entries.map(e => ({
+        phoneNumber: e.phoneNumber,
+        label: e.label,
+        userId: ctx.user.id,
+      }));
+      const callerIdResult = await db.bulkCreateCallerIds(callerIdData);
+
+      // Step 2: Create inbound routes on FreePBX for entries that have route config
+      const routeEntries = input.entries.filter(e => e.inboundRoute);
+      let routeResults = null;
+      if (routeEntries.length > 0) {
+        const routes = routeEntries.map(e => ({
+          did: e.phoneNumber,
+          destination: e.inboundRoute!.destination,
+          description: e.inboundRoute!.description,
+          cidPrefix: e.inboundRoute?.cidPrefix,
+        }));
+        const results = await createInboundRoutes(routes);
+        const created = results.filter(r => r.success && !r.alreadyExists).length;
+        const skipped = results.filter(r => r.alreadyExists).length;
+        const failed = results.filter(r => !r.success).length;
+        routeResults = { results, summary: { created, skipped, failed } };
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkCreateWithRoutes",
+        resource: "callerId",
+        details: {
+          callerIds: callerIdResult.count,
+          dupes: callerIdResult.duplicatesOmitted,
+          routes: routeResults?.summary || null,
+        },
+      });
+
+      return {
+        callerIds: callerIdResult,
+        inboundRoutes: routeResults,
+      };
     }),
   }),
 

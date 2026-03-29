@@ -747,3 +747,10 @@
 - [x] Update PBX agent installer to configure voice-ai-bridge dialplan context during installation
 - [x] Update Docker deployment to expose app on port 80 instead of port 3000 for dedicated server
 - [x] Revert default port back to 3000 (port 80 conflicts with Caddy in SSL setups)
+- [x] Auto-create inbound routes on FreePBX when DIDs are imported (SSH + fwconsole)
+- [x] Fetch available FreePBX destinations (Queues, Ring Groups, IVRs, Extensions, Voicemail, etc.)
+- [x] Dropdown menu for destination selection during DID import
+- [x] Per-number destination choice with bulk "apply to all" option
+- [x] Route label defaults to "TTS Dialer" with custom name option
+- [x] CID name prefix option for callbacks
+- [x] fwconsole reload after route creation
