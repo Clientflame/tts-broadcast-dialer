@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'caller_ids' AND COLUMN_NAME = 'cnamLookedUpAt';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'caller_ids' AND COLUMN_NAME = 'cnamLookedUpAt';",
+  "rows": [
+    {
+      "COLUMN_NAME": "cnamLookedUpAt"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\ncnamLookedUpAt\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

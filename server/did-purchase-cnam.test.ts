@@ -20,13 +20,13 @@ describe("Vitelity DID Purchasing Service", () => {
     expect(vitelitySource).toContain("export async function purchaseDID");
   });
 
-  it("searchAvailableDIDs accepts state parameter", () => {
+  it("searchAvailableDIDs accepts tnMask parameter", () => {
     expect(vitelitySource).toContain("searchAvailableDIDs");
-    expect(vitelitySource).toContain("state:");
+    expect(vitelitySource).toContain("tnMask");
   });
 
-  it("purchaseDID calls the getlocaldid API command", () => {
-    expect(vitelitySource).toContain("getlocaldid");
+  it("purchaseDID calls the v2.0 local order API", () => {
+    expect(vitelitySource).toContain("/did/local/order");
   });
 
   it("exports getVitelityBalance function", () => {
@@ -91,12 +91,12 @@ describe("DID Purchase Procedures", () => {
     expect(purchaseBlock).toContain("did:");
   });
 
-  it("searchAvailableDIDs requires state input", () => {
+  it("searchAvailableDIDs requires tnMask input", () => {
     const searchBlock = routersSource.substring(
       routersSource.indexOf("searchAvailableDIDs:"),
       routersSource.indexOf("searchAvailableDIDs:") + 500
     );
-    expect(searchBlock).toContain("state:");
+    expect(searchBlock).toContain("tnMask");
   });
 
   it("purchaseDID creates audit log", () => {
@@ -222,8 +222,8 @@ describe("CallerIds Frontend - Purchase & CNAM", () => {
     expect(callerIdsSource).toContain("cnamLookedUpAt");
   });
 
-  it("has state selection for DID purchasing", () => {
-    expect(callerIdsSource).toMatch(/purchaseState|state.*select/i);
+  it("has tnMask search for DID purchasing", () => {
+    expect(callerIdsSource).toMatch(/purchaseTnMask|tnMask/i);
   });
 
   it("has route configuration in purchase dialog", () => {

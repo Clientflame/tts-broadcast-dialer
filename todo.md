@@ -835,3 +835,13 @@
 - [x] Confirmation dialog before releasing DIDs (warns about permanent removal, toggles for Vitelity/FreePBX)
 - [x] Auto-remove inbound routes from FreePBX when releasing DIDs
 - [x] Vitest tests for auto-sync, cost tracking, and bulk release (69 new tests)
+- [x] BUG: Purchase DIDs from Vitelity not working — root cause: Vitelity deprecated entire v1.0 API
+- [x] BUG: v1.7.7 not appearing on GitHub — merged main into self-hosted branch and pushed
+- [x] BUG: Toll-free DID search returns "No toll-free DIDs Currently Available" — migrated to v2.0 API
+- [x] Migrate Vitelity service from deprecated v1.0 to v2.0 JSON API (Basic Auth + JSON)
+- [x] Update searchAvailableLocalDIDs to use POST /did/local/search with tnMask
+- [x] Update searchAvailableTollFreeDIDs to use POST /did/tollfree/search with tnMask
+- [x] Update purchaseDID to use POST /did/local/order with JSON body
+- [x] Update purchaseTollFreeDID to use POST /did/tollfree/order with JSON body
+- [x] Update frontend Purchase DIDs dialog to use tnMask search instead of state/ratecenter
+- [x] Update tests for new v2.0 API format (all 910 tests passing)
