@@ -119,11 +119,10 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
 
   // Run all queries in a single SSH session for speed and reliability
   const allQueries = [
-    "SELECT 'EXT_START'; SELECT id, name FROM users ORDER BY CAST(id AS UNSIGNED); SELECT 'EXT_END';",
+    "SELECT 'EXT_START'; SELECT extension, name FROM users ORDER BY CAST(extension AS UNSIGNED); SELECT 'EXT_END';",
     "SELECT 'QUEUE_START'; SELECT extension, descr FROM queues_config ORDER BY CAST(extension AS UNSIGNED); SELECT 'QUEUE_END';",
     "SELECT 'RG_START'; SELECT grpnum, description FROM ringgroups ORDER BY CAST(grpnum AS UNSIGNED); SELECT 'RG_END';",
     "SELECT 'IVR_START'; SELECT id, name FROM ivr_details ORDER BY id; SELECT 'IVR_END';",
-    "SELECT 'VM_START'; SELECT mailbox, fullname FROM voicemail WHERE context='default' ORDER BY CAST(mailbox AS UNSIGNED); SELECT 'VM_END';",
     "SELECT 'ANN_START'; SELECT announcement_id, description FROM announcement ORDER BY announcement_id; SELECT 'ANN_END';",
   ].join(" ");
 
@@ -169,14 +168,10 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
       }
     }
 
-    // Parse voicemail
-    const vmMatch = output.match(/VM_START\n([\s\S]*?)VM_END/);
-    if (vmMatch) {
-      for (const line of vmMatch[1].trim().split("\n").filter(l => l && !l.startsWith("VM_"))) {
-        const [mailbox, fullname] = line.split("\t");
-        if (mailbox) destinations.push({ type: "voicemail", id: mailbox, name: fullname ? `Voicemail ${mailbox} - ${fullname}` : `Voicemail ${mailbox}`, destination: `ext-local,vm${mailbox},1` });
-      }
-    }
+    // Voicemail: use extensions that have voicemail configured
+    // (voicemail table doesn't exist on all FreePBX versions, use users.voicemail field instead)
+    // Note: voicemail table doesn't exist on all FreePBX versions
+    // Voicemail destinations skipped - users can route to extension voicemail via extension destination
 
     // Parse announcements
     const annMatch = output.match(/ANN_START\n([\s\S]*?)ANN_END/);
@@ -192,7 +187,7 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
     console.log(`[FreePBX Routes] Falling back to individual queries...`);
     
     try {
-      const extResult = await sshExec(config, mysqlCmd("SELECT id, name FROM users ORDER BY CAST(id AS UNSIGNED)"), 15000);
+      const extResult = await sshExec(config, mysqlCmd("SELECT extension, name FROM users ORDER BY CAST(extension AS UNSIGNED)"), 15000);
       for (const line of extResult.stdout.trim().split("\n").filter(Boolean)) {
         const [id, name] = line.split("\t");
         if (id) destinations.push({ type: "extension", id, name: name ? `${id} - ${name}` : id, destination: `from-did-direct,${id},1` });
@@ -223,13 +218,6 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
       }
     } catch (e2) { console.error("[FreePBX Routes] Fallback - IVRs failed:", (e2 as Error).message); }
 
-    try {
-      const vmResult = await sshExec(config, mysqlCmd("SELECT mailbox, fullname FROM voicemail WHERE context='default' ORDER BY CAST(mailbox AS UNSIGNED)"), 15000);
-      for (const line of vmResult.stdout.trim().split("\n").filter(Boolean)) {
-        const [mailbox, fullname] = line.split("\t");
-        if (mailbox) destinations.push({ type: "voicemail", id: mailbox, name: fullname ? `Voicemail ${mailbox} - ${fullname}` : `Voicemail ${mailbox}`, destination: `ext-local,vm${mailbox},1` });
-      }
-    } catch (e2) { console.error("[FreePBX Routes] Fallback - voicemail failed:", (e2 as Error).message); }
 
     try {
       const annResult = await sshExec(config, mysqlCmd("SELECT announcement_id, description FROM announcement ORDER BY announcement_id"), 15000);

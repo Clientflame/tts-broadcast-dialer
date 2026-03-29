@@ -763,4 +763,5 @@
 - [x] Update destination dropdown in bulk add, CSV import, per-number config, and edit route dialog
 - [x] FIX: Bulk Add destination picker only showing 'No route' and 'Terminate' — improved SSH reliability with single-query batch, fallback to individual queries, increased timeout, SSH warning in UI when connection fails
 - [x] FIX: MySQL credential extraction from freepbx.conf failing — grep pattern only matched single quotes but FreePBX uses double quotes. Fixed all 6 mysqlCmd instances to handle both formats
+- [x] FIX: FreePBX SQL queries using wrong column names (users.id instead of users.extension) and querying non-existent voicemail table
 - [x] FIX: Bash syntax error in SSH MySQL commands — replaced complex grep -oP with simple awk -F'"' '{print $4}' approach across all 6 mysqlCmd instances to avoid escaping issues through JS template literal -> SSH -> bash chain

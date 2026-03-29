@@ -40,7 +40,7 @@ describe("FreePBX Inbound Routes Service", () => {
     expect(source).toContain("FROM queues_config"); // Queues
     expect(source).toContain("FROM ringgroups"); // Ring Groups
     expect(source).toContain("FROM ivr_details"); // IVRs
-    expect(source).toContain("FROM voicemail"); // Voicemail
+    // voicemail table doesn't exist on all FreePBX versions - skipped
     expect(source).toContain("FROM announcement"); // Announcements
   });
 
@@ -49,7 +49,7 @@ describe("FreePBX Inbound Routes Service", () => {
     expect(source).toContain("ext-queues,"); // Queues
     expect(source).toContain("ext-group,"); // Ring Groups
     expect(source).toContain("ivr-"); // IVRs
-    expect(source).toContain("ext-local,vm"); // Voicemail
+    // voicemail destinations skipped - table doesn't exist on all FreePBX versions
     expect(source).toContain("app-announcement-"); // Announcements
     expect(source).toContain("app-blackhole,hangup"); // Terminate hangup
     expect(source).toContain("app-blackhole,congestion"); // Terminate congestion
