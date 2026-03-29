@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -342,12 +343,116 @@ export default function CallerIds() {
     onError: (e) => toast.error(e.message),
   });
 
-  // Fetch FreePBX destinations when bulk dialog opens
+  // Fetch FreePBX destinations when bulk dialog opens or routes tab is active
   const [fetchDests, setFetchDests] = useState(false);
   const { data: destinations = [], isLoading: destsLoading } = trpc.callerIds.getFreePBXDestinations.useQuery(undefined, {
     enabled: fetchDests,
     staleTime: 60000, // Cache for 1 minute
   });
+
+  // Inbound Routes tab state
+  const [activeTab, setActiveTab] = useState("callerids");
+  const [routeSearch, setRouteSearch] = useState("");
+  const [editingRoute, setEditingRoute] = useState<{ did: string; destination: string; description: string; cidPrefix: string } | null>(null);
+  const [editDest, setEditDest] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editCidPrefix, setEditCidPrefix] = useState("");
+  const [selectedRoutes, setSelectedRoutes] = useState<Set<string>>(new Set());
+
+  const { data: inboundRoutes = [], isLoading: routesLoading, refetch: refetchRoutes } = trpc.callerIds.listInboundRoutes.useQuery(undefined, {
+    enabled: activeTab === "routes",
+    staleTime: 30000,
+  });
+
+  const updateRouteMut = trpc.callerIds.updateInboundRoute.useMutation({
+    onSuccess: () => { refetchRoutes(); toast.success("Inbound route updated"); setEditingRoute(null); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteRoutesMut = trpc.callerIds.deleteInboundRoutes.useMutation({
+    onSuccess: (r) => { refetchRoutes(); setSelectedRoutes(new Set()); toast.success(`${r.deleted} route(s) deleted`); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Group destinations for the edit dropdown
+  const destGrouped = useMemo(() => {
+    const groups: Record<string, typeof destinations> = {};
+    for (const d of destinations) {
+      if (!groups[d.type]) groups[d.type] = [];
+      groups[d.type].push(d);
+    }
+    return groups;
+  }, [destinations]);
+
+  // Parse FreePBX destination string to human-readable label
+  const destToLabel = (dest: string): string => {
+    if (!dest) return "Not set";
+    // Try to find in loaded destinations
+    const found = destinations.find(d => d.destination === dest);
+    if (found) return found.name;
+    // Parse common patterns
+    if (dest.startsWith("from-did-direct,")) return `Extension ${dest.split(",")[1]}`;
+    if (dest.startsWith("ext-queues,")) return `Queue ${dest.split(",")[1]}`;
+    if (dest.startsWith("ext-group,")) return `Ring Group ${dest.split(",")[1]}`;
+    if (dest.startsWith("ivr-")) return `IVR ${dest.split(",")[0].replace("ivr-", "")}`;
+    if (dest.startsWith("ext-local,vm")) return `Voicemail ${dest.split(",")[1]?.replace("vm", "")}`;
+    if (dest.startsWith("app-announcement-")) return `Announcement ${dest.split(",")[0].replace("app-announcement-", "")}`;
+    if (dest === "app-blackhole,hangup,1") return "Hangup";
+    if (dest === "app-blackhole,congestion,1") return "Congestion";
+    if (dest === "app-blackhole,busy,1") return "Play Busy";
+    return dest;
+  };
+
+  // Destination type badge color
+  const destTypeBadge = (dest: string): { label: string; variant: "default" | "secondary" | "outline" | "destructive" } => {
+    if (dest.startsWith("from-did-direct,")) return { label: "Extension", variant: "outline" };
+    if (dest.startsWith("ext-queues,")) return { label: "Queue", variant: "default" };
+    if (dest.startsWith("ext-group,")) return { label: "Ring Group", variant: "secondary" };
+    if (dest.startsWith("ivr-")) return { label: "IVR", variant: "secondary" };
+    if (dest.startsWith("ext-local,vm")) return { label: "Voicemail", variant: "outline" };
+    if (dest.startsWith("app-announcement-")) return { label: "Announcement", variant: "outline" };
+    if (dest.startsWith("app-blackhole,")) return { label: "Terminate", variant: "destructive" };
+    return { label: "Custom", variant: "outline" };
+  };
+
+  const filteredRoutes = useMemo(() => {
+    if (!routeSearch) return inboundRoutes;
+    const q = routeSearch.toLowerCase();
+    return inboundRoutes.filter(r =>
+      r.did.toLowerCase().includes(q) ||
+      r.description.toLowerCase().includes(q) ||
+      r.destination.toLowerCase().includes(q)
+    );
+  }, [inboundRoutes, routeSearch]);
+
+  const startEditRoute = (route: typeof inboundRoutes[0]) => {
+    setEditingRoute(route);
+    setEditDest(route.destination);
+    setEditDesc(route.description);
+    setEditCidPrefix(route.cidPrefix);
+    setFetchDests(true); // Load destinations for the dropdown
+  };
+
+  const handleUpdateRoute = () => {
+    if (!editingRoute) return;
+    updateRouteMut.mutate({
+      did: editingRoute.did,
+      destination: editDest !== editingRoute.destination ? editDest : undefined,
+      description: editDesc !== editingRoute.description ? editDesc : undefined,
+      cidPrefix: editCidPrefix !== editingRoute.cidPrefix ? editCidPrefix : undefined,
+    });
+  };
+
+  const toggleRouteSelect = (did: string) => {
+    const next = new Set(selectedRoutes);
+    if (next.has(did)) next.delete(did); else next.add(did);
+    setSelectedRoutes(next);
+  };
+
+  const selectAllRoutes = () => {
+    if (selectedRoutes.size === filteredRoutes.length) setSelectedRoutes(new Set());
+    else setSelectedRoutes(new Set(filteredRoutes.map(r => r.did)));
+  };
 
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -473,7 +578,7 @@ export default function CallerIds() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Caller IDs (DIDs)</h1>
-            <p className="text-muted-foreground text-sm">Manage your outbound caller ID rotation pool</p>
+            <p className="text-muted-foreground text-sm">Manage your outbound caller ID rotation pool and inbound routes</p>
           </div>
           <div className="flex gap-2 flex-wrap justify-end">
             {selected.size > 0 && (
@@ -584,6 +689,14 @@ export default function CallerIds() {
             </Dialog>
           </div>
         </div>
+
+        <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); if (v === "routes") setFetchDests(true); }}>
+          <TabsList>
+            <TabsTrigger value="callerids"><Phone className="h-4 w-4 mr-1.5" /> Caller IDs</TabsTrigger>
+            <TabsTrigger value="routes"><Route className="h-4 w-4 mr-1.5" /> Inbound Routes</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="callerids" className="space-y-6">
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           <Card>
@@ -708,7 +821,7 @@ export default function CallerIds() {
                     <th className="p-3 text-left">Date Added</th>
                     <th className="p-3 text-left">Calls Made</th>
                     <th className="p-3 text-left">Last Used</th>
-                    <th className="p-3 text-right">Actions</th>
+                    <th className="p-3 text-right min-w-[100px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -791,6 +904,199 @@ export default function CallerIds() {
             </div>
           </CardContent>
         </Card>
+
+          </TabsContent>
+
+          {/* ─── Inbound Routes Tab ─────────────────────────────────────────── */}
+          <TabsContent value="routes" className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9 w-64"
+                    placeholder="Search routes..."
+                    value={routeSearch}
+                    onChange={e => setRouteSearch(e.target.value)}
+                  />
+                </div>
+                <Badge variant="outline">{inboundRoutes.length} route(s) on FreePBX</Badge>
+              </div>
+              <div className="flex gap-2">
+                {selectedRoutes.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Delete ${selectedRoutes.size} inbound route(s) from FreePBX?`))
+                        deleteRoutesMut.mutate({ dids: Array.from(selectedRoutes) });
+                    }}
+                    disabled={deleteRoutesMut.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete {selectedRoutes.size}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => refetchRoutes()} disabled={routesLoading}>
+                  <RefreshCw className={`h-4 w-4 mr-1 ${routesLoading ? "animate-spin" : ""}`} /> Refresh
+                </Button>
+              </div>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm min-w-[700px]">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left w-10">
+                          <Checkbox
+                            checked={selectedRoutes.size === filteredRoutes.length && filteredRoutes.length > 0}
+                            onCheckedChange={selectAllRoutes}
+                          />
+                        </th>
+                        <th className="p-3 text-left">DID Number</th>
+                        <th className="p-3 text-left">Description</th>
+                        <th className="p-3 text-left">Destination Type</th>
+                        <th className="p-3 text-left">Destination</th>
+                        <th className="p-3 text-left">CID Prefix</th>
+                        <th className="p-3 text-right min-w-[100px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {routesLoading ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">
+                          <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin" />
+                          Loading routes from FreePBX...
+                        </td></tr>
+                      ) : filteredRoutes.length === 0 ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">
+                          <Route className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          {inboundRoutes.length === 0
+                            ? "No inbound routes on FreePBX. Import DIDs with route configuration to create them."
+                            : "No routes match your search."}
+                        </td></tr>
+                      ) : filteredRoutes.map(route => {
+                        const typeBadge = destTypeBadge(route.destination);
+                        return (
+                          <tr key={route.did} className="border-b hover:bg-muted/30">
+                            <td className="p-3">
+                              <Checkbox
+                                checked={selectedRoutes.has(route.did)}
+                                onCheckedChange={() => toggleRouteSelect(route.did)}
+                              />
+                            </td>
+                            <td className="p-3 font-mono font-medium">{route.did}</td>
+                            <td className="p-3 text-muted-foreground">{route.description || "—"}</td>
+                            <td className="p-3">
+                              <Badge variant={typeBadge.variant} className="text-xs">{typeBadge.label}</Badge>
+                            </td>
+                            <td className="p-3 text-sm">{destToLabel(route.destination)}</td>
+                            <td className="p-3 text-muted-foreground text-xs">{route.cidPrefix || "—"}</td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="ghost" size="sm" onClick={() => startEditRoute(route)}>
+                                        <Pencil className="h-4 w-4 text-muted-foreground" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Edit route</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (confirm(`Delete inbound route for ${route.did}?`))
+                                      deleteRoutesMut.mutate({ dids: [route.did] });
+                                  }}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Edit Route Dialog */}
+            <Dialog open={!!editingRoute} onOpenChange={(open) => { if (!open) setEditingRoute(null); }}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Edit Inbound Route</DialogTitle>
+                  <DialogDescription>
+                    Update the destination for DID <span className="font-mono font-medium">{editingRoute?.did}</span>
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm">Destination</Label>
+                    {destsLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading destinations...
+                      </div>
+                    ) : (
+                      <Select value={editDest} onValueChange={setEditDest}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Select destination..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No destination</SelectItem>
+                          {Object.entries(destGrouped).map(([type, dests]) => (
+                            <div key={type}>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
+                                {DEST_TYPE_LABELS[type] || type}
+                              </div>
+                              {dests.map((d: any) => (
+                                <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
+                                  {d.name}
+                                </SelectItem>
+                              ))}
+                            </div>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-sm">Route Label / Description</Label>
+                    <Input
+                      className="mt-1"
+                      value={editDesc}
+                      onChange={e => setEditDesc(e.target.value)}
+                      placeholder="TTS Dialer"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">CID Name Prefix (optional)</Label>
+                    <Input
+                      className="mt-1"
+                      value={editCidPrefix}
+                      onChange={e => setEditCidPrefix(e.target.value)}
+                      placeholder="e.g. CB: or TTS:"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Prepended to caller name on inbound calls</p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditingRoute(null)}>Cancel</Button>
+                  <Button onClick={handleUpdateRoute} disabled={updateRouteMut.isPending}>
+                    {updateRouteMut.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
+                    ) : "Save Changes"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </TabsContent>
+
+        </Tabs>
       </div>
     </DashboardLayout>
   );

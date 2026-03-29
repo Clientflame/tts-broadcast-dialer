@@ -21,7 +21,7 @@ import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
-import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes } from "./services/freepbx-routes";
+import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, updateInboundRoute } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -1247,6 +1247,28 @@ export const appRouter = router({
         callerIds: callerIdResult,
         inboundRoutes: routeResults,
       };
+    }),
+
+    /** Update an existing inbound route's destination, description, or CID prefix */
+    updateInboundRoute: adminProcedure.input(z.object({
+      did: z.string().min(1),
+      destination: z.string().min(1).optional(),
+      description: z.string().max(255).optional(),
+      cidPrefix: z.string().max(50).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await updateInboundRoute(input.did, {
+        destination: input.destination,
+        description: input.description,
+        cidPrefix: input.cidPrefix,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.updateInboundRoute",
+        resource: "callerId",
+        details: { did: input.did, updates: { destination: input.destination, description: input.description, cidPrefix: input.cidPrefix } },
+      });
+      return result;
     }),
   }),
 

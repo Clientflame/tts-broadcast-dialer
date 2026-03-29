@@ -754,3 +754,8 @@
 - [x] Route label defaults to "TTS Dialer" with custom name option
 - [x] CID name prefix option for callbacks
 - [x] fwconsole reload after route creation
+- [x] Inbound Routes management tab on Caller IDs page
+- [x] View all existing inbound routes from FreePBX with destination details
+- [x] Edit inbound route destination from the dashboard
+- [x] Delete inbound routes from the dashboard
+- [x] Route destination display with human-readable labels

@@ -389,6 +389,48 @@ export async function deleteInboundRoutes(dids: string[]): Promise<{ deleted: nu
   return { deleted, errors };
 }
 
+// ─── Update Inbound Route ────────────────────────────────────────────────────
+
+/**
+ * Update an existing inbound route's destination, description, or CID prefix.
+ */
+export async function updateInboundRoute(did: string, updates: { destination?: string; description?: string; cidPrefix?: string }): Promise<{ success: boolean; error?: string }> {
+  const config = await getSSHConfig();
+
+  const mysqlCmd = (query: string) =>
+    `mysql -u \$(grep AMPDBUSER /etc/freepbx.conf | grep -oP "'[^']*'" | tail -1 | tr -d "'") ` +
+    `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP "'[^']*'" | tail -1 | tr -d "'") ` +
+    `asterisk -e "${query}"`;
+
+  const setClauses: string[] = [];
+  if (updates.destination !== undefined) {
+    const safe = updates.destination.replace(/'/g, "").replace(/"/g, "");
+    setClauses.push(`destination='${safe}'`);
+  }
+  if (updates.description !== undefined) {
+    const safe = updates.description.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    setClauses.push(`description='${safe}'`);
+  }
+  if (updates.cidPrefix !== undefined) {
+    const safe = updates.cidPrefix.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    setClauses.push(`pricid='${safe}'`);
+  }
+
+  if (setClauses.length === 0) return { success: true };
+
+  const safeDid = did.replace(/'/g, "").replace(/"/g, "");
+  const query = `UPDATE incoming SET ${setClauses.join(", ")} WHERE extension='${safeDid}'`;
+
+  try {
+    await sshExec(config, mysqlCmd(query));
+    await sshExec(config, "fwconsole reload", 60000);
+    console.log(`[FreePBX Routes] Updated inbound route for ${did} and reloaded config`);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Unknown error" };
+  }
+}
+
 // ─── List Existing Inbound Routes ───────────────────────────────────────────
 
 export interface ExistingInboundRoute {
