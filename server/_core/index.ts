@@ -5,6 +5,7 @@ process.env.TZ = "America/New_York";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { rateLimit } from "express-rate-limit";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -13,6 +14,21 @@ import { serveStatic, setupVite } from "./vite";
 import { pbxRouter, installerRouter } from "../services/pbx-api";
 import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
 import { mountLocalStorageRoute } from "../storage";
+
+// Rate limiter for auth endpoints — 10 attempts per 15 minutes per IP
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // max 10 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { json: { message: "Too many login attempts. Please try again in 15 minutes.", code: -32001, data: { code: "TOO_MANY_REQUESTS", httpStatus: 429 } } } },
+  // Only apply to login and registration mutations
+  skip: (req) => {
+    const path = req.path;
+    const isAuthPath = path.includes("localAuth.login") || path.includes("localAuth.register") || path.includes("admin.setupInitialAdmin");
+    return !isAuthPath;
+  },
+});
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -56,6 +72,8 @@ async function startServer() {
   app.get("/api/trpc/health", (_req, res) => {
     res.json({ ok: true });
   });
+  // Rate limiting on auth endpoints (before tRPC middleware)
+  app.use("/api/trpc", authRateLimiter);
   // tRPC API
   app.use(
     "/api/trpc",

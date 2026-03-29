@@ -848,3 +848,6 @@
 - [x] BUG: DID purchase search not working on self-hosted VPS after v1.7.8 deploy — Vitelity credentials were missing from container env, added to .env and recreated container
 - [x] Fix Docker healthcheck — added plain GET /api/trpc/health endpoint that returns {ok:true}
 - [x] Fix BridgeHealthCheck SSH auth failure on VPS — updated FREEPBX_SSH_PASSWORD to correct value
+- [x] Add proprietary LICENSE file to protect IP (Clientflame LLC, All Rights Reserved)
+- [x] Add rate limiting on login endpoint (10 attempts per 15 min per IP via express-rate-limit)
+- [x] Suppress OAuth warning in self-hosted mode logs (shows 'self-hosted mode' instead of ERROR)
