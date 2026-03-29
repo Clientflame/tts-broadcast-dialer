@@ -759,3 +759,5 @@
 - [x] Edit inbound route destination from the dashboard
 - [x] Delete inbound routes from the dashboard
 - [x] Route destination display with human-readable labels
+- [x] Improve destination selector to two-step pattern: pick type (Extension, Ring Group, Call Queue) then pick specific item
+- [x] Update destination dropdown in bulk add, CSV import, per-number config, and edit route dialog

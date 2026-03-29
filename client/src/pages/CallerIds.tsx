@@ -74,14 +74,123 @@ function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, conse
 // ─── Destination Type Labels ─────────────────────────────────────────────────
 
 const DEST_TYPE_LABELS: Record<string, string> = {
-  extension: "Extensions",
-  queue: "Call Queues",
-  ring_group: "Ring Groups",
-  ivr: "IVR Menus",
+  extension: "Extension",
+  queue: "Call Queue",
+  ring_group: "Ring Group",
+  ivr: "IVR Menu",
   voicemail: "Voicemail",
-  announcement: "Announcements",
+  announcement: "Announcement",
   terminate: "Terminate",
 };
+
+const DEST_TYPE_OPTIONS = [
+  { value: "queue", label: "Call Queue" },
+  { value: "ring_group", label: "Ring Group" },
+  { value: "extension", label: "Extension" },
+  { value: "ivr", label: "IVR Menu" },
+  { value: "voicemail", label: "Voicemail" },
+  { value: "announcement", label: "Announcement" },
+  { value: "terminate", label: "Terminate" },
+];
+
+// ─── Two-Step Destination Picker ────────────────────────────────────────────
+
+function DestinationPicker({
+  value,
+  onChange,
+  destinations,
+  size = "default",
+}: {
+  value: string;
+  onChange: (dest: string) => void;
+  destinations: any[];
+  size?: "default" | "compact";
+}) {
+  // Parse current value to determine selected type and item
+  const getTypeFromDest = (dest: string): string => {
+    if (!dest || dest === "none") return "none";
+    if (dest.startsWith("from-did-direct,")) return "extension";
+    if (dest.startsWith("ext-queues,")) return "queue";
+    if (dest.startsWith("ext-group,")) return "ring_group";
+    if (dest.startsWith("ivr-")) return "ivr";
+    if (dest.startsWith("ext-local,vm")) return "voicemail";
+    if (dest.startsWith("app-announcement-")) return "announcement";
+    if (dest.startsWith("app-blackhole,")) return "terminate";
+    return "none";
+  };
+
+  const [selectedType, setSelectedType] = useState(getTypeFromDest(value));
+
+  // Get items for the selected type
+  const itemsForType = useMemo(() => {
+    return destinations.filter(d => d.type === selectedType);
+  }, [destinations, selectedType]);
+
+  const handleTypeChange = (type: string) => {
+    setSelectedType(type);
+    if (type === "none") {
+      onChange("none");
+    } else {
+      // Auto-select if there's only one item of this type
+      const items = destinations.filter(d => d.type === type);
+      if (items.length === 1) {
+        onChange(items[0].destination);
+      } else {
+        // Clear the specific item selection, user needs to pick
+        onChange("none");
+      }
+    }
+  };
+
+  const isCompact = size === "compact";
+  const triggerClass = isCompact ? "h-8 text-xs" : "mt-1";
+
+  return (
+    <div className={`flex gap-2 ${isCompact ? "flex-1" : "grid grid-cols-2"}`}>
+      <div className={isCompact ? "w-32 shrink-0" : ""}>
+        {!isCompact && <Label className="text-xs">Destination Type</Label>}
+        <Select value={selectedType} onValueChange={handleTypeChange}>
+          <SelectTrigger className={triggerClass}>
+            <SelectValue placeholder="Type..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No route</SelectItem>
+            {DEST_TYPE_OPTIONS.map(opt => {
+              const count = destinations.filter(d => d.type === opt.value).length;
+              return count > 0 ? (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label} ({count})
+                </SelectItem>
+              ) : null;
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+      {selectedType !== "none" && itemsForType.length > 0 && (
+        <div className={isCompact ? "flex-1" : ""}>
+          {!isCompact && <Label className="text-xs">{DEST_TYPE_LABELS[selectedType] || "Item"}</Label>}
+          <Select value={value} onValueChange={onChange}>
+            <SelectTrigger className={triggerClass}>
+              <SelectValue placeholder={`Select ${DEST_TYPE_LABELS[selectedType]?.toLowerCase() || "item"}...`} />
+            </SelectTrigger>
+            <SelectContent>
+              {itemsForType.map((d: any) => (
+                <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
+                  {d.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {selectedType !== "none" && itemsForType.length === 0 && (
+        <div className={`flex items-center text-xs text-muted-foreground ${isCompact ? "" : "mt-6"}`}>
+          No {DEST_TYPE_LABELS[selectedType]?.toLowerCase() || "items"} found on FreePBX
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Inbound Route Config Panel ──────────────────────────────────────────────
 
@@ -108,16 +217,6 @@ function InboundRouteConfigPanel({
   const [globalDest, setGlobalDest] = useState("none");
   const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
   const [globalCidPrefix, setGlobalCidPrefix] = useState("");
-
-  // Group destinations by type
-  const grouped = useMemo(() => {
-    const groups: Record<string, typeof destinations> = {};
-    for (const d of destinations) {
-      if (!groups[d.type]) groups[d.type] = [];
-      groups[d.type].push(d);
-    }
-    return groups;
-  }, [destinations]);
 
   // Apply global settings to all entries
   const applyToAll = (dest: string, desc: string, prefix: string) => {
@@ -172,30 +271,15 @@ function InboundRouteConfigPanel({
 
       {/* Global settings */}
       <div className="space-y-3">
+        <div>
+          <Label className="text-xs">Destination (all numbers)</Label>
+          <DestinationPicker
+            value={globalDest}
+            onChange={handleGlobalDestChange}
+            destinations={destinations}
+          />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <Label className="text-xs">Destination (all numbers)</Label>
-            <Select value={globalDest} onValueChange={handleGlobalDestChange}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Select destination..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No inbound route</SelectItem>
-                {Object.entries(grouped).map(([type, dests]) => (
-                  <div key={type}>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
-                      {DEST_TYPE_LABELS[type] || type}
-                    </div>
-                    {dests.map((d: any) => (
-                      <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </div>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div>
             <Label className="text-xs">Route Label</Label>
             <Input
@@ -205,17 +289,17 @@ function InboundRouteConfigPanel({
               placeholder="TTS Dialer"
             />
           </div>
+          <div>
+            <Label className="text-xs">CID Name Prefix (optional)</Label>
+            <Input
+              className="mt-1"
+              value={globalCidPrefix}
+              onChange={e => handleGlobalCidPrefixChange(e.target.value)}
+              placeholder="e.g. CB: or TTS:"
+            />
+          </div>
         </div>
-        <div>
-          <Label className="text-xs">CID Name Prefix (optional)</Label>
-          <Input
-            className="mt-1"
-            value={globalCidPrefix}
-            onChange={e => handleGlobalCidPrefixChange(e.target.value)}
-            placeholder="e.g. CB: or TTS:"
-          />
-          <p className="text-xs text-muted-foreground mt-1">Prepended to caller name on inbound calls (e.g. "CB: John Smith")</p>
-        </div>
+        <p className="text-xs text-muted-foreground">CID prefix is prepended to caller name on inbound calls (e.g. "CB: John Smith")</p>
       </div>
 
       {/* Per-number toggle */}
@@ -237,31 +321,14 @@ function InboundRouteConfigPanel({
                 <div key={idx} className="flex items-center gap-2 p-2 bg-background rounded border text-xs">
                   <span className="font-mono w-28 shrink-0">{entry.phoneNumber}</span>
                   <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <Select
+                  <DestinationPicker
                     value={entry.destination}
-                    onValueChange={(val) => updateEntry(idx, "destination", val)}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No route</SelectItem>
-                      {Object.entries(grouped).map(([type, dests]) => (
-                        <div key={type}>
-                          <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground bg-muted/50">
-                            {DEST_TYPE_LABELS[type] || type}
-                          </div>
-                          {dests.map((d: any) => (
-                            <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </div>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(val) => updateEntry(idx, "destination", val)}
+                    destinations={destinations}
+                    size="compact"
+                  />
                   <Input
-                    className="h-8 text-xs w-28"
+                    className="h-8 text-xs w-24"
                     value={entry.description}
                     onChange={e => updateEntry(idx, "description", e.target.value)}
                     placeholder="Label"
@@ -373,16 +440,6 @@ export default function CallerIds() {
     onSuccess: (r) => { refetchRoutes(); setSelectedRoutes(new Set()); toast.success(`${r.deleted} route(s) deleted`); },
     onError: (e) => toast.error(e.message),
   });
-
-  // Group destinations for the edit dropdown
-  const destGrouped = useMemo(() => {
-    const groups: Record<string, typeof destinations> = {};
-    for (const d of destinations) {
-      if (!groups[d.type]) groups[d.type] = [];
-      groups[d.type].push(d);
-    }
-    return groups;
-  }, [destinations]);
 
   // Parse FreePBX destination string to human-readable label
   const destToLabel = (dest: string): string => {
@@ -1042,26 +1099,11 @@ export default function CallerIds() {
                         <Loader2 className="h-4 w-4 animate-spin" /> Loading destinations...
                       </div>
                     ) : (
-                      <Select value={editDest} onValueChange={setEditDest}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select destination..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No destination</SelectItem>
-                          {Object.entries(destGrouped).map(([type, dests]) => (
-                            <div key={type}>
-                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">
-                                {DEST_TYPE_LABELS[type] || type}
-                              </div>
-                              {dests.map((d: any) => (
-                                <SelectItem key={`${d.type}-${d.id}`} value={d.destination}>
-                                  {d.name}
-                                </SelectItem>
-                              ))}
-                            </div>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <DestinationPicker
+                        value={editDest}
+                        onChange={setEditDest}
+                        destinations={destinations}
+                      />
                     )}
                   </div>
                   <div>
