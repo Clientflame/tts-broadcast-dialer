@@ -91,7 +91,8 @@ function sshExec(config: { host: string; user: string; password: string; port: n
       port: config.port,
       username: config.user,
       password: config.password,
-      readyTimeout: 10000,
+      readyTimeout: 20000,
+      keepaliveInterval: 5000,
     });
   });
 }
@@ -106,6 +107,8 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
   const config = await getSSHConfig();
   const destinations: FreePBXDestination[] = [];
 
+  console.log(`[FreePBX Routes] Fetching destinations from ${config.host}...`);
+
   // We use `mysql --batch --skip-column-names` for clean tab-separated output
   // FreePBX stores its config in the `asterisk` database
   const mysqlCmd = (query: string) =>
@@ -113,124 +116,127 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
     `-p\$(grep AMPDBPASS /etc/freepbx.conf | grep -oP "'[^']*'" | tail -1 | tr -d "'") ` +
     `asterisk --batch --skip-column-names -e "${query}"`;
 
-  try {
-    // 1. Extensions (SIP/PJSIP devices)
-    const extResult = await sshExec(config, mysqlCmd(
-      "SELECT id, name FROM users ORDER BY CAST(id AS UNSIGNED)"
-    ));
-    for (const line of extResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [id, name] = line.split("\t");
-      if (id) {
-        destinations.push({
-          type: "extension",
-          id,
-          name: name ? `${id} - ${name}` : id,
-          destination: `from-did-direct,${id},1`,
-        });
-      }
-    }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching extensions:", e);
-  }
+  // Run all queries in a single SSH session for speed and reliability
+  const allQueries = [
+    "SELECT 'EXT_START'; SELECT id, name FROM users ORDER BY CAST(id AS UNSIGNED); SELECT 'EXT_END';",
+    "SELECT 'QUEUE_START'; SELECT extension, descr FROM queues_config ORDER BY CAST(extension AS UNSIGNED); SELECT 'QUEUE_END';",
+    "SELECT 'RG_START'; SELECT grpnum, description FROM ringgroups ORDER BY CAST(grpnum AS UNSIGNED); SELECT 'RG_END';",
+    "SELECT 'IVR_START'; SELECT id, name FROM ivr_details ORDER BY id; SELECT 'IVR_END';",
+    "SELECT 'VM_START'; SELECT mailbox, fullname FROM voicemail WHERE context='default' ORDER BY CAST(mailbox AS UNSIGNED); SELECT 'VM_END';",
+    "SELECT 'ANN_START'; SELECT announcement_id, description FROM announcement ORDER BY announcement_id; SELECT 'ANN_END';",
+  ].join(" ");
 
   try {
-    // 2. Queues
-    const queueResult = await sshExec(config, mysqlCmd(
-      "SELECT extension, descr FROM queues_config ORDER BY CAST(extension AS UNSIGNED)"
-    ));
-    for (const line of queueResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [ext, descr] = line.split("\t");
-      if (ext) {
-        destinations.push({
-          type: "queue",
-          id: ext,
-          name: descr ? `Queue ${ext} - ${descr}` : `Queue ${ext}`,
-          destination: `ext-queues,${ext},1`,
-        });
-      }
-    }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching queues:", e);
-  }
+    const result = await sshExec(config, mysqlCmd(allQueries), 45000);
+    const output = result.stdout;
+    console.log(`[FreePBX Routes] SSH query returned ${output.length} bytes`);
+    if (result.stderr) console.log(`[FreePBX Routes] SSH stderr: ${result.stderr.substring(0, 500)}`);
 
-  try {
-    // 3. Ring Groups
-    const rgResult = await sshExec(config, mysqlCmd(
-      "SELECT grpnum, description FROM ringgroups ORDER BY CAST(grpnum AS UNSIGNED)"
-    ));
-    for (const line of rgResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [grpnum, description] = line.split("\t");
-      if (grpnum) {
-        destinations.push({
-          type: "ring_group",
-          id: grpnum,
-          name: description ? `Ring Group ${grpnum} - ${description}` : `Ring Group ${grpnum}`,
-          destination: `ext-group,${grpnum},1`,
-        });
+    // Parse extensions
+    const extMatch = output.match(/EXT_START\n([\s\S]*?)EXT_END/);
+    if (extMatch) {
+      for (const line of extMatch[1].trim().split("\n").filter(l => l && !l.startsWith("EXT_"))) {
+        const [id, name] = line.split("\t");
+        if (id) destinations.push({ type: "extension", id, name: name ? `${id} - ${name}` : id, destination: `from-did-direct,${id},1` });
       }
     }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching ring groups:", e);
-  }
 
-  try {
-    // 4. IVRs
-    const ivrResult = await sshExec(config, mysqlCmd(
-      "SELECT id, name FROM ivr_details ORDER BY id"
-    ));
-    for (const line of ivrResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [id, name] = line.split("\t");
-      if (id) {
-        destinations.push({
-          type: "ivr",
-          id,
-          name: name ? `IVR ${id} - ${name}` : `IVR ${id}`,
-          destination: `ivr-${id},s,1`,
-        });
+    // Parse queues
+    const queueMatch = output.match(/QUEUE_START\n([\s\S]*?)QUEUE_END/);
+    if (queueMatch) {
+      for (const line of queueMatch[1].trim().split("\n").filter(l => l && !l.startsWith("QUEUE_"))) {
+        const [ext, descr] = line.split("\t");
+        if (ext) destinations.push({ type: "queue", id: ext, name: descr ? `Queue ${ext} - ${descr}` : `Queue ${ext}`, destination: `ext-queues,${ext},1` });
       }
     }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching IVRs:", e);
-  }
 
-  try {
-    // 5. Voicemail boxes
-    const vmResult = await sshExec(config, mysqlCmd(
-      "SELECT mailbox, fullname FROM voicemail WHERE context='default' ORDER BY CAST(mailbox AS UNSIGNED)"
-    ));
-    for (const line of vmResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [mailbox, fullname] = line.split("\t");
-      if (mailbox) {
-        destinations.push({
-          type: "voicemail",
-          id: mailbox,
-          name: fullname ? `Voicemail ${mailbox} - ${fullname}` : `Voicemail ${mailbox}`,
-          destination: `ext-local,vm${mailbox},1`,
-        });
+    // Parse ring groups
+    const rgMatch = output.match(/RG_START\n([\s\S]*?)RG_END/);
+    if (rgMatch) {
+      for (const line of rgMatch[1].trim().split("\n").filter(l => l && !l.startsWith("RG_"))) {
+        const [grpnum, description] = line.split("\t");
+        if (grpnum) destinations.push({ type: "ring_group", id: grpnum, name: description ? `Ring Group ${grpnum} - ${description}` : `Ring Group ${grpnum}`, destination: `ext-group,${grpnum},1` });
       }
     }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching voicemail:", e);
-  }
 
-  try {
-    // 6. Announcements
-    const annResult = await sshExec(config, mysqlCmd(
-      "SELECT announcement_id, description FROM announcement ORDER BY announcement_id"
-    ));
-    for (const line of annResult.stdout.trim().split("\n").filter(Boolean)) {
-      const [id, description] = line.split("\t");
-      if (id) {
-        destinations.push({
-          type: "announcement",
-          id,
-          name: description ? `Announcement ${id} - ${description}` : `Announcement ${id}`,
-          destination: `app-announcement-${id},s,1`,
-        });
+    // Parse IVRs
+    const ivrMatch = output.match(/IVR_START\n([\s\S]*?)IVR_END/);
+    if (ivrMatch) {
+      for (const line of ivrMatch[1].trim().split("\n").filter(l => l && !l.startsWith("IVR_"))) {
+        const [id, name] = line.split("\t");
+        if (id) destinations.push({ type: "ivr", id, name: name ? `IVR ${id} - ${name}` : `IVR ${id}`, destination: `ivr-${id},s,1` });
       }
     }
-  } catch (e) {
-    console.error("[FreePBX Routes] Error fetching announcements:", e);
+
+    // Parse voicemail
+    const vmMatch = output.match(/VM_START\n([\s\S]*?)VM_END/);
+    if (vmMatch) {
+      for (const line of vmMatch[1].trim().split("\n").filter(l => l && !l.startsWith("VM_"))) {
+        const [mailbox, fullname] = line.split("\t");
+        if (mailbox) destinations.push({ type: "voicemail", id: mailbox, name: fullname ? `Voicemail ${mailbox} - ${fullname}` : `Voicemail ${mailbox}`, destination: `ext-local,vm${mailbox},1` });
+      }
+    }
+
+    // Parse announcements
+    const annMatch = output.match(/ANN_START\n([\s\S]*?)ANN_END/);
+    if (annMatch) {
+      for (const line of annMatch[1].trim().split("\n").filter(l => l && !l.startsWith("ANN_"))) {
+        const [id, description] = line.split("\t");
+        if (id) destinations.push({ type: "announcement", id, name: description ? `Announcement ${id} - ${description}` : `Announcement ${id}`, destination: `app-announcement-${id},s,1` });
+      }
+    }
+  } catch (e: any) {
+    console.error(`[FreePBX Routes] SSH query failed:`, e.message);
+    // Fallback: try individual queries
+    console.log(`[FreePBX Routes] Falling back to individual queries...`);
+    
+    try {
+      const extResult = await sshExec(config, mysqlCmd("SELECT id, name FROM users ORDER BY CAST(id AS UNSIGNED)"), 15000);
+      for (const line of extResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [id, name] = line.split("\t");
+        if (id) destinations.push({ type: "extension", id, name: name ? `${id} - ${name}` : id, destination: `from-did-direct,${id},1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - extensions failed:", (e2 as Error).message); }
+
+    try {
+      const queueResult = await sshExec(config, mysqlCmd("SELECT extension, descr FROM queues_config ORDER BY CAST(extension AS UNSIGNED)"), 15000);
+      for (const line of queueResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [ext, descr] = line.split("\t");
+        if (ext) destinations.push({ type: "queue", id: ext, name: descr ? `Queue ${ext} - ${descr}` : `Queue ${ext}`, destination: `ext-queues,${ext},1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - queues failed:", (e2 as Error).message); }
+
+    try {
+      const rgResult = await sshExec(config, mysqlCmd("SELECT grpnum, description FROM ringgroups ORDER BY CAST(grpnum AS UNSIGNED)"), 15000);
+      for (const line of rgResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [grpnum, description] = line.split("\t");
+        if (grpnum) destinations.push({ type: "ring_group", id: grpnum, name: description ? `Ring Group ${grpnum} - ${description}` : `Ring Group ${grpnum}`, destination: `ext-group,${grpnum},1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - ring groups failed:", (e2 as Error).message); }
+
+    try {
+      const ivrResult = await sshExec(config, mysqlCmd("SELECT id, name FROM ivr_details ORDER BY id"), 15000);
+      for (const line of ivrResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [id, name] = line.split("\t");
+        if (id) destinations.push({ type: "ivr", id, name: name ? `IVR ${id} - ${name}` : `IVR ${id}`, destination: `ivr-${id},s,1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - IVRs failed:", (e2 as Error).message); }
+
+    try {
+      const vmResult = await sshExec(config, mysqlCmd("SELECT mailbox, fullname FROM voicemail WHERE context='default' ORDER BY CAST(mailbox AS UNSIGNED)"), 15000);
+      for (const line of vmResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [mailbox, fullname] = line.split("\t");
+        if (mailbox) destinations.push({ type: "voicemail", id: mailbox, name: fullname ? `Voicemail ${mailbox} - ${fullname}` : `Voicemail ${mailbox}`, destination: `ext-local,vm${mailbox},1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - voicemail failed:", (e2 as Error).message); }
+
+    try {
+      const annResult = await sshExec(config, mysqlCmd("SELECT announcement_id, description FROM announcement ORDER BY announcement_id"), 15000);
+      for (const line of annResult.stdout.trim().split("\n").filter(Boolean)) {
+        const [id, description] = line.split("\t");
+        if (id) destinations.push({ type: "announcement", id, name: description ? `Announcement ${id} - ${description}` : `Announcement ${id}`, destination: `app-announcement-${id},s,1` });
+      }
+    } catch (e2) { console.error("[FreePBX Routes] Fallback - announcements failed:", (e2 as Error).message); }
   }
 
   // 7. Terminate options (always available, no DB query needed)

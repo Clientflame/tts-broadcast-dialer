@@ -1140,7 +1140,19 @@ export const appRouter = router({
 
     /** Fetch available FreePBX destinations (queues, ring groups, IVRs, extensions, etc.) */
     getFreePBXDestinations: adminProcedure.query(async () => {
-      return fetchFreePBXDestinations();
+      try {
+        const dests = await fetchFreePBXDestinations();
+        console.log(`[FreePBX Routes] Fetched ${dests.length} destinations: ${Object.entries(dests.reduce((acc: Record<string, number>, d) => { acc[d.type] = (acc[d.type] || 0) + 1; return acc; }, {})).map(([k,v]) => `${k}=${v}`).join(', ')}`);
+        return dests;
+      } catch (e: any) {
+        console.error(`[FreePBX Routes] Failed to fetch destinations:`, e.message);
+        // Return terminate options as fallback so UI isn't completely empty
+        return [
+          { type: "terminate" as const, id: "hangup", name: "Hangup", destination: "app-blackhole,hangup,1" },
+          { type: "terminate" as const, id: "congestion", name: "Congestion", destination: "app-blackhole,congestion,1" },
+          { type: "terminate" as const, id: "busy", name: "Play Busy", destination: "app-blackhole,busy,1" },
+        ];
+      }
     }),
 
     /** List existing inbound routes on FreePBX */

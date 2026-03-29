@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -145,27 +145,37 @@ function DestinationPicker({
   const isCompact = size === "compact";
   const triggerClass = isCompact ? "h-8 text-xs" : "mt-1";
 
+  // Check if only terminate options loaded (SSH failure)
+  const hasNonTerminate = destinations.some(d => d.type !== "terminate");
+
   return (
-    <div className={`flex gap-2 ${isCompact ? "flex-1" : "grid grid-cols-2"}`}>
-      <div className={isCompact ? "w-32 shrink-0" : ""}>
-        {!isCompact && <Label className="text-xs">Destination Type</Label>}
-        <Select value={selectedType} onValueChange={handleTypeChange}>
-          <SelectTrigger className={triggerClass}>
-            <SelectValue placeholder="Type..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">No route</SelectItem>
-            {DEST_TYPE_OPTIONS.map(opt => {
-              const count = destinations.filter(d => d.type === opt.value).length;
-              return count > 0 ? (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label} ({count})
-                </SelectItem>
-              ) : null;
-            })}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="space-y-2">
+      {!hasNonTerminate && destinations.length > 0 && !isCompact && (
+        <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 rounded p-2">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Could not connect to FreePBX via SSH. Only basic options are available. Check your FreePBX SSH credentials in Settings.</span>
+        </div>
+      )}
+      <div className={`flex gap-2 ${isCompact ? "flex-1" : "grid grid-cols-2"}`}>
+        <div className={isCompact ? "w-32 shrink-0" : ""}>
+          {!isCompact && <Label className="text-xs">Destination Type</Label>}
+          <Select value={selectedType} onValueChange={handleTypeChange}>
+            <SelectTrigger className={triggerClass}>
+              <SelectValue placeholder="Type..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No route</SelectItem>
+              {DEST_TYPE_OPTIONS.map(opt => {
+                const count = destinations.filter(d => d.type === opt.value).length;
+                return count > 0 ? (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label} ({count})
+                  </SelectItem>
+                ) : null;
+              })}
+            </SelectContent>
+          </Select>
+        </div>
       {selectedType !== "none" && itemsForType.length > 0 && (
         <div className={isCompact ? "flex-1" : ""}>
           {!isCompact && <Label className="text-xs">{DEST_TYPE_LABELS[selectedType] || "Item"}</Label>}
@@ -183,11 +193,12 @@ function DestinationPicker({
           </Select>
         </div>
       )}
-      {selectedType !== "none" && itemsForType.length === 0 && (
-        <div className={`flex items-center text-xs text-muted-foreground ${isCompact ? "" : "mt-6"}`}>
-          No {DEST_TYPE_LABELS[selectedType]?.toLowerCase() || "items"} found on FreePBX
-        </div>
-      )}
+        {selectedType !== "none" && itemsForType.length === 0 && (
+          <div className={`flex items-center text-xs text-muted-foreground ${isCompact ? "" : "mt-6"}`}>
+            No {DEST_TYPE_LABELS[selectedType]?.toLowerCase() || "items"} found on FreePBX
+          </div>
+        )}
+      </div>
     </div>
   );
 }

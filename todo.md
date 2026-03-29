@@ -761,3 +761,4 @@
 - [x] Route destination display with human-readable labels
 - [x] Improve destination selector to two-step pattern: pick type (Extension, Ring Group, Call Queue) then pick specific item
 - [x] Update destination dropdown in bulk add, CSV import, per-number config, and edit route dialog
+- [x] FIX: Bulk Add destination picker only showing 'No route' and 'Terminate' — improved SSH reliability with single-query batch, fallback to individual queries, increased timeout, SSH warning in UI when connection fails
