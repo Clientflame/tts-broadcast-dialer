@@ -1273,6 +1273,10 @@ export const appRouter = router({
 
       // Step 2: Create inbound routes on FreePBX for entries that have route config
       const routeEntries = input.entries.filter(e => e.inboundRoute);
+      console.log(`[bulkCreateWithRoutes] Total entries: ${input.entries.length}, entries with routes: ${routeEntries.length}`);
+      if (routeEntries.length > 0) {
+        console.log(`[bulkCreateWithRoutes] Route destinations:`, routeEntries.map(e => ({ phone: e.phoneNumber, dest: e.inboundRoute?.destination })));
+      }
       let routeResults = null;
       if (routeEntries.length > 0) {
         const routes = routeEntries.map(e => ({
@@ -1281,11 +1285,15 @@ export const appRouter = router({
           description: e.inboundRoute!.description,
           cidPrefix: e.inboundRoute?.cidPrefix,
         }));
+        console.log(`[bulkCreateWithRoutes] Calling createInboundRoutes with ${routes.length} routes`);
         const results = await createInboundRoutes(routes);
+        console.log(`[bulkCreateWithRoutes] createInboundRoutes returned ${results.length} results:`, results.map(r => ({ did: r.did, success: r.success, exists: r.alreadyExists, error: r.error })));
         const created = results.filter(r => r.success && !r.alreadyExists).length;
         const skipped = results.filter(r => r.alreadyExists).length;
         const failed = results.filter(r => !r.success).length;
         routeResults = { results, summary: { created, skipped, failed } };
+      } else {
+        console.log(`[bulkCreateWithRoutes] No entries have inbound routes configured — skipping FreePBX route creation`);
       }
 
       await db.createAuditLog({

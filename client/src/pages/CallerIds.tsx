@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -223,6 +223,23 @@ function InboundRouteConfigPanel({
   const [globalDest, setGlobalDest] = useState("none");
   const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
   const [globalCidPrefix, setGlobalCidPrefix] = useState("");
+  const [autoApplied, setAutoApplied] = useState(false);
+
+  // Auto-select the first queue as default destination when destinations load
+  useEffect(() => {
+    if (!autoApplied && destinations.length > 0 && globalDest === "none" && entries.length > 0) {
+      const firstQueue = destinations.find(d => d.type === "queue");
+      if (firstQueue) {
+        setGlobalDest(firstQueue.destination);
+        onEntriesChange(entries.map(e => ({
+          ...e,
+          destination: e.destination === "none" ? firstQueue.destination : e.destination,
+          description: e.description || "TTS Dialer",
+        })));
+        setAutoApplied(true);
+      }
+    }
+  }, [destinations, entries.length, autoApplied]);
 
   const applyToAll = (dest: string, desc: string, prefix: string) => {
     onEntriesChange(entries.map(e => ({
@@ -268,7 +285,7 @@ function InboundRouteConfigPanel({
       <div className="flex items-center gap-2">
         <Route className="h-4 w-4 text-primary" />
         <span className="font-medium text-sm">Inbound Route Configuration</span>
-        <Badge variant="outline" className="text-xs">Optional</Badge>
+        <Badge variant="secondary" className="text-xs">Auto-configured</Badge>
       </div>
       <p className="text-xs text-muted-foreground">
         Auto-create inbound routes on FreePBX so return calls to these DIDs are routed to the right destination.
@@ -442,14 +459,17 @@ export default function CallerIds() {
       const cidMsg = r.callerIds.duplicatesOmitted > 0
         ? `${r.callerIds.count} caller IDs added (${r.callerIds.duplicatesOmitted} dupes skipped)`
         : `${r.callerIds.count} caller IDs added`;
-      if (r.inboundRoutes) {
+      if (r.inboundRoutes && r.inboundRoutes.summary) {
         const { created, skipped, failed } = r.inboundRoutes.summary;
-        const routeMsg = [
-          created > 0 ? `${created} route(s) created` : null,
-          skipped > 0 ? `${skipped} already existed` : null,
-          failed > 0 ? `${failed} failed` : null,
-        ].filter(Boolean).join(", ");
-        toast.success(`${cidMsg}. Routes: ${routeMsg}`);
+        const parts = [];
+        if (created > 0) parts.push(`${created} route(s) created`);
+        if (skipped > 0) parts.push(`${skipped} already existed`);
+        if (failed > 0) parts.push(`${failed} failed`);
+        if (parts.length > 0) {
+          toast.success(`${cidMsg}. Routes: ${parts.join(", ")}`);
+        } else {
+          toast.success(`${cidMsg}. No new routes needed.`);
+        }
       } else {
         toast.success(cidMsg);
       }
@@ -596,7 +616,7 @@ export default function CallerIds() {
   const [bulkText, setBulkText] = useState("");
   const [bulkLabel, setBulkLabel] = useState("");
   const [bulkRouteEntries, setBulkRouteEntries] = useState<InboundRouteEntry[]>([]);
-  const [showRouteConfig, setShowRouteConfig] = useState(false);
+  const [showRouteConfig, setShowRouteConfig] = useState(true);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showBulkEditLabel, setShowBulkEditLabel] = useState(false);
   const [bulkEditLabelValue, setBulkEditLabelValue] = useState("");
@@ -651,19 +671,29 @@ export default function CallerIds() {
   };
 
   const handleBulkAdd = () => {
-    if (bulkRouteEntries.length === 0) {
-      const entries = parseBulkEntries(bulkText, bulkLabel);
+    // If route config toggle is off, just create caller IDs without routes
+    if (!showRouteConfig) {
+      const entries = bulkRouteEntries.length > 0
+        ? bulkRouteEntries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label }))
+        : parseBulkEntries(bulkText, bulkLabel).map(e => ({ phoneNumber: e.phoneNumber, label: e.label }));
       if (entries.length === 0) return;
-      bulkCreateMut.mutate({ entries: entries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })) });
+      bulkCreateMut.mutate({ entries });
       return;
     }
 
+    // Route config is ON — use bulkRouteEntries or parse fresh
+    let routeEntries = bulkRouteEntries;
+    if (routeEntries.length === 0) {
+      routeEntries = parseBulkEntries(bulkText, bulkLabel);
+    }
+    if (routeEntries.length === 0) return;
+
     // Check if any entries have inbound routes configured
-    const hasRoutes = bulkRouteEntries.some(e => e.destination && e.destination !== "none");
+    const hasRoutes = routeEntries.some(e => e.destination && e.destination !== "none");
 
     if (hasRoutes) {
       bulkCreateWithRoutesMut.mutate({
-        entries: bulkRouteEntries.map(e => ({
+        entries: routeEntries.map(e => ({
           phoneNumber: e.phoneNumber,
           label: e.label,
           inboundRoute: e.destination && e.destination !== "none" ? {
@@ -674,8 +704,9 @@ export default function CallerIds() {
         })),
       });
     } else {
+      // Route toggle is on but no destinations selected — still create without routes
       bulkCreateMut.mutate({
-        entries: bulkRouteEntries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })),
+        entries: routeEntries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })),
       });
     }
   };
@@ -811,7 +842,7 @@ export default function CallerIds() {
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
               if (open) setFetchDests(true);
-              if (!open) { setShowRouteConfig(false); setBulkRouteEntries([]); setBulkLabel(""); }
+              if (!open) { setShowRouteConfig(true); setBulkRouteEntries([]); setBulkLabel(""); }
             }}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm"><Upload className="h-4 w-4 mr-1" /> Bulk Add</Button>

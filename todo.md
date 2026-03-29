@@ -786,3 +786,7 @@
 - [x] Campaign UI — DID label selector in campaign create/edit forms (dropdown of unique labels)
 - [x] CSV export of filtered DIDs — export button on Caller IDs page respecting search/filter
 - [x] Vitest tests for label-based rotation and CSV export (26 tests)
+- [x] BUG: Caller ID import (bulk add / CSV) does not create inbound routes on FreePBX
+- [x] BUG: bulkCreateWithRoutes reports 0 routes created even when routes are configured
+- [x] Default "Create inbound routes on FreePBX" toggle to ON
+- [x] Default destination to first available queue instead of "none"
