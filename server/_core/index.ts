@@ -52,6 +52,10 @@ async function startServer() {
   mountLocalStorageRoute(app);
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
+  // Plain health check endpoint for Docker healthcheck (no tRPC input required)
+  app.get("/api/trpc/health", (_req, res) => {
+    res.json({ ok: true });
+  });
   // tRPC API
   app.use(
     "/api/trpc",

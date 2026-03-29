@@ -845,3 +845,6 @@
 - [x] Update purchaseTollFreeDID to use POST /did/tollfree/order with JSON body
 - [x] Update frontend Purchase DIDs dialog to use tnMask search instead of state/ratecenter
 - [x] Update tests for new v2.0 API format (all 910 tests passing)
+- [x] BUG: DID purchase search not working on self-hosted VPS after v1.7.8 deploy — Vitelity credentials were missing from container env, added to .env and recreated container
+- [x] Fix Docker healthcheck — added plain GET /api/trpc/health endpoint that returns {ok:true}
+- [x] Fix BridgeHealthCheck SSH auth failure on VPS — updated FREEPBX_SSH_PASSWORD to correct value
