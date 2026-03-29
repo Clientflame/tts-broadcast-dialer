@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -600,6 +600,9 @@ export default function CallerIds() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showBulkEditLabel, setShowBulkEditLabel] = useState(false);
   const [bulkEditLabelValue, setBulkEditLabelValue] = useState("");
+  const [didSearch, setDidSearch] = useState("");
+  const [labelFilter, setLabelFilter] = useState("__all__");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: "single" | "bulk"; id?: number; ids?: number[]; phoneNumbers?: string[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Parse bulk text into route entries whenever text changes
@@ -727,6 +730,42 @@ export default function CallerIds() {
     updateMut.mutate({ id, label: newLabel });
   };
 
+  // Unique labels for the filter dropdown
+  const uniqueLabels = useMemo(() => {
+    const labels = callerIds.map(c => c.label || "").filter(Boolean);
+    return Array.from(new Set(labels)).sort();
+  }, [callerIds]);
+
+  // Filtered caller IDs based on search and label filter
+  const filteredCallerIds = useMemo(() => {
+    let result = callerIds;
+    if (didSearch) {
+      const q = didSearch.toLowerCase();
+      result = result.filter(c =>
+        c.phoneNumber.toLowerCase().includes(q) ||
+        (c.label || "").toLowerCase().includes(q)
+      );
+    }
+    if (labelFilter !== "__all__") {
+      if (labelFilter === "__none__") {
+        result = result.filter(c => !c.label);
+      } else {
+        result = result.filter(c => c.label === labelFilter);
+      }
+    }
+    return result;
+  }, [callerIds, didSearch, labelFilter]);
+
+  const handleConfirmDelete = () => {
+    if (!showDeleteConfirm) return;
+    if (showDeleteConfirm.type === "single" && showDeleteConfirm.id) {
+      deleteMut.mutate({ id: showDeleteConfirm.id });
+    } else if (showDeleteConfirm.type === "bulk" && showDeleteConfirm.ids) {
+      bulkDeleteMut.mutate({ ids: showDeleteConfirm.ids });
+    }
+    setShowDeleteConfirm(null);
+  };
+
   const activeCount = callerIds.filter(c => c.isActive === 1).length;
   const healthyCount = callerIds.filter(c => c.healthStatus === "healthy").length;
   const failedCount = callerIds.filter(c => c.healthStatus === "failed").length;
@@ -749,7 +788,11 @@ export default function CallerIds() {
                 <Button variant="outline" size="sm" onClick={() => { setBulkEditLabelValue(""); setShowBulkEditLabel(true); }}>
                   <Tag className="h-4 w-4 mr-1" /> Edit Labels ({selected.size})
                 </Button>
-                <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${selected.size} caller ID(s)?`)) bulkDeleteMut.mutate({ ids: Array.from(selected) }); }}>
+                <Button variant="destructive" size="sm" onClick={() => {
+                  const ids = Array.from(selected);
+                  const phones = callerIds.filter(c => ids.includes(c.id)).map(c => c.phoneNumber);
+                  setShowDeleteConfirm({ type: "bulk", ids, phoneNumbers: phones });
+                }}>
                   <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate({ ids: Array.from(selected) })} disabled={healthCheckMut.isPending}>
@@ -989,12 +1032,52 @@ export default function CallerIds() {
 
         <Card>
           <CardContent className="p-0">
+            {/* Search & Filter Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 border-b bg-muted/20">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Search by number or label..."
+                  value={didSearch}
+                  onChange={e => setDidSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={labelFilter} onValueChange={setLabelFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Filter by label" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Labels</SelectItem>
+                    <SelectItem value="__none__">No Label</SelectItem>
+                    {uniqueLabels.map(label => (
+                      <SelectItem key={label} value={label}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {(didSearch || labelFilter !== "__all__") && (
+                  <Button variant="ghost" size="sm" onClick={() => { setDidSearch(""); setLabelFilter("__all__"); }}>
+                    <X className="h-4 w-4 mr-1" /> Clear
+                  </Button>
+                )}
+              </div>
+              {filteredCallerIds.length !== callerIds.length && (
+                <Badge variant="outline" className="text-xs">
+                  Showing {filteredCallerIds.length} of {callerIds.length}
+                </Badge>
+              )}
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[800px]">
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="p-3 text-left w-10">
-                      <Checkbox checked={selected.size === callerIds.length && callerIds.length > 0} onCheckedChange={selectAll} />
+                      <Checkbox checked={selected.size === filteredCallerIds.length && filteredCallerIds.length > 0} onCheckedChange={() => {
+                        if (selected.size === filteredCallerIds.length) setSelected(new Set());
+                        else setSelected(new Set(filteredCallerIds.map(c => c.id)));
+                      }} />
                     </th>
                     <th className="p-3 text-left">Phone Number</th>
                     <th className="p-3 text-left">Label</th>
@@ -1014,7 +1097,12 @@ export default function CallerIds() {
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No caller IDs yet. Add DIDs to enable caller ID rotation.
                     </td></tr>
-                  ) : callerIds.map(cid => (
+                  ) : filteredCallerIds.length === 0 ? (
+                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">
+                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      No caller IDs match your search or filter.
+                    </td></tr>
+                  ) : filteredCallerIds.map(cid => (
                     <tr key={cid.id} className={`border-b hover:bg-muted/30 ${cid.autoDisabled ? "bg-red-50/30" : ""}`}>
                       <td className="p-3"><Checkbox checked={selected.has(cid.id)} onCheckedChange={() => toggleSelect(cid.id)} /></td>
                       <td className="p-3 font-mono">{cid.phoneNumber}</td>
@@ -1080,7 +1168,7 @@ export default function CallerIds() {
                               <TooltipContent>Run health check</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
-                          <Button variant="ghost" size="sm" onClick={() => deleteMut.mutate({ id: cid.id })}>
+                          <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm({ type: "single", id: cid.id, phoneNumbers: [cid.phoneNumber] })}>
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
@@ -1270,6 +1358,54 @@ export default function CallerIds() {
           </TabsContent>
 
         </Tabs>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!showDeleteConfirm} onOpenChange={(open) => { if (!open) setShowDeleteConfirm(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" /> Confirm Deletion
+              </DialogTitle>
+              <DialogDescription>
+                {showDeleteConfirm?.type === "single"
+                  ? "This will permanently delete the caller ID and its inbound route on FreePBX."
+                  : `This will permanently delete ${showDeleteConfirm?.ids?.length || 0} caller ID(s) and their inbound routes on FreePBX.`}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <Route className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-amber-800 dark:text-amber-300">
+                    <p className="font-medium">FreePBX inbound routes will also be removed</p>
+                    <p className="text-xs mt-1 text-amber-700 dark:text-amber-400">
+                      Any inbound routes configured for {showDeleteConfirm?.type === "single" ? "this number" : "these numbers"} on FreePBX will be automatically deleted. This cannot be undone.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {showDeleteConfirm?.phoneNumbers && showDeleteConfirm.phoneNumbers.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium">Affected number{showDeleteConfirm.phoneNumbers.length > 1 ? "s" : ""}:</span>
+                  <span className="font-mono ml-1">
+                    {showDeleteConfirm.phoneNumbers.slice(0, 8).join(", ")}
+                    {showDeleteConfirm.phoneNumbers.length > 8 ? ` +${showDeleteConfirm.phoneNumbers.length - 8} more` : ""}
+                  </span>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleteMut.isPending || bulkDeleteMut.isPending}>
+                {(deleteMut.isPending || bulkDeleteMut.isPending) ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Deleting...</>
+                ) : (
+                  <><Trash2 className="h-4 w-4 mr-1" /> Delete {showDeleteConfirm?.type === "single" ? "Caller ID" : `${showDeleteConfirm?.ids?.length} Caller IDs`}</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Bulk Edit Label Dialog */}
         <Dialog open={showBulkEditLabel} onOpenChange={setShowBulkEditLabel}>

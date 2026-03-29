@@ -774,7 +774,11 @@
 - [x] Bulk edit DID labels (select multiple, click "Edit Labels" button, set new label for all selected)
 - [x] Backend bulkUpdate procedure for callerIds with audit logging
 - [x] Vitest tests for label features (25 tests)
-- [ ] Filter/search DIDs by label
+- [x] Filter/search DIDs by label
 - [x] Auto-delete FreePBX inbound routes when single Caller ID is deleted
 - [x] Auto-delete FreePBX inbound routes when bulk deleting Caller IDs
 - [x] Vitest tests for cascade route deletion (11 tests)
+- [x] Filter/search DIDs by label — search bar + label dropdown on Caller IDs page
+- [x] Confirmation dialog before delete — warn that FreePBX inbound routes will also be removed
+- [x] Confirmation dialog before bulk delete — same warning for bulk operations
+- [x] Vitest tests for label filter and delete confirmation features (29 tests)
