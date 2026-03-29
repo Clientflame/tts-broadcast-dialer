@@ -790,3 +790,6 @@
 - [x] BUG: bulkCreateWithRoutes reports 0 routes created even when routes are configured
 - [x] Default "Create inbound routes on FreePBX" toggle to ON
 - [x] Default destination to first available queue instead of "none"
+- [x] Single DID add with inbound route — extend Add Caller ID dialog with route config
+- [x] Backend createWithRoute procedure for single DID + route creation
+- [x] Progress indicator for bulk add with routes — show progress during SSH operations (28 tests)

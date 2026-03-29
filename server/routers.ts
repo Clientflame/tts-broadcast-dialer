@@ -1008,6 +1008,47 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.create", resource: "callerId", resourceId: result.id });
       return result;
     }),
+    /** Create a single caller ID with an optional inbound route on FreePBX */
+    createWithRoute: adminProcedure.input(z.object({
+      phoneNumber: z.string().min(1).max(20),
+      label: z.string().max(255).optional(),
+      inboundRoute: z.object({
+        destination: z.string().min(1),
+        description: z.string().max(255).default("TTS Dialer"),
+        cidPrefix: z.string().max(50).optional(),
+      }).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller ID in database
+      const result = await db.createCallerId({ phoneNumber: input.phoneNumber, label: input.label, userId: ctx.user.id });
+      if (result.duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: `Caller ID ${input.phoneNumber} already exists` });
+      }
+
+      // Step 2: Create inbound route on FreePBX if configured
+      let routeResult = null;
+      if (input.inboundRoute) {
+        const routes = [{
+          did: input.phoneNumber,
+          destination: input.inboundRoute.destination,
+          description: input.inboundRoute.description,
+          cidPrefix: input.inboundRoute.cidPrefix,
+        }];
+        const results = await createInboundRoutes(routes);
+        const r = results[0];
+        routeResult = { success: r?.success ?? false, alreadyExists: r?.alreadyExists ?? false, error: r?.error };
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: input.inboundRoute ? "callerId.createWithRoute" : "callerId.create",
+        resource: "callerId",
+        resourceId: result.id,
+        details: routeResult ? { route: routeResult } : undefined,
+      });
+
+      return { callerId: result, inboundRoute: routeResult };
+    }),
     bulkCreate: protectedProcedure.input(z.object({
       entries: z.array(z.object({
         phoneNumber: z.string().min(1).max(20),

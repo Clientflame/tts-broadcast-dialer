@@ -441,6 +441,24 @@ export default function CallerIds() {
     onSuccess: () => { utils.callerIds.list.invalidate(); toast.success("Caller ID added"); setShowAdd(false); setPhone(""); setLabel(""); },
     onError: (e) => toast.error(e.message),
   });
+  const createWithRouteMut = trpc.callerIds.createWithRoute.useMutation({
+    onSuccess: (r: any) => {
+      utils.callerIds.list.invalidate();
+      if (r.inboundRoute) {
+        if (r.inboundRoute.success && !r.inboundRoute.alreadyExists) {
+          toast.success("Caller ID added with inbound route");
+        } else if (r.inboundRoute.alreadyExists) {
+          toast.success("Caller ID added (route already existed)");
+        } else {
+          toast.success(`Caller ID added but route failed: ${r.inboundRoute.error || "unknown error"}`);
+        }
+      } else {
+        toast.success("Caller ID added");
+      }
+      setShowAdd(false); setPhone(""); setLabel(""); setSingleRouteDest("none"); setSingleRouteDesc("TTS Dialer"); setSingleRouteCidPrefix("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const bulkCreateMut = trpc.callerIds.bulkCreate.useMutation({
     onSuccess: (r: any) => {
       utils.callerIds.list.invalidate();
@@ -623,7 +641,23 @@ export default function CallerIds() {
   const [didSearch, setDidSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("__all__");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ type: "single" | "bulk"; id?: number; ids?: number[]; phoneNumbers?: string[] } | null>(null);
+  const [singleRouteEnabled, setSingleRouteEnabled] = useState(true);
+  const [singleRouteDest, setSingleRouteDest] = useState("none");
+  const [singleRouteDesc, setSingleRouteDesc] = useState("TTS Dialer");
+  const [singleRouteCidPrefix, setSingleRouteCidPrefix] = useState("");
+  const [singleRouteAutoApplied, setSingleRouteAutoApplied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Auto-select first queue for single add route when destinations load
+  useEffect(() => {
+    if (!singleRouteAutoApplied && destinations.length > 0 && singleRouteDest === "none") {
+      const firstQueue = destinations.find((d: any) => d.type === "queue");
+      if (firstQueue) {
+        setSingleRouteDest(firstQueue.destination);
+        setSingleRouteAutoApplied(true);
+      }
+    }
+  }, [destinations, singleRouteAutoApplied, singleRouteDest]);
 
   // Parse bulk text into route entries whenever text changes
   const parseBulkEntries = (text: string, globalLabel?: string): InboundRouteEntry[] => {
@@ -667,7 +701,19 @@ export default function CallerIds() {
 
   const handleAdd = () => {
     if (!phone.trim()) return;
-    createMut.mutate({ phoneNumber: phone.trim(), label: label.trim() || undefined });
+    if (singleRouteEnabled && singleRouteDest && singleRouteDest !== "none") {
+      createWithRouteMut.mutate({
+        phoneNumber: phone.trim(),
+        label: label.trim() || undefined,
+        inboundRoute: {
+          destination: singleRouteDest,
+          description: singleRouteDesc || "TTS Dialer",
+          cidPrefix: singleRouteCidPrefix || undefined,
+        },
+      });
+    } else {
+      createMut.mutate({ phoneNumber: phone.trim(), label: label.trim() || undefined });
+    }
   };
 
   const handleBulkAdd = () => {
@@ -804,6 +850,7 @@ export default function CallerIds() {
   const uncheckedCount = callerIds.filter(c => c.healthStatus === "unknown").length;
 
   const isBulkPending = bulkCreateMut.isPending || bulkCreateWithRoutesMut.isPending;
+  const [bulkProgress, setBulkProgress] = useState<{ stage: "idle" | "adding" | "routes" | "done"; count: number } >({ stage: "idle", count: 0 });
 
   return (
     <DashboardLayout>
@@ -902,11 +949,40 @@ export default function CallerIds() {
                   />
                 )}
 
+                {/* Progress indicator during bulk add */}
+                {isBulkPending && (
+                  <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="font-medium">
+                        {bulkCreateWithRoutesMut.isPending
+                          ? "Adding DIDs and creating FreePBX inbound routes..."
+                          : "Adding DIDs to database..."}
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                      <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: bulkCreateWithRoutesMut.isPending ? "60%" : "30%" }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {bulkCreateWithRoutesMut.isPending
+                          ? `Processing ${bulkRouteEntries.length} DID(s) with route creation via SSH`
+                          : `Processing ${bulkRouteEntries.length || "..."} DID(s)`}
+                      </span>
+                      <span>This may take a moment for large batches</span>
+                    </div>
+                  </div>
+                )}
+
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowBulk(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => setShowBulk(false)} disabled={isBulkPending}>Cancel</Button>
                   <Button onClick={handleBulkAdd} disabled={isBulkPending}>
                     {isBulkPending ? (
-                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Adding...</>
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        {showRouteConfig && bulkRouteEntries.some(e => e.destination !== "none")
+                          ? "Adding DIDs & Creating Routes..."
+                          : "Adding..."}
+                      </>
                     ) : showRouteConfig && bulkRouteEntries.some(e => e.destination !== "none") ? (
                       <><Route className="h-4 w-4 mr-1" /> Add with Routes</>
                     ) : (
@@ -916,11 +992,14 @@ export default function CallerIds() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-            <Dialog open={showAdd} onOpenChange={setShowAdd}>
+            <Dialog open={showAdd} onOpenChange={(open) => {
+              setShowAdd(open);
+              if (open) setFetchDests(true);
+            }}>
               <DialogTrigger asChild>
                 <Button size="sm"><Plus className="h-4 w-4 mr-1" /> Add Caller ID</Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-lg">
                 <DialogHeader>
                   <DialogTitle>Add Caller ID</DialogTitle>
                   <DialogDescription>Add a DID number to your caller ID rotation pool</DialogDescription>
@@ -934,11 +1013,73 @@ export default function CallerIds() {
                     <Label>Label (optional)</Label>
                     <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="Main Line" />
                   </div>
+
+                  {/* Inbound Route Config */}
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={singleRouteEnabled}
+                      onCheckedChange={setSingleRouteEnabled}
+                    />
+                    <Label className="text-sm cursor-pointer" onClick={() => setSingleRouteEnabled(!singleRouteEnabled)}>
+                      Create inbound route on FreePBX
+                    </Label>
+                  </div>
+
+                  {singleRouteEnabled && (
+                    <div className="space-y-3 border rounded-lg p-4 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <Route className="h-4 w-4 text-primary" />
+                        <span className="font-medium text-sm">Inbound Route</span>
+                        <Badge variant="secondary" className="text-xs">Auto-configured</Badge>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Destination</Label>
+                        {destsLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading destinations...
+                          </div>
+                        ) : (
+                          <DestinationPicker
+                            value={singleRouteDest}
+                            onChange={setSingleRouteDest}
+                            destinations={destinations}
+                          />
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Route Label</Label>
+                          <Input
+                            className="mt-1"
+                            value={singleRouteDesc}
+                            onChange={e => setSingleRouteDesc(e.target.value)}
+                            placeholder="TTS Dialer"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">CID Prefix (optional)</Label>
+                          <Input
+                            className="mt-1"
+                            value={singleRouteCidPrefix}
+                            onChange={e => setSingleRouteCidPrefix(e.target.value)}
+                            placeholder="e.g. CB:"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                  <Button onClick={handleAdd} disabled={createMut.isPending}>
-                    {createMut.isPending ? "Adding..." : "Add"}
+                  <Button onClick={handleAdd} disabled={createMut.isPending || createWithRouteMut.isPending}>
+                    {(createMut.isPending || createWithRouteMut.isPending) ? (
+                      <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Adding...</>
+                    ) : singleRouteEnabled && singleRouteDest !== "none" ? (
+                      <><Route className="h-4 w-4 mr-1" /> Add with Route</>
+                    ) : (
+                      "Add"
+                    )}
                   </Button>
                 </DialogFooter>
               </DialogContent>
