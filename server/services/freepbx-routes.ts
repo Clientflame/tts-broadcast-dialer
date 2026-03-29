@@ -307,12 +307,11 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
   }
 
   // Build individual INSERT statements for each route
-  // FreePBX `incoming` table columns:
-  // cidnum, extension, destination, faxenabled, faxdetection, legacy_email, 
-  // mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, 
-  // ringing, fanswer, privacyman
+  // FreePBX `incoming` table actual columns (verified on FreePBX 17):
+  // cidnum, extension, destination, privacyman, alertinfo, ringing, fanswer,
+  // mohclass, description, grppre, delay_answer, pricid, pmmaxretries,
+  // pmminlength, reversal, rvolume, indication_zone
   // Build all INSERT statements and run them in a single SSH session
-  // This avoids opening 8 separate SSH connections which can cause timeouts
   const insertStatements: string[] = [];
   for (const route of newRoutes) {
     const safeDid = route.did.replace(/'/g, "").replace(/"/g, "");
@@ -321,7 +320,7 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
     const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
 
     insertStatements.push(
-      `INSERT INTO incoming (cidnum, extension, destination, faxenabled, faxdetection, legacy_email, mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'disabled', 'none', '', 'default', '${safeDesc}', 0, 0, 0, '${safeCidPrefix}', '', 'default', '', 'no')`
+      `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 'no')`
     );
   }
 
@@ -346,7 +345,7 @@ export async function createInboundRoutes(routes: InboundRouteConfig[]): Promise
         const safeDest = route.destination.replace(/'/g, "").replace(/"/g, "");
         const safeCidPrefix = route.cidPrefix ? route.cidPrefix.replace(/'/g, "").replace(/"/g, "") : "";
 
-        const singleQuery = `INSERT INTO incoming (cidnum, extension, destination, faxenabled, faxdetection, legacy_email, mohclass, description, grptime, grpnum, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'disabled', 'none', '', 'default', '${safeDesc}', 0, 0, 0, '${safeCidPrefix}', '', 'default', '', 'no')`;
+        const singleQuery = `INSERT INTO incoming (cidnum, extension, destination, mohclass, description, delay_answer, pricid, alertinfo, ringing, fanswer, privacyman) VALUES ('', '${safeDid}', '${safeDest}', 'default', '${safeDesc}', 0, '${safeCidPrefix}', '', 'default', '', 'no')`;
 
         try {
           const r = await sshExec(config, mysqlCmd(singleQuery));

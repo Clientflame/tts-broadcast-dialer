@@ -61,7 +61,7 @@ describe("FreePBX Inbound Routes Service", () => {
     expect(source).toContain("cidnum");
     expect(source).toContain("extension");
     expect(source).toContain("destination");
-    expect(source).toContain("faxenabled");
+    // faxenabled column doesn't exist on FreePBX 17 - removed from INSERT
     expect(source).toContain("description");
     expect(source).toContain("pricid"); // CID prefix field
   });
