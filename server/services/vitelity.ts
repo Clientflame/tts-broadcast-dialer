@@ -1,24 +1,15 @@
 /**
  * Vitelity/Voyant API Service
  * 
- * Integrates with the Vitelity API to fetch DIDs owned by the account.
- * API docs: https://apihelp.vitelity.net/
- * Base URL: https://api.vitelity.net/api.php (POST)
- * Auth: login + pass POST params
+ * Uses Vitelity API v2.0 (JSON, Basic Auth) for DID search & ordering.
+ * Uses Vitelity API v1.0 (form-encoded) for inventory, CNAM, LIDB, routing, removal.
  * 
- * listdids response format (XML):
- *   <content><status>ok</status><numbers>
- *     <number><did>2015551212</did><ratecenter>JERSEYCITY</ratecenter>
- *       <state>NJ</state><rate_per_minute>.015</rate_per_minute>
- *       <subaccount>Main</subaccount><rate_per_month>1</rate_per_month>
- *     </number>
- *   </numbers></content>
- * 
- * Plain text format (with extra=yes):
- *   x[[2015551212,JERSEYCITY,.015,Main,NJ,1\n2015551213,...[[x
+ * v2.0 docs: https://docs.vitelity.net/
+ * v1.0 docs: https://apihelp.vitelity.net/
  */
 
-const VITELITY_API_URL = "https://api.vitelity.net/api.php";
+const VITELITY_API_V1_URL = "https://api.vitelity.net/api.php";
+const VITELITY_API_V2_URL = "https://api.vitelity.net/2.0";
 
 export interface VitelityDID {
   did: string;          // 10-digit phone number
@@ -39,15 +30,36 @@ function getCredentials() {
 }
 
 /**
- * Parse the Vitelity plain-text response.
+ * Get Basic Auth header for v2.0 API.
+ */
+function getBasicAuth(): string {
+  const { login, pass } = getCredentials();
+  return "Basic " + Buffer.from(login + ":" + pass).toString("base64");
+}
+
+/**
+ * Make a v2.0 API request (JSON, Basic Auth).
+ */
+async function v2Request(path: string, body: Record<string, any>): Promise<{ status: number; data: any }> {
+  const response = await fetch(`${VITELITY_API_V2_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Authorization": getBasicAuth(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  return { status: response.status, data };
+}
+
+/**
+ * Parse the Vitelity v1.0 plain-text response.
  * Format: x[[data[[x  where data is newline-separated CSV rows
- * With extra=yes: {NUMBER},{RATECENTER},{RATE_PER_MINUTE},{SUB_ACCOUNT},{STATE},{RATE_PER_MONTH}
  */
 function parsePlainTextResponse(body: string): VitelityDID[] {
-  // Extract content between x[[ and [[x
   const match = body.match(/x?\[\[([\s\S]*?)\]\]x?/);
   if (!match || !match[1]) {
-    // Check for error responses
     const errorMatch = body.match(/\[\[(.*)/);
     if (errorMatch) {
       const errCode = errorMatch[1].trim();
@@ -56,6 +68,7 @@ function parsePlainTextResponse(body: string): VitelityDID[] {
         invalidauth: "Invalid Vitelity username or password",
         invalid: "Invalid parameters",
         none: "No DIDs found on this account",
+        deprecated: "This API command has been deprecated. Please use API v2.0.",
       };
       throw new Error(errors[errCode] || `Vitelity API error: ${errCode}`);
     }
@@ -86,55 +99,52 @@ function parsePlainTextResponse(body: string): VitelityDID[] {
 }
 
 /**
- * Fetch all DIDs from the Vitelity account.
+ * Parse a simple Vitelity v1.0 text response.
  */
-export async function listVitelityDIDs(): Promise<VitelityDID[]> {
+function parseSimpleResponse(body: string): { success: boolean; data: string } {
+  const match = body.match(/\[\[([\s\S]*)/);
+  if (!match) return { success: false, data: body.trim() };
+  const data = match[1].replace(/\]\].*/, "").trim();
+  if (data === "success") return { success: true, data: "success" };
+  const errors = ["missingdata", "invalidauth", "invalid", "missingrc", "unavailable", "none", "missingdid", "deprecated"];
+  if (errors.includes(data)) return { success: false, data };
+  return { success: true, data };
+}
+
+/**
+ * Make a v1.0 API request (form-encoded).
+ */
+async function v1Request(params: Record<string, string>): Promise<string> {
   const { login, pass } = getCredentials();
-
-  const params = new URLSearchParams({
-    login,
-    pass,
-    cmd: "listdids",
-    extra: "yes",
-  });
-
-  const response = await fetch(VITELITY_API_URL, {
+  const urlParams = new URLSearchParams({ login, pass, ...params });
+  const response = await fetch(VITELITY_API_V1_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+    body: urlParams.toString(),
   });
-
   if (!response.ok) {
     throw new Error(`Vitelity API HTTP error: ${response.status} ${response.statusText}`);
   }
+  return response.text();
+}
 
-  const body = await response.text();
+// ─── Inventory (v1.0 - still active) ─────────────────────────────
+
+/**
+ * Fetch all DIDs from the Vitelity account.
+ * cmd=listdids (still active on v1.0)
+ */
+export async function listVitelityDIDs(): Promise<VitelityDID[]> {
+  const body = await v1Request({ cmd: "listdids", extra: "yes" });
   return parsePlainTextResponse(body);
 }
 
 /**
  * Check Vitelity account balance.
+ * cmd=balance (v1.0)
  */
 export async function getVitelityBalance(): Promise<string> {
-  const { login, pass } = getCredentials();
-
-  const params = new URLSearchParams({
-    login,
-    pass,
-    cmd: "balance",
-  });
-
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  }
-
-  const body = await response.text();
+  const body = await v1Request({ cmd: "balance" });
   const match = body.match(/\[\[([\s\S]*)/);
   if (match) {
     return match[1].replace(/\]\].*/, "").trim();
@@ -144,7 +154,6 @@ export async function getVitelityBalance(): Promise<string> {
 
 /**
  * Test Vitelity API connectivity by fetching balance.
- * Returns true if credentials are valid.
  */
 export async function testVitelityConnection(): Promise<{ success: boolean; message: string }> {
   try {
@@ -155,31 +164,7 @@ export async function testVitelityConnection(): Promise<{ success: boolean; mess
   }
 }
 
-/**
- * Parse a simple Vitelity text response (success/error/data after [[).
- */
-function parseSimpleResponse(body: string): { success: boolean; data: string } {
-  const match = body.match(/\[\[([\s\S]*)/);
-  if (!match) return { success: false, data: body.trim() };
-  const data = match[1].replace(/\]\].*/, "").trim();
-  if (data === "success") return { success: true, data: "success" };
-  // Check for known error codes
-  const errors = ["missingdata", "invalidauth", "invalid", "missingrc", "unavailable", "none", "missingdid"];
-  if (errors.includes(data)) return { success: false, data };
-  return { success: true, data };
-}
-
-// ─── DID Purchasing ───────────────────────────────────────────────
-
-export interface AvailableState {
-  state: string;
-  name: string;
-}
-
-export interface AvailableRateCenter {
-  rateCenter: string;
-  state: string;
-}
+// ─── DID Search & Purchase (v2.0 API) ────────────────────────────
 
 export interface AvailableDID {
   did: string;
@@ -190,122 +175,139 @@ export interface AvailableDID {
   type: string;
 }
 
-/**
- * List states with available DIDs for purchase.
- * cmd=listavailstates&type=perminute
- * Returns newline-separated state codes
- */
-export async function listAvailableStates(type: string = "perminute"): Promise<string[]> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "listavailstates", type });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (!success) throw new Error(`Vitelity error: ${data}`);
-  return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+export interface AvailableTollFreeDID {
+  did: string;
+  ratePerMinute: string;
+  ratePerMonth: string;
+  type: "tollfree";
 }
 
 /**
- * List available rate centers in a state.
- * cmd=listavailratecenters&state=XX
- * Returns newline-separated rate center names
- */
-export async function listAvailableRateCenters(state: string): Promise<string[]> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "listavailratecenters", state: state.toUpperCase() });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (!success) throw new Error(`Vitelity error: ${data}`);
-  return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
-}
-
-/**
- * Search available local DIDs for purchase.
- * cmd=listlocal&state=XX&ratecenter=XXXX&withrates=yes&type=perminute
- * Returns CSV: DID,RATECENTER,RATE_PER_MINUTE,RATE_PER_MONTH
+ * Search available local DIDs using v2.0 API.
+ * POST /did/local/search
+ * 
+ * @param tnMask - Number pattern with X as wildcards, e.g. "970XXXXXXX" for area code 970
+ * @param quantity - Number of results to return (default 20)
+ * @param page - Page number for pagination (default 1)
  */
 export async function searchAvailableDIDs(
-  state: string,
-  rateCenter?: string,
-  type: string = "perminute"
+  tnMask: string,
+  quantity: number = 20,
+  page: number = 1
 ): Promise<AvailableDID[]> {
-  const { login, pass } = getCredentials();
-  const paramObj: Record<string, string> = {
-    login, pass, cmd: "listlocal",
-    state: state.toUpperCase(),
-    withrates: "yes",
-    type,
-  };
-  if (rateCenter) paramObj.ratecenter = rateCenter;
-  const params = new URLSearchParams(paramObj);
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+  const { status, data } = await v2Request("/did/local/search", {
+    tnMask,
+    sortDir: "asc",
+    quantity,
+    page,
   });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (!success) {
-    if (data === "none" || data === "unavailable") return [];
-    throw new Error(`Vitelity error: ${data}`);
+
+  if (status === 431 || data?.statusCode === 431) {
+    // No results found
+    return [];
   }
-  const lines = data.split("\n").filter(l => l.trim());
-  return lines.map(line => {
-    const parts = line.trim().split(",");
-    return {
-      did: parts[0]?.trim() || "",
-      rateCenter: parts[1]?.trim() || rateCenter || "",
-      ratePerMinute: parts[2]?.trim() || "",
-      ratePerMonth: parts[3]?.trim() || "",
-      state: state.toUpperCase(),
-      type,
-    };
-  }).filter(d => d.did.length >= 10);
+
+  if (data?.status !== "Success") {
+    throw new Error(`Vitelity search error: ${data?.status || "Unknown error"}`);
+  }
+
+  const results = data.tnResult || [];
+  return results.map((item: any) => ({
+    did: String(item.telephoneNumber),
+    rateCenter: item.rateCenter || "",
+    state: item.province || "",
+    ratePerMinute: "",
+    ratePerMonth: "",
+    type: "local",
+  }));
 }
 
 /**
- * Purchase a local DID.
- * cmd=getlocaldid&did=XXXXXXXXXX&type=perminute
- * Returns "success" on successful purchase.
+ * Search available toll-free DIDs using v2.0 API.
+ * POST /did/tollfree/search
+ * 
+ * @param tnMask - Number pattern, e.g. "833XXXXXXX" or "800XXXXXXX"
+ * @param quantity - Number of results (default 20)
+ */
+export async function searchAvailableTollFreeDIDs(
+  tnMask: string = "8XXXXXXXXX",
+  quantity: number = 20
+): Promise<AvailableTollFreeDID[]> {
+  const { status, data } = await v2Request("/did/tollfree/search", {
+    tnMask,
+    quantity,
+    sequential: false,
+  });
+
+  if (status === 431 || data?.statusCode === 431) {
+    return [];
+  }
+
+  if (data?.status !== "Success") {
+    throw new Error(`Vitelity toll-free search error: ${data?.status || "Unknown error"}`);
+  }
+
+  const items = data.tfList?.tfItem || [];
+  return items.map((item: any) => ({
+    did: String(item.tn),
+    ratePerMinute: "",
+    ratePerMonth: "",
+    type: "tollfree" as const,
+  }));
+}
+
+/**
+ * Purchase local DID(s) using v2.0 API.
+ * POST /did/local/order
+ * 
+ * @param dids - Array of DID numbers to purchase
+ * @param ratePlan - "UNLIMITED" or "PPM" (per-minute)
  */
 export async function purchaseDID(
   did: string,
-  type: string = "perminute"
+  ratePlan: string = "UNLIMITED"
 ): Promise<{ success: boolean; message: string }> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "getlocaldid", did, type });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
+  const { data } = await v2Request("/did/local/order", {
+    ratePlan,
+    vfax: false,
+    numbers: [did],
   });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (success) {
+
+  if (data?.status === "Success") {
     return { success: true, message: `DID ${did} purchased successfully` };
   }
-  const errorMessages: Record<string, string> = {
-    missingdata: "Missing required parameters",
-    invalidauth: "Invalid Vitelity credentials",
-    invalid: "Invalid DID number",
-    unavailable: "DID is no longer available",
-    none: "DID not found",
+
+  return {
+    success: false,
+    message: data?.error || data?.status || `Purchase failed for ${did}`,
   };
-  return { success: false, message: errorMessages[data] || `Purchase failed: ${data}` };
 }
+
+/**
+ * Purchase toll-free DID(s) using v2.0 API.
+ * POST /did/tollfree/order
+ */
+export async function purchaseTollFreeDID(
+  did: string,
+  ratePlan: string = "UNLIMITED"
+): Promise<{ success: boolean; message: string }> {
+  const { data } = await v2Request("/did/tollfree/order", {
+    ratePlan,
+    vfax: false,
+    numbers: [did],
+  });
+
+  if (data?.status === "Success") {
+    return { success: true, message: `Toll-free DID ${did} purchased successfully` };
+  }
+
+  return {
+    success: false,
+    message: data?.error || data?.status || `Purchase failed for ${did}`,
+  };
+}
+
+// ─── Routing (v1.0 - still active) ──────────────────────────────
 
 /**
  * Route a DID to a SIP endpoint.
@@ -315,15 +317,7 @@ export async function routeDID(
   did: string,
   routeSip: string
 ): Promise<{ success: boolean; message: string }> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "reroute", did, routesip: routeSip });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
+  const body = await v1Request({ cmd: "reroute", did, routesip: routeSip });
   const { success, data } = parseSimpleResponse(body);
   if (success) return { success: true, message: `DID ${did} routed to ${routeSip}` };
   return { success: false, message: `Routing failed: ${data}` };
@@ -331,26 +325,18 @@ export async function routeDID(
 
 /**
  * Remove/release a DID from the account.
- * cmd=removedid&did=XXXXXXXXXX
+ * cmd=removedid&did=XXXXXXXXXX (still active on v1.0)
  */
 export async function removeDID(
   did: string
 ): Promise<{ success: boolean; message: string }> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "removedid", did });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
+  const body = await v1Request({ cmd: "removedid", did });
   const { success, data } = parseSimpleResponse(body);
   if (success) return { success: true, message: `DID ${did} removed from account` };
   return { success: false, message: `Remove failed: ${data}` };
 }
 
-// ─── CNAM Lookup ──────────────────────────────────────────────────
+// ─── CNAM Lookup (v1.0 - still active) ──────────────────────────
 
 export interface CnamResult {
   did: string;
@@ -362,19 +348,9 @@ export interface CnamResult {
 /**
  * Perform a CNAM (Caller ID Name) lookup on a phone number.
  * cmd=cnam&did=XXXXXXXXXX
- * Returns the caller name associated with the number.
- * This is a paid service - charged per lookup.
  */
 export async function cnamLookup(did: string): Promise<CnamResult> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "cnam", did });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
+  const body = await v1Request({ cmd: "cnam", did });
   const { success, data } = parseSimpleResponse(body);
   if (success && data !== "success") {
     return { did, name: data, success: true };
@@ -393,15 +369,7 @@ export async function setLidb(
   did: string,
   name: string
 ): Promise<{ success: boolean; message: string }> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "lidb", did, name });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
+  const body = await v1Request({ cmd: "lidb", did, name });
   const { success, data } = parseSimpleResponse(body);
   if (success) return { success: true, message: `LIDB set for ${did}: ${name}` };
   return { success: false, message: `LIDB failed: ${data}` };
@@ -412,92 +380,10 @@ export async function setLidb(
  * cmd=lidbavailall
  */
 export async function listLidbAvailable(): Promise<string[]> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "lidbavailall" });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
+  const body = await v1Request({ cmd: "lidbavailall" });
   const { success, data } = parseSimpleResponse(body);
   if (!success) return [];
   return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
-}
-
-// ─── Toll-Free DID Purchasing ────────────────────────────────────
-
-export interface AvailableTollFreeDID {
-  did: string;
-  ratePerMinute: string;
-  ratePerMonth: string;
-  type: "tollfree";
-}
-
-/**
- * Search available toll-free DIDs for purchase.
- * cmd=listtollfree&type=perminute
- * Returns CSV: DID,RATE_PER_MINUTE,RATE_PER_MONTH
- */
-export async function searchAvailableTollFreeDIDs(
-  type: string = "perminute"
-): Promise<AvailableTollFreeDID[]> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "listtollfree", type });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (!success) {
-    if (data === "none" || data === "unavailable") return [];
-    throw new Error(`Vitelity error: ${data}`);
-  }
-  const lines = data.split("\n").filter(l => l.trim());
-  return lines.map(line => {
-    const parts = line.trim().split(",");
-    return {
-      did: parts[0]?.trim() || "",
-      ratePerMinute: parts[1]?.trim() || "",
-      ratePerMonth: parts[2]?.trim() || "",
-      type: "tollfree" as const,
-    };
-  }).filter(d => d.did.length >= 10);
-}
-
-/**
- * Purchase a toll-free DID.
- * cmd=gettollfree&did=XXXXXXXXXX&type=perminute
- */
-export async function purchaseTollFreeDID(
-  did: string,
-  type: string = "perminute"
-): Promise<{ success: boolean; message: string }> {
-  const { login, pass } = getCredentials();
-  const params = new URLSearchParams({ login, pass, cmd: "gettollfree", did, type });
-  const response = await fetch(VITELITY_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
-  const body = await response.text();
-  const { success, data } = parseSimpleResponse(body);
-  if (success) {
-    return { success: true, message: `Toll-free DID ${did} purchased successfully` };
-  }
-  const errorMessages: Record<string, string> = {
-    missingdata: "Missing required parameters",
-    invalidauth: "Invalid Vitelity credentials",
-    invalid: "Invalid DID number",
-    unavailable: "DID is no longer available",
-    none: "DID not found",
-  };
-  return { success: false, message: errorMessages[data] || `Purchase failed: ${data}` };
 }
 
 // ─── DID Sync ────────────────────────────────────────────────────
@@ -512,13 +398,11 @@ export interface VitelitySyncResult {
 
 /**
  * Compare Vitelity inventory with a set of local phone numbers.
- * Returns which DIDs need to be added or flagged as removed.
  */
 export function compareInventory(
   vitelityDIDs: VitelityDID[],
   localPhoneNumbers: string[]
 ): VitelitySyncResult {
-  // Normalize all numbers to 10-digit format
   const normalize = (n: string) => n.replace(/\D/g, "").slice(-10);
   
   const vitelitySet = new Set(vitelityDIDs.map(d => normalize(d.did)));
@@ -528,7 +412,6 @@ export function compareInventory(
   const removed: string[] = [];
   let matched = 0;
   
-  // DIDs on Vitelity but not local
   for (const did of Array.from(vitelitySet)) {
     if (localSet.has(did)) {
       matched++;
@@ -537,7 +420,6 @@ export function compareInventory(
     }
   }
   
-  // DIDs local but not on Vitelity
   for (const num of Array.from(localSet)) {
     if (!vitelitySet.has(num)) {
       removed.push(num);
@@ -551,4 +433,16 @@ export function compareInventory(
     totalVitelity: vitelitySet.size,
     totalLocal: localSet.size,
   };
+}
+
+// ─── Deprecated v1.0 stubs (kept for backward compatibility) ────
+
+/** @deprecated Use searchAvailableDIDs(tnMask) instead */
+export async function listAvailableStates(_type: string = "perminute"): Promise<string[]> {
+  throw new Error("listAvailableStates has been deprecated by Vitelity. Use searchAvailableDIDs with a tnMask pattern instead.");
+}
+
+/** @deprecated Use searchAvailableDIDs(tnMask) instead */
+export async function listAvailableRateCenters(_state: string): Promise<string[]> {
+  throw new Error("listAvailableRateCenters has been deprecated by Vitelity. Use searchAvailableDIDs with a tnMask pattern instead.");
 }

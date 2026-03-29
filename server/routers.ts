@@ -1460,27 +1460,26 @@ export const appRouter = router({
       };
     }),
 
-    /** List states with available DIDs for purchase */
+    /** @deprecated - Vitelity v1.0 listavailstates is deprecated. Returns empty array. */
     availableStates: adminProcedure.query(async () => {
-      const { listAvailableStates } = await import("./services/vitelity");
-      return listAvailableStates();
+      return [] as string[];
     }),
 
-    /** List available rate centers in a state */
+    /** @deprecated - Vitelity v1.0 listavailratecenters is deprecated. Returns empty array. */
     availableRateCenters: adminProcedure.input(z.object({
       state: z.string().length(2),
     })).query(async ({ input }) => {
-      const { listAvailableRateCenters } = await import("./services/vitelity");
-      return listAvailableRateCenters(input.state);
+      return [] as string[];
     }),
 
-    /** Search available DIDs for purchase */
+    /** Search available DIDs for purchase using v2.0 tnMask pattern */
     searchAvailableDIDs: adminProcedure.input(z.object({
-      state: z.string().length(2),
-      rateCenter: z.string().optional(),
+      tnMask: z.string().min(3).max(15),
+      quantity: z.number().min(1).max(100).default(20),
+      page: z.number().min(1).default(1),
     })).query(async ({ input }) => {
       const { searchAvailableDIDs } = await import("./services/vitelity");
-      return searchAvailableDIDs(input.state, input.rateCenter);
+      return searchAvailableDIDs(input.tnMask, input.quantity, input.page);
     }),
 
     /** Purchase a DID from Vitelity */
@@ -1798,9 +1797,12 @@ export const appRouter = router({
 
     // ─── Toll-Free DID Purchasing ─────────────────────────────────
 
-    searchTollFreeDIDs: adminProcedure.query(async () => {
+    searchTollFreeDIDs: adminProcedure.input(z.object({
+      tnMask: z.string().min(3).max(15).default("8XXXXXXXXX"),
+      quantity: z.number().min(1).max(100).default(20),
+    })).query(async ({ input }) => {
       const { searchAvailableTollFreeDIDs } = await import("./services/vitelity");
-      return searchAvailableTollFreeDIDs();
+      return searchAvailableTollFreeDIDs(input.tnMask, input.quantity);
     }),
 
     purchaseTollFreeDID: adminProcedure.input(z.object({

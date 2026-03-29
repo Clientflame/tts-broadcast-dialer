@@ -587,8 +587,8 @@ export default function CallerIds() {
   // DID Purchase state
   const [showPurchase, setShowPurchase] = useState(false);
   const [purchaseStep, setPurchaseStep] = useState<"search" | "results" | "confirm">("search");
-  const [purchaseState, setPurchaseState] = useState("");
-  const [purchaseRateCenter, setPurchaseRateCenter] = useState("");
+  const [purchaseTnMask, setPurchaseTnMask] = useState("");
+  const [purchaseTfMask, setPurchaseTfMask] = useState("");
   const [purchaseSelected, setPurchaseSelected] = useState<Set<string>>(new Set());
   const [purchaseLabel, setPurchaseLabel] = useState("");
   const [purchaseRouteEnabled, setPurchaseRouteEnabled] = useState(true);
@@ -623,19 +623,10 @@ export default function CallerIds() {
     onError: (e) => { toast.error(e.message); setVitelityImportProgress(null); },
   });
 
-  // DID Purchase queries and mutations
-  const { data: availableStates = [], isLoading: statesLoading } = trpc.callerIds.availableStates.useQuery(undefined, {
-    enabled: showPurchase,
-    staleTime: 60000,
-    retry: false,
-  });
-  const { data: availableRateCenters = [], isLoading: rateCentersLoading } = trpc.callerIds.availableRateCenters.useQuery(
-    { state: purchaseState },
-    { enabled: showPurchase && purchaseState.length === 2, staleTime: 60000, retry: false }
-  );
+  // DID Purchase queries and mutations (v2.0 API - tnMask based)
   const { data: availableDIDs = [], isLoading: didsSearchLoading } = trpc.callerIds.searchAvailableDIDs.useQuery(
-    { state: purchaseState, rateCenter: purchaseRateCenter || undefined },
-    { enabled: showPurchase && purchaseStep === "results" && purchaseState.length === 2, staleTime: 30000, retry: false }
+    { tnMask: purchaseTnMask, quantity: 50 },
+    { enabled: showPurchase && purchaseStep === "results" && purchaseTnMask.length >= 3, staleTime: 30000, retry: false }
   );
   const { data: vitelityBalance } = trpc.callerIds.vitelityBalance.useQuery(undefined, {
     enabled: showPurchase,
@@ -660,10 +651,10 @@ export default function CallerIds() {
   });
 
   // CNAM lookup mutations
-  const { data: tollFreeDIDs = [], isLoading: tollFreeLoading } = trpc.callerIds.searchTollFreeDIDs.useQuery(undefined, {
-    enabled: showPurchase && purchaseTab === "tollfree",
-    staleTime: 30000,
-  });
+  const { data: tollFreeDIDs = [], isLoading: tollFreeLoading } = trpc.callerIds.searchTollFreeDIDs.useQuery(
+    { tnMask: purchaseTfMask || "8XXXXXXXXX", quantity: 50 },
+    { enabled: showPurchase && purchaseTab === "tollfree" && purchaseStep === "results", staleTime: 30000, retry: false }
+  );
   const tollFreePurchaseMut = trpc.callerIds.purchaseTollFreeDID.useMutation({
     onSuccess: (r) => {
       utils.callerIds.list.invalidate();
@@ -2358,8 +2349,8 @@ export default function CallerIds() {
           setShowPurchase(open);
           if (!open) {
             setPurchaseStep("search");
-            setPurchaseState("");
-            setPurchaseRateCenter("");
+            setPurchaseTnMask("");
+            setPurchaseTfMask("");
             setPurchaseSelected(new Set());
             setPurchaseLabel("");
             setPurchaseRouteEnabled(true);
@@ -2389,14 +2380,46 @@ export default function CallerIds() {
               </Button>
             </div>
 
-            {purchaseTab === "tollfree" && (
+            {purchaseTab === "tollfree" && purchaseStep === "search" && (
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Toll-Free Number Pattern</Label>
+                  <Input
+                    value={purchaseTfMask}
+                    onChange={e => setPurchaseTfMask(e.target.value.toUpperCase())}
+                    placeholder="e.g., 833XXXXXXX or 800XXXXXXX"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">Use X as wildcards. Common prefixes: 800, 833, 844, 855, 866, 877, 888</p>
+                </div>
+                <Button
+                  onClick={() => {
+                    if (!purchaseTfMask) setPurchaseTfMask("8XXXXXXXXX");
+                    setPurchaseStep("results");
+                  }}
+                  className="w-full"
+                >
+                  <Search className="h-4 w-4 mr-2" /> Search Toll-Free DIDs
+                </Button>
+              </div>
+            )}
+
+            {purchaseTab === "tollfree" && purchaseStep === "results" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Button variant="ghost" size="sm" onClick={() => setPurchaseStep("search")}>
+                    <ArrowRight className="h-4 w-4 mr-1 rotate-180" /> Back to Search
+                  </Button>
+                  <Badge variant="secondary">
+                    {tollFreeLoading ? "Searching..." : `${tollFreeDIDs.length} toll-free DID(s) found`}
+                  </Badge>
+                </div>
                 {tollFreeLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading toll-free numbers...
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" /> Searching toll-free numbers...
                   </div>
                 ) : tollFreeDIDs.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">No toll-free DIDs currently available.</div>
+                  <div className="text-center py-8 text-muted-foreground">No toll-free DIDs found for pattern "{purchaseTfMask || '8XXXXXXXXX'}". Try a different pattern.</div>
                 ) : (
                   <>
                     <div className="flex items-center gap-2">
@@ -2508,38 +2531,19 @@ export default function CallerIds() {
 
             {purchaseTab === "local" && purchaseStep === "search" && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>State</Label>
-                    <Select value={purchaseState} onValueChange={(v) => { setPurchaseState(v); setPurchaseRateCenter(""); }}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={statesLoading ? "Loading states..." : "Select state"} />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {availableStates.map(s => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rate Center (optional)</Label>
-                    <Select value={purchaseRateCenter} onValueChange={setPurchaseRateCenter} disabled={!purchaseState}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={rateCentersLoading ? "Loading..." : "All rate centers"} />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        <SelectItem value="all">All Rate Centers</SelectItem>
-                        {availableRateCenters.map(rc => (
-                          <SelectItem key={rc} value={rc}>{rc}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Number Pattern (tnMask)</Label>
+                  <Input
+                    value={purchaseTnMask}
+                    onChange={e => setPurchaseTnMask(e.target.value.toUpperCase())}
+                    placeholder="e.g., 305XXXXXXX or 970XXX1234"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">Enter an area code followed by X wildcards. Example: 305XXXXXXX searches Miami area codes, XXXXXXXXXX searches all available.</p>
                 </div>
                 <Button
                   onClick={() => setPurchaseStep("results")}
-                  disabled={!purchaseState}
+                  disabled={purchaseTnMask.length < 3}
                   className="w-full"
                 >
                   <Search className="h-4 w-4 mr-2" /> Search Available DIDs
@@ -2564,7 +2568,7 @@ export default function CallerIds() {
                   </div>
                 ) : availableDIDs.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No DIDs available for this state/rate center. Try a different search.
+                    No DIDs found for pattern "{purchaseTnMask}". Try a different area code or pattern.
                   </div>
                 ) : (
                   <>
