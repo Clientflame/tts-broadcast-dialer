@@ -425,3 +425,130 @@ export async function listLidbAvailable(): Promise<string[]> {
   if (!success) return [];
   return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
 }
+
+// ─── Toll-Free DID Purchasing ────────────────────────────────────
+
+export interface AvailableTollFreeDID {
+  did: string;
+  ratePerMinute: string;
+  ratePerMonth: string;
+  type: "tollfree";
+}
+
+/**
+ * Search available toll-free DIDs for purchase.
+ * cmd=listtollfree&type=perminute
+ * Returns CSV: DID,RATE_PER_MINUTE,RATE_PER_MONTH
+ */
+export async function searchAvailableTollFreeDIDs(
+  type: string = "perminute"
+): Promise<AvailableTollFreeDID[]> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "listtollfree", type });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (!success) {
+    if (data === "none" || data === "unavailable") return [];
+    throw new Error(`Vitelity error: ${data}`);
+  }
+  const lines = data.split("\n").filter(l => l.trim());
+  return lines.map(line => {
+    const parts = line.trim().split(",");
+    return {
+      did: parts[0]?.trim() || "",
+      ratePerMinute: parts[1]?.trim() || "",
+      ratePerMonth: parts[2]?.trim() || "",
+      type: "tollfree" as const,
+    };
+  }).filter(d => d.did.length >= 10);
+}
+
+/**
+ * Purchase a toll-free DID.
+ * cmd=gettollfree&did=XXXXXXXXXX&type=perminute
+ */
+export async function purchaseTollFreeDID(
+  did: string,
+  type: string = "perminute"
+): Promise<{ success: boolean; message: string }> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "gettollfree", did, type });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success) {
+    return { success: true, message: `Toll-free DID ${did} purchased successfully` };
+  }
+  const errorMessages: Record<string, string> = {
+    missingdata: "Missing required parameters",
+    invalidauth: "Invalid Vitelity credentials",
+    invalid: "Invalid DID number",
+    unavailable: "DID is no longer available",
+    none: "DID not found",
+  };
+  return { success: false, message: errorMessages[data] || `Purchase failed: ${data}` };
+}
+
+// ─── DID Sync ────────────────────────────────────────────────────
+
+export interface VitelitySyncResult {
+  added: string[];       // DIDs found on Vitelity but not in local DB
+  removed: string[];     // DIDs in local DB but not on Vitelity
+  matched: number;       // DIDs that exist in both
+  totalVitelity: number; // Total DIDs on Vitelity account
+  totalLocal: number;    // Total DIDs in local DB
+}
+
+/**
+ * Compare Vitelity inventory with a set of local phone numbers.
+ * Returns which DIDs need to be added or flagged as removed.
+ */
+export function compareInventory(
+  vitelityDIDs: VitelityDID[],
+  localPhoneNumbers: string[]
+): VitelitySyncResult {
+  // Normalize all numbers to 10-digit format
+  const normalize = (n: string) => n.replace(/\D/g, "").slice(-10);
+  
+  const vitelitySet = new Set(vitelityDIDs.map(d => normalize(d.did)));
+  const localSet = new Set(localPhoneNumbers.map(n => normalize(n)));
+  
+  const added: string[] = [];
+  const removed: string[] = [];
+  let matched = 0;
+  
+  // DIDs on Vitelity but not local
+  for (const did of Array.from(vitelitySet)) {
+    if (localSet.has(did)) {
+      matched++;
+    } else {
+      added.push(did);
+    }
+  }
+  
+  // DIDs local but not on Vitelity
+  for (const num of Array.from(localSet)) {
+    if (!vitelitySet.has(num)) {
+      removed.push(num);
+    }
+  }
+  
+  return {
+    added,
+    removed,
+    matched,
+    totalVitelity: vitelitySet.size,
+    totalLocal: localSet.size,
+  };
+}

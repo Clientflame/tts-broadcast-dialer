@@ -596,6 +596,9 @@ export default function CallerIds() {
   const [purchaseRouteDesc, setPurchaseRouteDesc] = useState("TTS Dialer");
   const [purchaseRouteSip, setPurchaseRouteSip] = useState("");
   const [purchaseProgress, setPurchaseProgress] = useState<string | null>(null);
+  const [purchaseTab, setPurchaseTab] = useState<"local" | "tollfree">("local");
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ added: string[]; removed: string[]; matched: number } | null>(null);
 
   const { data: vitelityDIDs = [], isLoading: vitelityLoading, refetch: refetchVitelity, error: vitelityError } = trpc.callerIds.listVitelityDIDs.useQuery(undefined, {
     enabled: showVitelityImport,
@@ -657,6 +660,47 @@ export default function CallerIds() {
   });
 
   // CNAM lookup mutations
+  const { data: tollFreeDIDs = [], isLoading: tollFreeLoading } = trpc.callerIds.searchTollFreeDIDs.useQuery(undefined, {
+    enabled: showPurchase && purchaseTab === "tollfree",
+    staleTime: 30000,
+  });
+  const tollFreePurchaseMut = trpc.callerIds.purchaseTollFreeDID.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      if (r.purchased) {
+        toast.success("Toll-free DID purchased!");
+      } else {
+        toast.error(r.error || "Purchase failed");
+      }
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const bulkTollFreePurchaseMut = trpc.callerIds.bulkPurchaseTollFreeDIDs.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      toast.success(`${r.purchased} toll-free DID(s) purchased, ${r.failed} failed`);
+      setPurchaseProgress(null);
+    },
+    onError: (err) => { toast.error(err.message); setPurchaseProgress(null); },
+  });
+  const syncMut = trpc.callerIds.syncVitelityDIDs.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      setSyncResult(r);
+      setSyncLoading(false);
+      if (r.added.length > 0) {
+        toast.success(`Sync complete: ${r.added.length} new DID(s) added`);
+      } else {
+        toast.success("Sync complete: inventory is up to date");
+      }
+      if (r.removed.length > 0) {
+        toast.warning(`${r.removed.length} local DID(s) not found on Vitelity`);
+      }
+    },
+    onError: (err) => { toast.error(err.message); setSyncLoading(false); },
+  });
+  const { data: labelCounts = [] } = trpc.callerIds.labelCounts.useQuery();
+
   const cnamLookupMut = trpc.callerIds.cnamLookup.useMutation({
     onSuccess: (r) => {
       utils.callerIds.list.invalidate();
@@ -1062,6 +1106,9 @@ export default function CallerIds() {
             </Button>
             <Button variant="default" size="sm" onClick={() => { setShowPurchase(true); setFetchDests(true); setPurchaseStep("search"); }}>
               <Phone className="h-4 w-4 mr-1" /> Purchase DIDs
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setSyncLoading(true); setSyncResult(null); syncMut.mutate(); }} disabled={syncLoading}>
+              {syncLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Syncing...</> : <><RefreshCw className="h-4 w-4 mr-1" /> Sync Vitelity</>}
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
@@ -2295,7 +2342,133 @@ export default function CallerIds() {
               </DialogDescription>
             </DialogHeader>
 
-            {purchaseStep === "search" && (
+            <div className="flex gap-1 border-b pb-2">
+              <Button variant={purchaseTab === "local" ? "default" : "ghost"} size="sm" onClick={() => { setPurchaseTab("local"); setPurchaseStep("search"); setPurchaseSelected(new Set()); }}>
+                <Phone className="h-4 w-4 mr-1" /> Local DIDs
+              </Button>
+              <Button variant={purchaseTab === "tollfree" ? "default" : "ghost"} size="sm" onClick={() => { setPurchaseTab("tollfree"); setPurchaseStep("search"); setPurchaseSelected(new Set()); }}>
+                <Phone className="h-4 w-4 mr-1" /> Toll-Free DIDs
+              </Button>
+            </div>
+
+            {purchaseTab === "tollfree" && (
+              <div className="space-y-4">
+                {tollFreeLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading toll-free numbers...
+                  </div>
+                ) : tollFreeDIDs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">No toll-free DIDs currently available.</div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={purchaseSelected.size === tollFreeDIDs.length && tollFreeDIDs.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) setPurchaseSelected(new Set(tollFreeDIDs.map(d => d.did)));
+                          else setPurchaseSelected(new Set());
+                        }}
+                      />
+                      <span className="text-sm text-muted-foreground">Select all ({tollFreeDIDs.length})</span>
+                      {purchaseSelected.size > 0 && <Badge>{purchaseSelected.size} selected</Badge>}
+                    </div>
+                    <div className="border rounded-md max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="p-2 w-8"></th>
+                            <th className="p-2 text-left">Phone Number</th>
+                            <th className="p-2 text-right">$/min</th>
+                            <th className="p-2 text-right">$/month</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tollFreeDIDs.map(d => (
+                            <tr key={d.did} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => {
+                              const next = new Set(purchaseSelected);
+                              if (next.has(d.did)) next.delete(d.did); else next.add(d.did);
+                              setPurchaseSelected(next);
+                            }}>
+                              <td className="p-2">
+                                <Checkbox checked={purchaseSelected.has(d.did)} onCheckedChange={() => {
+                                  const next = new Set(purchaseSelected);
+                                  if (next.has(d.did)) next.delete(d.did); else next.add(d.did);
+                                  setPurchaseSelected(next);
+                                }} />
+                              </td>
+                              <td className="p-2 font-mono">{d.did.replace(/(\d{3})(\d{3})(\d{4})/, "($1) $2-$3")}</td>
+                              <td className="p-2 text-right">{d.ratePerMinute}</td>
+                              <td className="p-2 text-right">{d.ratePerMonth}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {purchaseSelected.size > 0 && (
+                  <div className="space-y-4 border-t pt-4">
+                    <div className="space-y-2">
+                      <Label>Label (applied to all purchased DIDs)</Label>
+                      <Input value={purchaseLabel} onChange={e => setPurchaseLabel(e.target.value)} placeholder="e.g., Toll-Free Sales" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Route to SIP Server (optional)</Label>
+                      <Input value={purchaseRouteSip} onChange={e => setPurchaseRouteSip(e.target.value)} placeholder="e.g., sip.yourserver.com" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch checked={purchaseRouteEnabled} onCheckedChange={setPurchaseRouteEnabled} />
+                      <Label>Create FreePBX inbound routes</Label>
+                    </div>
+                    {purchaseRouteEnabled && (
+                      <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+                        <div className="space-y-2">
+                          <Label>Destination</Label>
+                          <DestinationPicker value={purchaseRouteDest} onChange={setPurchaseRouteDest} destinations={destinations} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Description</Label>
+                          <Input value={purchaseRouteDesc} onChange={e => setPurchaseRouteDesc(e.target.value)} />
+                        </div>
+                      </div>
+                    )}
+                    {purchaseProgress && (
+                      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-blue-700 dark:text-blue-300">{purchaseProgress}</span>
+                        </div>
+                      </div>
+                    )}
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowPurchase(false)}>Cancel</Button>
+                      <Button
+                        disabled={bulkTollFreePurchaseMut.isPending || purchaseSelected.size === 0}
+                        onClick={() => {
+                          setPurchaseProgress(`Purchasing ${purchaseSelected.size} toll-free DID(s)...`);
+                          bulkTollFreePurchaseMut.mutate({
+                            dids: Array.from(purchaseSelected).map(did => ({ did })),
+                            routeSip: purchaseRouteSip || undefined,
+                            label: purchaseLabel || "Toll-Free",
+                            createInboundRoute: purchaseRouteEnabled,
+                            destination: purchaseRouteEnabled ? purchaseRouteDest : undefined,
+                            description: purchaseRouteEnabled ? purchaseRouteDesc : undefined,
+                          });
+                        }}
+                      >
+                        {bulkTollFreePurchaseMut.isPending
+                          ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Purchasing...</>
+                          : <><Phone className="h-4 w-4 mr-1" /> Purchase {purchaseSelected.size} Toll-Free DID(s)</>
+                        }
+                      </Button>
+                    </DialogFooter>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {purchaseTab === "local" && purchaseStep === "search" && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -2336,7 +2509,7 @@ export default function CallerIds() {
               </div>
             )}
 
-            {purchaseStep === "results" && (
+            {purchaseTab === "local" && purchaseStep === "results" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Button variant="ghost" size="sm" onClick={() => setPurchaseStep("search")}>
@@ -2420,7 +2593,7 @@ export default function CallerIds() {
               </div>
             )}
 
-            {purchaseStep === "confirm" && (
+            {purchaseTab === "local" && purchaseStep === "confirm" && (
               <div className="space-y-4">
                 <Button variant="ghost" size="sm" onClick={() => setPurchaseStep("results")}>
                   <ArrowRight className="h-4 w-4 mr-1 rotate-180" /> Back to Results

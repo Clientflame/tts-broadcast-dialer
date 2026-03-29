@@ -173,7 +173,7 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
-function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels }: {
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels, labelCounts }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   messageRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -182,6 +182,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
   templates: any;
   scripts: any;
   didLabels: string[];
+  labelCounts: { label: string | null; count: number }[];
 }) {
   const insertMergeField = (fieldKey: string) => {
     const textarea = messageRef.current;
@@ -504,14 +505,25 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                     <SelectValue placeholder="All active DIDs" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__all__">All Active DIDs</SelectItem>
-                    {(didLabels || []).map(label => (
-                      <SelectItem key={label} value={label}>{label}</SelectItem>
-                    ))}
+                    <SelectItem value="__all__">
+                      All Active DIDs
+                      <span className="ml-2 text-xs text-muted-foreground">({labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)</span>
+                    </SelectItem>
+                    {(didLabels || []).map(label => {
+                      const lc = labelCounts.find(c => c.label === label);
+                      return (
+                        <SelectItem key={label} value={label}>
+                          {label}
+                          <span className="ml-2 text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {form.didLabel ? `Only DIDs labeled "${form.didLabel}" will be used for this campaign` : "All active DIDs will be used for rotation"}
+                  {form.didLabel
+                    ? `Only DIDs labeled "${form.didLabel}" will be used (${labelCounts.find(c => c.label === form.didLabel)?.count || 0} DIDs)`
+                    : `All active DIDs will be used for rotation (${labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
                 </p>
               </div>
             )}
@@ -922,6 +934,7 @@ export default function Campaigns() {
   const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
   const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
   const { data: didLabels } = trpc.callerIds.getLabels.useQuery();
+  const { data: labelCounts = [] } = trpc.callerIds.labelCounts.useQuery();
 
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
@@ -1434,6 +1447,7 @@ export default function Campaigns() {
               templates={templates.data}
               scripts={callScripts.data}
               didLabels={didLabels || []}
+              labelCounts={labelCounts}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -1481,6 +1495,7 @@ export default function Campaigns() {
                 templates={templates.data}
                 scripts={callScripts.data}
                 didLabels={didLabels || []}
+                labelCounts={labelCounts}
               />
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setCreateOpen(false); setForm({ ...DEFAULT_FORM }); }}>Cancel</Button>

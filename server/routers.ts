@@ -1720,6 +1720,224 @@ export const appRouter = router({
 
       return result;
     }),
+
+    // ─── Toll-Free DID Purchasing ─────────────────────────────────
+
+    searchTollFreeDIDs: adminProcedure.query(async () => {
+      const { searchAvailableTollFreeDIDs } = await import("./services/vitelity");
+      return searchAvailableTollFreeDIDs();
+    }),
+
+    purchaseTollFreeDID: adminProcedure.input(z.object({
+      did: z.string().min(10),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseTollFreeDID, routeDID } = await import("./services/vitelity");
+
+      const purchaseResult = await purchaseTollFreeDID(input.did);
+      if (!purchaseResult.success) {
+        return { purchased: false, routed: false, routeCreated: false, error: purchaseResult.message };
+      }
+
+      let routed = false;
+      if (input.routeSip) {
+        const routeResult = await routeDID(input.did, input.routeSip);
+        routed = routeResult.success;
+      }
+
+      // Add to caller IDs table
+      const phoneNumber = input.did.length === 10 ? `1${input.did}` : input.did;
+      await db.bulkCreateCallerIds([{
+        userId: ctx.user.id,
+        phoneNumber,
+        label: input.label || "Toll-Free",
+        isActive: 1,
+      }]);
+
+      // Create inbound route on FreePBX if requested
+      let routeCreated = false;
+      if (input.createInboundRoute && input.destination && input.destination !== "none") {
+        try {
+          const { createInboundRoutes } = await import("./services/freepbx-routes");
+          const routeResults = await createInboundRoutes([{
+            did: phoneNumber,
+            destination: input.destination,
+            description: input.description || `TF-${phoneNumber}`,
+            cidPrefix: "",
+          }]);
+          routeCreated = routeResults.filter(r => r.success).length > 0;
+        } catch (err) {
+          console.warn("[purchaseTollFreeDID] FreePBX route creation failed:", err);
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.purchaseTollFreeDID",
+        resource: "callerId",
+        details: { did: input.did, routed, routeCreated, label: input.label },
+      });
+
+      return { purchased: true, routed, routeCreated };
+    }),
+
+    bulkPurchaseTollFreeDIDs: adminProcedure.input(z.object({
+      dids: z.array(z.object({ did: z.string().min(10) })),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseTollFreeDID, routeDID } = await import("./services/vitelity");
+
+      const results = [];
+
+      for (const { did } of input.dids) {
+        try {
+          const purchaseResult = await purchaseTollFreeDID(did);
+          if (!purchaseResult.success) {
+            results.push({ did, purchased: false, routed: false, error: purchaseResult.message });
+            continue;
+          }
+
+          let routed = false;
+          if (input.routeSip) {
+            const routeResult = await routeDID(did, input.routeSip);
+            routed = routeResult.success;
+          }
+
+          results.push({ did, purchased: true, routed });
+        } catch (err: any) {
+          results.push({ did, purchased: false, routed: false, error: err.message });
+        }
+      }
+
+      // Bulk add purchased DIDs to caller IDs
+      const purchasedDIDs = results.filter(r => r.purchased);
+      if (purchasedDIDs.length > 0) {
+        await db.bulkCreateCallerIds(
+          purchasedDIDs.map(r => ({
+            userId: ctx.user.id,
+            phoneNumber: r.did.length === 10 ? `1${r.did}` : r.did,
+            label: input.label || "Toll-Free",
+            isActive: 1,
+          }))
+        );
+
+        if (input.createInboundRoute && input.destination && input.destination !== "none") {
+          try {
+            const { createInboundRoutes } = await import("./services/freepbx-routes");
+            await createInboundRoutes(
+              purchasedDIDs.map(r => ({
+                did: r.did.length === 10 ? `1${r.did}` : r.did,
+                destination: input.destination!,
+                description: input.description || `TF-${r.did}`,
+                cidPrefix: "",
+              }))
+            );
+          } catch (err) {
+            console.warn("[bulkPurchaseTollFreeDIDs] FreePBX route creation failed:", err);
+          }
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkPurchaseTollFreeDIDs",
+        resource: "callerId",
+        details: {
+          total: input.dids.length,
+          purchased: purchasedDIDs.length,
+          failed: results.filter(r => !r.purchased).length,
+          label: input.label,
+        },
+      });
+
+      return { results, purchased: purchasedDIDs.length, failed: results.filter(r => !r.purchased).length };
+    }),
+
+    // ─── Vitelity DID Sync ───────────────────────────────────────
+
+    syncVitelityDIDs: adminProcedure.mutation(async ({ ctx }) => {
+      const { listVitelityDIDs, compareInventory } = await import("./services/vitelity");
+
+      // Fetch Vitelity inventory
+      const vitelityDIDs = await listVitelityDIDs();
+
+      // Fetch local caller IDs
+      const localCallerIds = await db.getCallerIds();
+      const localPhoneNumbers = localCallerIds.map(c => c.phoneNumber);
+
+      // Compare
+      const syncResult = compareInventory(vitelityDIDs, localPhoneNumbers);
+
+      // Auto-add new DIDs found on Vitelity
+      if (syncResult.added.length > 0) {
+        const vitelityMap = new Map(vitelityDIDs.map(d => [d.did.slice(-10), d]));
+        await db.bulkCreateCallerIds(
+          syncResult.added.map(did => {
+            const vDid = vitelityMap.get(did);
+            return {
+              userId: ctx.user.id,
+              phoneNumber: did.length === 10 ? `1${did}` : did,
+              label: vDid ? `Vitelity-${vDid.state}` : "Vitelity-Sync",
+              isActive: 1,
+            };
+          })
+        );
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.syncVitelityDIDs",
+        resource: "callerId",
+        details: {
+          added: syncResult.added.length,
+          removed: syncResult.removed.length,
+          matched: syncResult.matched,
+          totalVitelity: syncResult.totalVitelity,
+          totalLocal: syncResult.totalLocal,
+        },
+      });
+
+      return syncResult;
+    }),
+
+    // ─── DID Pool Count ──────────────────────────────────────────
+
+    countByLabel: protectedProcedure.input(z.object({
+      label: z.string().optional(),
+    })).query(async ({ input }) => {
+      const allCallerIds = await db.getCallerIds();
+      const active = allCallerIds.filter(c => c.isActive === 1);
+      if (!input.label) return { count: active.length, label: "All" };
+      const filtered = active.filter(c => c.label === input.label);
+      return { count: filtered.length, label: input.label };
+    }),
+
+    labelCounts: protectedProcedure.query(async () => {
+      const allCallerIds = await db.getCallerIds();
+      const active = allCallerIds.filter(c => c.isActive === 1);
+      const counts = new Map();
+      counts.set("__all__", active.length);
+      for (const c of active) {
+        const label = c.label || "__unlabeled__";
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+      const result = [];
+      for (const [label, count] of Array.from(counts.entries())) {
+        result.push({ label, count });
+      }
+      return result;
+    }),
   }),
 
   templates: router({

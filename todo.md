@@ -809,3 +809,14 @@
 - [x] Frontend: CNAM column in table, per-DID lookup button ($0.01/lookup), bulk CNAM lookup
 - [x] Database: cnamName and cnamLookedUpAt columns on callerIds
 - [x] Vitest tests for DID purchasing and CNAM lookup (39 tests)
+- [x] Auto-sync Vitelity DIDs — periodic sync to detect new/removed DIDs from Vitelity account
+- [x] Backend: syncVitelityDIDs procedure that compares Vitelity inventory with local DB
+- [x] Auto-add new DIDs found on Vitelity, flag removed DIDs
+- [x] Manual sync trigger button on Caller IDs page ("Sync Vitelity" button)
+- [x] Sync status display (toast with added/removed/matched counts)
+- [x] DID pool count preview — show matching DID count next to label dropdown in campaign forms
+- [x] Update campaign form label selector to show count (e.g., "Sales (12 DIDs)")
+- [x] Toll-free DID purchasing — search and order toll-free numbers via Vitelity API
+- [x] Backend: searchAvailableTollFreeDIDs, purchaseTollFreeDID, bulkPurchaseTollFreeDIDs
+- [x] Frontend: Toll-free tab in Purchase DIDs dialog
+- [x] Vitest tests for auto-sync, pool count, and toll-free purchasing (32 tests)
