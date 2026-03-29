@@ -11,7 +11,7 @@ import {
   CheckCircle2, Circle, ArrowRight, ArrowLeft,
   Rocket, Server, Phone, Users, Megaphone,
   ExternalLink, Sparkles, ChevronRight, PartyPopper,
-  SkipForward,
+  SkipForward, Key, Bot, ShieldCheck, Copy, Globe, Terminal,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -84,6 +84,35 @@ const STEP_CONFIGS: StepConfig[] = [
     ],
   },
   {
+    id: "apiKeys",
+    icon: Key,
+    title: "Configure API Keys",
+    description: "Set up your AI service API keys for text-to-speech generation. You need at least one TTS provider (OpenAI or Google) to generate call audio.",
+    actionLabel: "Configure Settings",
+    actionPath: "/settings",
+    tips: [
+      "OpenAI API key enables high-quality TTS voices (alloy, echo, fable, onyx, nova, shimmer)",
+      "Google Cloud TTS API key enables 400+ voices across 50+ languages",
+      "You can configure both providers and choose per-campaign which one to use",
+      "API keys are entered on the Settings page under the API Keys section",
+      "Get your OpenAI key at platform.openai.com/api-keys",
+    ],
+  },
+  {
+    id: "voiceAiBridge",
+    icon: Bot,
+    title: "Install Voice AI Bridge",
+    description: "The Voice AI Bridge enables real-time AI-powered call handling on your FreePBX server. It connects Asterisk to the AI engine for intelligent call routing and responses.",
+    actionLabel: "Set Up Voice AI",
+    actionPath: "/voice-ai",
+    tips: [
+      "The bridge runs as a systemd service on your FreePBX server",
+      "Use the Auto-Install button on the Voice AI page for one-click setup",
+      "The bridge health is monitored automatically every 5 minutes",
+      "Requires Python 3.8+ on your FreePBX server (pre-installed on most systems)",
+    ],
+  },
+  {
     id: "campaign",
     icon: Megaphone,
     title: "Create Your First Campaign",
@@ -95,6 +124,20 @@ const STEP_CONFIGS: StepConfig[] = [
       "Personalized TTS lets you include {{first_name}} and {{callback_number}} in your message",
       "Set max concurrent calls to 3-5 for initial testing",
       "The 48-hour dedup window prevents calling the same number twice within 48 hours",
+    ],
+  },
+  {
+    id: "systemHealth",
+    icon: ShieldCheck,
+    title: "System Health Check",
+    description: "Verify all critical services are online and working together. This final check ensures your PBX agent is connected, caller IDs are active, and API keys are valid.",
+    actionLabel: "View Dashboard",
+    actionPath: "/",
+    tips: [
+      "The dashboard System Health card shows real-time status of all services",
+      "Green checkmarks mean the service is healthy and connected",
+      "If any service shows a warning, click it for troubleshooting details",
+      "DID health checks run automatically during business hours (8am-8pm EST)",
     ],
   },
 ];
@@ -195,6 +238,32 @@ function StepCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function QuickRefItem({ label, value, icon, copyable }: { label: string; value: string; icon: React.ReactNode; copyable?: boolean }) {
+  const handleCopy = async () => {
+    const { copyToClipboard } = await import("@/lib/clipboard");
+    const ok = await copyToClipboard(value);
+    if (ok) {
+      toast.success(`Copied ${label} URL`);
+    } else {
+      toast.error("Failed to copy — please select the text and copy manually");
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-background/60 px-3 py-2 text-sm">
+      <span className="text-muted-foreground shrink-0">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <span className="text-xs text-muted-foreground block">{label}</span>
+        <span className="text-xs font-mono truncate block">{value}</span>
+      </div>
+      {copyable && (
+        <button onClick={handleCopy} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors" title="Copy">
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -312,6 +381,29 @@ export default function Onboarding() {
             );
           })}
         </div>
+
+        {/* Quick Reference Card */}
+        <Card className="border-blue-500/20 bg-gradient-to-r from-blue-500/5 to-indigo-500/5">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Terminal className="h-5 w-5 text-blue-500" />
+              <h3 className="font-semibold">Quick Reference</h3>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <QuickRefItem label="Dashboard" value={window.location.origin} icon={<Globe className="h-3.5 w-3.5" />} copyable />
+              <QuickRefItem label="System Architecture" value={`${window.location.origin}/system-architecture`} icon={<Globe className="h-3.5 w-3.5" />} copyable />
+              <QuickRefItem label="FreePBX Integration" value={`${window.location.origin}/freepbx`} icon={<Server className="h-3.5 w-3.5" />} />
+              <QuickRefItem label="Voice AI Setup" value={`${window.location.origin}/voice-ai`} icon={<Bot className="h-3.5 w-3.5" />} />
+            </div>
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <p className="text-xs text-muted-foreground">
+                For the full system architecture, tech stack, and API reference, visit the{" "}
+                <button onClick={() => setLocation("/system-architecture")} className="text-blue-500 hover:underline font-medium">System Architecture</button>{" "}
+                page from the sidebar.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Bottom help */}
         {!isComplete && (

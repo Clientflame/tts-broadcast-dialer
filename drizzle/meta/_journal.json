@@ -274,6 +274,34 @@
       "when": 1774658753551,
       "tag": "0038_safe_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1774663506701,
+      "tag": "0039_empty_lionheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1774796523838,
+      "tag": "0040_remarkable_darkhawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1774805804880,
+      "tag": "0041_third_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1774808782145,
+      "tag": "0042_uneven_karnak",
+      "breakpoints": true
     }
   ]
 }

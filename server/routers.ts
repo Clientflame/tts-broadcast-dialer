@@ -21,6 +21,7 @@ import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
+import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -491,6 +492,59 @@ export const appRouter = router({
         : await generateVoiceSample(input.voice as any, input.speed);
       return { url: result.url };
     }),
+    // ─── Export / Import ─────────────────────────────────────────────
+    exportAll: protectedProcedure.query(async ({ ctx }) => {
+      const files = await db.getAudioFiles();
+      const exportData = files.map(f => ({
+        name: f.name,
+        text: f.text,
+        voice: f.voice,
+        s3Url: f.s3Url,
+        s3Key: f.s3Key,
+        duration: f.duration,
+        fileSize: f.fileSize,
+        status: f.status,
+      }));
+      return { version: "1.0", type: "audio_files", exportedAt: Date.now(), count: exportData.length, data: exportData };
+    }),
+    importAll: protectedProcedure.input(z.object({
+      data: z.array(z.object({
+        name: z.string(),
+        text: z.string(),
+        voice: z.string(),
+        s3Url: z.string().nullable().optional(),
+        s3Key: z.string().nullable().optional(),
+        duration: z.number().nullable().optional(),
+        fileSize: z.number().nullable().optional(),
+        status: z.enum(["generating", "ready", "failed"]).optional(),
+      })),
+      skipDuplicates: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFiles();
+      const existingNames = new Set(existing.map(f => f.name.toLowerCase()));
+      let imported = 0;
+      let skipped = 0;
+      for (const item of input.data) {
+        if (input.skipDuplicates && existingNames.has(item.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        await db.createAudioFile({
+          userId: ctx.user.id,
+          name: item.name,
+          text: item.text,
+          voice: item.voice,
+          s3Url: item.s3Url || null,
+          s3Key: item.s3Key || null,
+          duration: item.duration || null,
+          fileSize: item.fileSize || null,
+          status: item.s3Url ? "ready" : "failed",
+        });
+        imported++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.import", resource: "audioFile", details: { imported, skipped, total: input.data.length } });
+      return { success: true, imported, skipped, total: input.data.length };
+    }),
   }),
 
   campaigns: router({
@@ -530,6 +584,7 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -589,6 +644,7 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -936,6 +992,11 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return db.getCallerIds();
     }),
+    getLabels: protectedProcedure.query(async () => {
+      const all = await db.getCallerIds();
+      const labels = all.map(c => c.label).filter(Boolean) as string[];
+      return Array.from(new Set(labels)).sort();
+    }),
     create: protectedProcedure.input(z.object({
       phoneNumber: z.string().min(1).max(20),
       label: z.string().max(255).optional(),
@@ -946,6 +1007,47 @@ export const appRouter = router({
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.create", resource: "callerId", resourceId: result.id });
       return result;
+    }),
+    /** Create a single caller ID with an optional inbound route on FreePBX */
+    createWithRoute: adminProcedure.input(z.object({
+      phoneNumber: z.string().min(1).max(20),
+      label: z.string().max(255).optional(),
+      inboundRoute: z.object({
+        destination: z.string().min(1),
+        description: z.string().max(255).default("TTS Dialer"),
+        cidPrefix: z.string().max(50).optional(),
+      }).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller ID in database
+      const result = await db.createCallerId({ phoneNumber: input.phoneNumber, label: input.label, userId: ctx.user.id });
+      if (result.duplicate) {
+        throw new TRPCError({ code: "CONFLICT", message: `Caller ID ${input.phoneNumber} already exists` });
+      }
+
+      // Step 2: Create inbound route on FreePBX if configured
+      let routeResult = null;
+      if (input.inboundRoute) {
+        const routes = [{
+          did: input.phoneNumber,
+          destination: input.inboundRoute.destination,
+          description: input.inboundRoute.description,
+          cidPrefix: input.inboundRoute.cidPrefix,
+        }];
+        const results = await createInboundRoutes(routes);
+        const r = results[0];
+        routeResult = { success: r?.success ?? false, alreadyExists: r?.alreadyExists ?? false, error: r?.error };
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: input.inboundRoute ? "callerId.createWithRoute" : "callerId.create",
+        resource: "callerId",
+        resourceId: result.id,
+        details: routeResult ? { route: routeResult } : undefined,
+      });
+
+      return { callerId: result, inboundRoute: routeResult };
     }),
     bulkCreate: protectedProcedure.input(z.object({
       entries: z.array(z.object({
@@ -969,12 +1071,50 @@ export const appRouter = router({
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      // Look up the phone number before deleting so we can remove the FreePBX route
+      const allCids = await db.getCallerIds();
+      const cid = allCids.find(c => c.id === input.id);
       await db.deleteCallerId(input.id);
+      // Best-effort: also delete the inbound route on FreePBX
+      if (cid?.phoneNumber) {
+        try {
+          const result = await deleteInboundRoutes([cid.phoneNumber]);
+          if (result.deleted > 0) {
+            console.log(`[CallerID Delete] Also removed inbound route for ${cid.phoneNumber}`);
+          }
+        } catch (e: any) {
+          console.warn(`[CallerID Delete] Could not remove inbound route for ${cid.phoneNumber}: ${e.message}`);
+        }
+      }
       return { success: true };
     }),
     bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      // Look up phone numbers before deleting so we can remove FreePBX routes
+      const allCids = await db.getCallerIds();
+      const phoneNumbers = allCids.filter(c => input.ids.includes(c.id)).map(c => c.phoneNumber);
       await db.bulkDeleteCallerIds(input.ids);
+      // Best-effort: also delete inbound routes on FreePBX
+      if (phoneNumbers.length > 0) {
+        try {
+          const result = await deleteInboundRoutes(phoneNumbers);
+          if (result.deleted > 0) {
+            console.log(`[CallerID BulkDelete] Also removed ${result.deleted} inbound route(s) from FreePBX`);
+          }
+        } catch (e: any) {
+          console.warn(`[CallerID BulkDelete] Could not remove inbound routes: ${e.message}`);
+        }
+      }
       return { success: true };
+    }),
+    bulkUpdate: protectedProcedure.input(z.object({
+      ids: z.array(z.number()).min(1).max(10000),
+      label: z.string().max(255).optional(),
+      isActive: z.number().min(0).max(1).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { ids, ...data } = input;
+      await db.bulkUpdateCallerIds(ids, data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.bulkUpdate", resource: "callerId", details: { count: ids.length, fields: Object.keys(data) } });
+      return { success: true, count: ids.length };
     }),
     // Set region mappings for geo targeting
     setRegions: protectedProcedure.input(z.object({
@@ -1080,6 +1220,994 @@ export const appRouter = router({
       callerIdStr: z.string().min(1),
     })).query(async ({ ctx, input }) => {
       return db.getDidCampaignBreakdown(input.callerIdStr);
+    }),
+
+    // ─── Inbound Route Management ────────────────────────────────────────
+
+    /** Fetch available FreePBX destinations (queues, ring groups, IVRs, extensions, etc.) */
+    getFreePBXDestinations: adminProcedure.query(async () => {
+      try {
+        const dests = await fetchFreePBXDestinations();
+        console.log(`[FreePBX Routes] Fetched ${dests.length} destinations: ${Object.entries(dests.reduce((acc: Record<string, number>, d) => { acc[d.type] = (acc[d.type] || 0) + 1; return acc; }, {})).map(([k,v]) => `${k}=${v}`).join(', ')}`);
+        return dests;
+      } catch (e: any) {
+        console.error(`[FreePBX Routes] Failed to fetch destinations:`, e.message);
+        // Return terminate options as fallback so UI isn't completely empty
+        return [
+          { type: "terminate" as const, id: "hangup", name: "Hangup", destination: "app-blackhole,hangup,1" },
+          { type: "terminate" as const, id: "congestion", name: "Congestion", destination: "app-blackhole,congestion,1" },
+          { type: "terminate" as const, id: "busy", name: "Play Busy", destination: "app-blackhole,busy,1" },
+        ];
+      }
+    }),
+
+    /** List existing inbound routes on FreePBX */
+    listInboundRoutes: adminProcedure.query(async () => {
+      return listInboundRoutes();
+    }),
+
+    /** Check which DIDs already have inbound routes */
+    checkInboundRoutes: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).query(async ({ input }) => {
+      const existing = await checkExistingRoutes(input.dids);
+      return Object.fromEntries(existing);
+    }),
+
+    /** Check which DIDs have inbound routes, returning full route details for conflict resolution */
+    checkInboundRoutesDetailed: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).mutation(async ({ input }) => {
+      const existing = await checkExistingRoutesDetailed(input.dids);
+      const result: Record<string, { did: string; description: string; destination: string; cidPrefix: string }> = {};
+      existing.forEach((route, did) => {
+        result[did] = route;
+      });
+      return result;
+    }),
+
+    /** Create inbound routes on FreePBX for imported DIDs */
+    createInboundRoutes: adminProcedure.input(z.object({
+      routes: z.array(z.object({
+        did: z.string().min(1).max(20),
+        destination: z.string().min(1), // FreePBX destination format e.g. "ext-queues,400,1"
+        description: z.string().max(255).default("TTS Dialer"),
+        cidPrefix: z.string().max(50).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const results = await createInboundRoutes(input.routes);
+      const created = results.filter(r => r.success && !r.alreadyExists).length;
+      const skipped = results.filter(r => r.alreadyExists).length;
+      const failed = results.filter(r => !r.success).length;
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.createInboundRoutes",
+        resource: "callerId",
+        details: { created, skipped, failed, total: input.routes.length },
+      });
+      return { results, summary: { created, skipped, failed } };
+    }),
+
+    /** Delete inbound routes from FreePBX */
+    deleteInboundRoutes: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await deleteInboundRoutes(input.dids);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.deleteInboundRoutes",
+        resource: "callerId",
+        details: { deleted: result.deleted, dids: input.dids },
+      });
+      return result;
+    }),
+
+    /** Bulk create caller IDs AND inbound routes in one step */
+    bulkCreateWithRoutes: adminProcedure.input(z.object({
+      entries: z.array(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        label: z.string().max(255).optional(),
+        inboundRoute: z.object({
+          destination: z.string().min(1),
+          description: z.string().max(255).default("TTS Dialer"),
+          cidPrefix: z.string().max(50).optional(),
+        }).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller IDs in our database
+      const callerIdData = input.entries.map(e => ({
+        phoneNumber: e.phoneNumber,
+        label: e.label,
+        userId: ctx.user.id,
+      }));
+      const callerIdResult = await db.bulkCreateCallerIds(callerIdData);
+
+      // Step 2: Create inbound routes on FreePBX for entries that have route config
+      const routeEntries = input.entries.filter(e => e.inboundRoute);
+      console.log(`[bulkCreateWithRoutes] Total entries: ${input.entries.length}, entries with routes: ${routeEntries.length}`);
+      if (routeEntries.length > 0) {
+        console.log(`[bulkCreateWithRoutes] Route destinations:`, routeEntries.map(e => ({ phone: e.phoneNumber, dest: e.inboundRoute?.destination })));
+      }
+      let routeResults = null;
+      if (routeEntries.length > 0) {
+        const routes = routeEntries.map(e => ({
+          did: e.phoneNumber,
+          destination: e.inboundRoute!.destination,
+          description: e.inboundRoute!.description,
+          cidPrefix: e.inboundRoute?.cidPrefix,
+        }));
+        console.log(`[bulkCreateWithRoutes] Calling createInboundRoutes with ${routes.length} routes`);
+        const results = await createInboundRoutes(routes);
+        console.log(`[bulkCreateWithRoutes] createInboundRoutes returned ${results.length} results:`, results.map(r => ({ did: r.did, success: r.success, exists: r.alreadyExists, error: r.error })));
+        const created = results.filter(r => r.success && !r.alreadyExists).length;
+        const skipped = results.filter(r => r.alreadyExists).length;
+        const failed = results.filter(r => !r.success).length;
+        routeResults = { results, summary: { created, skipped, failed } };
+      } else {
+        console.log(`[bulkCreateWithRoutes] No entries have inbound routes configured — skipping FreePBX route creation`);
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkCreateWithRoutes",
+        resource: "callerId",
+        details: {
+          callerIds: callerIdResult.count,
+          dupes: callerIdResult.duplicatesOmitted,
+          routes: routeResults?.summary || null,
+        },
+      });
+
+      return {
+        callerIds: callerIdResult,
+        inboundRoutes: routeResults,
+      };
+    }),
+
+    /** Update an existing inbound route's destination, description, or CID prefix */
+    updateInboundRoute: adminProcedure.input(z.object({
+      did: z.string().min(1),
+      destination: z.string().min(1).optional(),
+      description: z.string().max(255).optional(),
+      cidPrefix: z.string().max(50).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await updateInboundRoute(input.did, {
+        destination: input.destination,
+        description: input.description,
+        cidPrefix: input.cidPrefix,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.updateInboundRoute",
+        resource: "callerId",
+        details: { did: input.did, updates: { destination: input.destination, description: input.description, cidPrefix: input.cidPrefix } },
+      });
+      return result;
+    }),
+
+    // ─── Vitelity DID Import ─────────────────────────────────────────────
+
+    /** Test Vitelity API connection */
+    testVitelityConnection: adminProcedure.query(async () => {
+      const { testVitelityConnection } = await import("./services/vitelity");
+      return testVitelityConnection();
+    }),
+
+    /** Fetch all DIDs from Vitelity account */
+    listVitelityDIDs: adminProcedure.query(async () => {
+      const { listVitelityDIDs } = await import("./services/vitelity");
+      const dids = await listVitelityDIDs();
+      return dids;
+    }),
+
+    /** Import selected DIDs from Vitelity into our system (with optional inbound routes) */
+    importFromVitelity: adminProcedure.input(z.object({
+      dids: z.array(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        label: z.string().max(255).optional(),
+        inboundRoute: z.object({
+          destination: z.string().min(1),
+          description: z.string().max(255).default("TTS Dialer"),
+          cidPrefix: z.string().max(50).optional(),
+        }).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller IDs in our database
+      const callerIdData = input.dids.map(d => ({
+        phoneNumber: d.phoneNumber,
+        label: d.label,
+        userId: ctx.user.id,
+      }));
+      const callerIdResult = await db.bulkCreateCallerIds(callerIdData);
+
+      // Step 2: Create inbound routes on FreePBX for entries that have route config
+      const routeEntries = input.dids.filter(d => d.inboundRoute);
+      let routeResults = null;
+      if (routeEntries.length > 0) {
+        const routes = routeEntries.map(d => ({
+          did: d.phoneNumber,
+          destination: d.inboundRoute!.destination,
+          description: d.inboundRoute!.description,
+          cidPrefix: d.inboundRoute?.cidPrefix,
+        }));
+        const results = await createInboundRoutes(routes);
+        const created = results.filter(r => r.success && !r.alreadyExists).length;
+        const skipped = results.filter(r => r.alreadyExists).length;
+        const failed = results.filter(r => !r.success).length;
+        routeResults = { results, summary: { created, skipped, failed } };
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.importFromVitelity",
+        resource: "callerId",
+        details: {
+          callerIds: callerIdResult.count,
+          dupes: callerIdResult.duplicatesOmitted,
+          routes: routeResults?.summary || null,
+          source: "vitelity",
+        },
+      });
+
+      return {
+        callerIds: callerIdResult,
+        inboundRoutes: routeResults,
+      };
+    }),
+
+    /** List states with available DIDs for purchase */
+    availableStates: adminProcedure.query(async () => {
+      const { listAvailableStates } = await import("./services/vitelity");
+      return listAvailableStates();
+    }),
+
+    /** List available rate centers in a state */
+    availableRateCenters: adminProcedure.input(z.object({
+      state: z.string().length(2),
+    })).query(async ({ input }) => {
+      const { listAvailableRateCenters } = await import("./services/vitelity");
+      return listAvailableRateCenters(input.state);
+    }),
+
+    /** Search available DIDs for purchase */
+    searchAvailableDIDs: adminProcedure.input(z.object({
+      state: z.string().length(2),
+      rateCenter: z.string().optional(),
+    })).query(async ({ input }) => {
+      const { searchAvailableDIDs } = await import("./services/vitelity");
+      return searchAvailableDIDs(input.state, input.rateCenter);
+    }),
+
+    /** Purchase a DID from Vitelity */
+    purchaseDID: adminProcedure.input(z.object({
+      did: z.string().min(10).max(11),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseDID, routeDID } = await import("./services/vitelity");
+
+      // Step 1: Purchase the DID
+      const purchaseResult = await purchaseDID(input.did);
+      if (!purchaseResult.success) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: purchaseResult.message });
+      }
+
+      // Step 2: Route to SIP if specified
+      let routeResult = null;
+      if (input.routeSip) {
+        routeResult = await routeDID(input.did, input.routeSip);
+      }
+
+      // Step 3: Add to our database
+      const phoneNumber = input.did.startsWith("1") ? input.did : `1${input.did}`;
+      const callerIdResult = await db.bulkCreateCallerIds([
+        { phoneNumber, label: input.label || "", userId: ctx.user.id }
+      ]);
+
+      // Step 4: Create FreePBX inbound route if requested
+      let inboundRouteResult = null;
+      if (input.createInboundRoute && input.destination && input.destination !== "none") {
+        try {
+          const { createInboundRoutes } = await import("./services/freepbx-routes");
+          const routeResults = await createInboundRoutes([{
+            did: phoneNumber,
+            destination: input.destination,
+            description: input.description || `Purchased DID ${phoneNumber}`,
+            cidPrefix: "",
+          }]);
+          inboundRouteResult = routeResults;
+        } catch (err: any) {
+          console.warn(`[PurchaseDID] FreePBX route creation failed for ${phoneNumber}:`, err.message);
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.purchaseDID",
+        resource: "callerId",
+        details: {
+          did: input.did,
+          label: input.label,
+          routed: !!routeResult?.success,
+          inboundRoute: !!inboundRouteResult,
+        },
+      });
+
+      // Log cost transaction for DID purchase
+      try {
+        const database = await db.getDb();
+        if (database) {
+          const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+          await database.insert(dctTable).values({
+            userId: ctx.user.id,
+            phoneNumber,
+            type: "purchase",
+            amount: "1.00", // Default purchase cost
+            description: `Purchased DID ${phoneNumber} from Vitelity`,
+            transactionDate: Date.now(),
+          });
+        }
+      } catch {}
+
+      return {
+        purchase: purchaseResult,
+        route: routeResult,
+        callerId: callerIdResult,
+        inboundRoute: inboundRouteResult,
+      };
+    }),
+
+    /** Bulk purchase multiple DIDs */
+    bulkPurchaseDIDs: adminProcedure.input(z.object({
+      dids: z.array(z.object({
+        did: z.string().min(10).max(11),
+        rateCenter: z.string().optional(),
+        state: z.string().optional(),
+      })).min(1).max(50),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseDID, routeDID } = await import("./services/vitelity");
+
+      const results: Array<{ did: string; purchased: boolean; routed: boolean; error?: string }> = [];
+
+      for (const { did } of input.dids) {
+        try {
+          const purchaseResult = await purchaseDID(did);
+          if (!purchaseResult.success) {
+            results.push({ did, purchased: false, routed: false, error: purchaseResult.message });
+            continue;
+          }
+
+          let routed = false;
+          if (input.routeSip) {
+            const routeResult = await routeDID(did, input.routeSip);
+            routed = routeResult.success;
+          }
+
+          results.push({ did, purchased: true, routed });
+        } catch (err: any) {
+          results.push({ did, purchased: false, routed: false, error: err.message });
+        }
+      }
+
+      // Add successfully purchased DIDs to our database
+      const purchasedDids = results.filter(r => r.purchased);
+      let callerIdResult = null;
+      if (purchasedDids.length > 0) {
+        const entries = purchasedDids.map(r => ({
+          phoneNumber: r.did.startsWith("1") ? r.did : `1${r.did}`,
+          label: input.label || "",
+          userId: ctx.user.id,
+        }));
+        callerIdResult = await db.bulkCreateCallerIds(entries);
+      }
+
+      // Create FreePBX inbound routes if requested
+      let inboundRouteResult = null;
+      if (input.createInboundRoute && input.destination && input.destination !== "none" && purchasedDids.length > 0) {
+        try {
+          const { createInboundRoutes } = await import("./services/freepbx-routes");
+          const routeEntries = purchasedDids.map(r => ({
+            did: r.did.startsWith("1") ? r.did : `1${r.did}`,
+            destination: input.destination!,
+            description: input.description || `Purchased DID`,
+            cidPrefix: "",
+          }));
+          const routeResults = await createInboundRoutes(routeEntries);
+          inboundRouteResult = routeResults;
+        } catch (err: any) {
+          console.warn(`[BulkPurchase] FreePBX route creation failed:`, err.message);
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkPurchaseDIDs",
+        resource: "callerId",
+        details: {
+          total: input.dids.length,
+          purchased: purchasedDids.length,
+          failed: results.filter(r => !r.purchased).length,
+          label: input.label,
+        },
+      });
+
+      // Log cost transactions for purchased DIDs
+      if (purchasedDids.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = purchasedDids.map(r => ({
+              userId: ctx.user.id,
+              phoneNumber: r.did.startsWith("1") ? r.did : `1${r.did}`,
+              type: "purchase" as const,
+              amount: "1.00",
+              description: `Purchased DID from Vitelity (bulk)`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
+
+      return { results, callerIds: callerIdResult, inboundRoutes: inboundRouteResult };
+    }),
+
+    /** Get Vitelity account balance */
+    vitelityBalance: adminProcedure.query(async () => {
+      const { getVitelityBalance } = await import("./services/vitelity");
+      return getVitelityBalance();
+    }),
+
+    /** CNAM lookup for a phone number (charged per lookup) */
+    cnamLookup: adminProcedure.input(z.object({
+      did: z.string().min(10).max(11),
+      callerIdId: z.number().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { cnamLookup } = await import("./services/vitelity");
+      const result = await cnamLookup(input.did);
+
+      // Save CNAM result to database if callerIdId provided
+      if (input.callerIdId && result.success) {
+        await db.updateCallerId(input.callerIdId, {
+          cnamName: result.name || null,
+          cnamLookedUpAt: Date.now(),
+        });
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.cnamLookup",
+        resource: "callerId",
+        details: { did: input.did, name: result.name, success: result.success },
+      });
+
+      // Log cost transaction for CNAM lookup ($0.01 per lookup)
+      if (result.success) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            await database.insert(dctTable).values({
+              userId: ctx.user.id,
+              callerIdId: input.callerIdId || null,
+              phoneNumber: input.did,
+              type: "cnam_lookup",
+              amount: "0.01",
+              description: `CNAM lookup: ${result.name || "N/A"}`,
+              transactionDate: Date.now(),
+            });
+          }
+        } catch {}
+      }
+
+      return result;
+    }),
+
+    /** Bulk CNAM lookup for multiple DIDs */
+    bulkCnamLookup: adminProcedure.input(z.object({
+      dids: z.array(z.object({
+        did: z.string().min(10).max(11),
+        callerIdId: z.number().optional(),
+      })).min(1).max(100),
+    })).mutation(async ({ ctx, input }) => {
+      const { cnamLookup } = await import("./services/vitelity");
+      const results = [];
+      for (const { did, callerIdId } of input.dids) {
+        try {
+          const result = await cnamLookup(did);
+          // Save CNAM result to database
+          if (callerIdId && result.success) {
+            await db.updateCallerId(callerIdId, {
+              cnamName: result.name || null,
+              cnamLookedUpAt: Date.now(),
+            });
+          }
+          results.push(result);
+        } catch (err: any) {
+          results.push({ did, name: "", success: false, error: err.message });
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkCnamLookup",
+        resource: "callerId",
+        details: { count: input.dids.length, successful: results.filter(r => r.success).length },
+      });
+
+      // Log cost transactions for successful CNAM lookups ($0.01 each)
+      const successfulLookups = results.filter(r => r.success);
+      if (successfulLookups.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = successfulLookups.map((r, i) => ({
+              userId: ctx.user.id,
+              callerIdId: input.dids[i]?.callerIdId || null,
+              phoneNumber: r.did,
+              type: "cnam_lookup" as const,
+              amount: "0.01",
+              description: `CNAM lookup: ${r.name || "N/A"}`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
+
+      return results;
+    }),
+
+    /** Set LIDB (outbound CNAM) for a DID */
+    setLidb: adminProcedure.input(z.object({
+      did: z.string().min(10).max(11),
+      name: z.string().min(1).max(15),
+    })).mutation(async ({ ctx, input }) => {
+      const { setLidb } = await import("./services/vitelity");
+      const result = await setLidb(input.did, input.name);
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.setLidb",
+        resource: "callerId",
+        details: { did: input.did, name: input.name, success: result.success },
+      });
+
+      return result;
+    }),
+
+    // ─── Toll-Free DID Purchasing ─────────────────────────────────
+
+    searchTollFreeDIDs: adminProcedure.query(async () => {
+      const { searchAvailableTollFreeDIDs } = await import("./services/vitelity");
+      return searchAvailableTollFreeDIDs();
+    }),
+
+    purchaseTollFreeDID: adminProcedure.input(z.object({
+      did: z.string().min(10),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseTollFreeDID, routeDID } = await import("./services/vitelity");
+
+      const purchaseResult = await purchaseTollFreeDID(input.did);
+      if (!purchaseResult.success) {
+        return { purchased: false, routed: false, routeCreated: false, error: purchaseResult.message };
+      }
+
+      let routed = false;
+      if (input.routeSip) {
+        const routeResult = await routeDID(input.did, input.routeSip);
+        routed = routeResult.success;
+      }
+
+      // Add to caller IDs table
+      const phoneNumber = input.did.length === 10 ? `1${input.did}` : input.did;
+      await db.bulkCreateCallerIds([{
+        userId: ctx.user.id,
+        phoneNumber,
+        label: input.label || "Toll-Free",
+        isActive: 1,
+      }]);
+
+      // Create inbound route on FreePBX if requested
+      let routeCreated = false;
+      if (input.createInboundRoute && input.destination && input.destination !== "none") {
+        try {
+          const { createInboundRoutes } = await import("./services/freepbx-routes");
+          const routeResults = await createInboundRoutes([{
+            did: phoneNumber,
+            destination: input.destination,
+            description: input.description || `TF-${phoneNumber}`,
+            cidPrefix: "",
+          }]);
+          routeCreated = routeResults.filter(r => r.success).length > 0;
+        } catch (err) {
+          console.warn("[purchaseTollFreeDID] FreePBX route creation failed:", err);
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.purchaseTollFreeDID",
+        resource: "callerId",
+        details: { did: input.did, routed, routeCreated, label: input.label },
+      });
+
+      // Log cost transaction for toll-free DID purchase
+      try {
+        const database = await db.getDb();
+        if (database) {
+          const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+          await database.insert(dctTable).values({
+            userId: ctx.user.id,
+            phoneNumber,
+            type: "purchase",
+            amount: "2.00", // Toll-free typically costs more
+            description: `Purchased toll-free DID ${phoneNumber} from Vitelity`,
+            transactionDate: Date.now(),
+          });
+        }
+      } catch {}
+
+      return { purchased: true, routed, routeCreated };
+    }),
+
+    bulkPurchaseTollFreeDIDs: adminProcedure.input(z.object({
+      dids: z.array(z.object({ did: z.string().min(10) })),
+      routeSip: z.string().optional(),
+      label: z.string().optional(),
+      createInboundRoute: z.boolean().default(false),
+      destination: z.string().optional(),
+      description: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { purchaseTollFreeDID, routeDID } = await import("./services/vitelity");
+
+      const results = [];
+
+      for (const { did } of input.dids) {
+        try {
+          const purchaseResult = await purchaseTollFreeDID(did);
+          if (!purchaseResult.success) {
+            results.push({ did, purchased: false, routed: false, error: purchaseResult.message });
+            continue;
+          }
+
+          let routed = false;
+          if (input.routeSip) {
+            const routeResult = await routeDID(did, input.routeSip);
+            routed = routeResult.success;
+          }
+
+          results.push({ did, purchased: true, routed });
+        } catch (err: any) {
+          results.push({ did, purchased: false, routed: false, error: err.message });
+        }
+      }
+
+      // Bulk add purchased DIDs to caller IDs
+      const purchasedDIDs = results.filter(r => r.purchased);
+      if (purchasedDIDs.length > 0) {
+        await db.bulkCreateCallerIds(
+          purchasedDIDs.map(r => ({
+            userId: ctx.user.id,
+            phoneNumber: r.did.length === 10 ? `1${r.did}` : r.did,
+            label: input.label || "Toll-Free",
+            isActive: 1,
+          }))
+        );
+
+        if (input.createInboundRoute && input.destination && input.destination !== "none") {
+          try {
+            const { createInboundRoutes } = await import("./services/freepbx-routes");
+            await createInboundRoutes(
+              purchasedDIDs.map(r => ({
+                did: r.did.length === 10 ? `1${r.did}` : r.did,
+                destination: input.destination!,
+                description: input.description || `TF-${r.did}`,
+                cidPrefix: "",
+              }))
+            );
+          } catch (err) {
+            console.warn("[bulkPurchaseTollFreeDIDs] FreePBX route creation failed:", err);
+          }
+        }
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkPurchaseTollFreeDIDs",
+        resource: "callerId",
+        details: {
+          total: input.dids.length,
+          purchased: purchasedDIDs.length,
+          failed: results.filter(r => !r.purchased).length,
+          label: input.label,
+        },
+      });
+
+      // Log cost transactions for purchased toll-free DIDs
+      if (purchasedDIDs.length > 0) {
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            const costEntries = purchasedDIDs.map(r => ({
+              userId: ctx.user.id,
+              phoneNumber: r.did.length === 10 ? `1${r.did}` : r.did,
+              type: "purchase" as const,
+              amount: "2.00",
+              description: `Purchased toll-free DID from Vitelity (bulk)`,
+              transactionDate: Date.now(),
+            }));
+            await database.insert(dctTable).values(costEntries);
+          }
+        } catch {}
+      }
+
+      return { results, purchased: purchasedDIDs.length, failed: results.filter(r => !r.purchased).length };
+    }),
+
+    // ─── Vitelity DID Sync ───────────────────────────────────────
+
+    syncVitelityDIDs: adminProcedure.mutation(async ({ ctx }) => {
+      const { listVitelityDIDs, compareInventory } = await import("./services/vitelity");
+
+      // Fetch Vitelity inventory
+      const vitelityDIDs = await listVitelityDIDs();
+
+      // Fetch local caller IDs
+      const localCallerIds = await db.getCallerIds();
+      const localPhoneNumbers = localCallerIds.map(c => c.phoneNumber);
+
+      // Compare
+      const syncResult = compareInventory(vitelityDIDs, localPhoneNumbers);
+
+      // Auto-add new DIDs found on Vitelity
+      if (syncResult.added.length > 0) {
+        const vitelityMap = new Map(vitelityDIDs.map(d => [d.did.slice(-10), d]));
+        await db.bulkCreateCallerIds(
+          syncResult.added.map(did => {
+            const vDid = vitelityMap.get(did);
+            return {
+              userId: ctx.user.id,
+              phoneNumber: did.length === 10 ? `1${did}` : did,
+              label: vDid ? `Vitelity-${vDid.state}` : "Vitelity-Sync",
+              isActive: 1,
+            };
+          })
+        );
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.syncVitelityDIDs",
+        resource: "callerId",
+        details: {
+          added: syncResult.added.length,
+          removed: syncResult.removed.length,
+          matched: syncResult.matched,
+          totalVitelity: syncResult.totalVitelity,
+          totalLocal: syncResult.totalLocal,
+        },
+      });
+
+      return syncResult;
+    }),
+
+    // ─── DID Pool Count ──────────────────────────────────────────
+
+    countByLabel: protectedProcedure.input(z.object({
+      label: z.string().optional(),
+    })).query(async ({ input }) => {
+      const allCallerIds = await db.getCallerIds();
+      const active = allCallerIds.filter(c => c.isActive === 1);
+      if (!input.label) return { count: active.length, label: "All" };
+      const filtered = active.filter(c => c.label === input.label);
+      return { count: filtered.length, label: input.label };
+    }),
+
+    labelCounts: protectedProcedure.query(async () => {
+      const allCallerIds = await db.getCallerIds();
+      const active = allCallerIds.filter(c => c.isActive === 1);
+      const counts = new Map();
+      counts.set("__all__", active.length);
+      for (const c of active) {
+        const label = c.label || "__unlabeled__";
+        counts.set(label, (counts.get(label) || 0) + 1);
+      }
+      const result = [];
+      for (const [label, count] of Array.from(counts.entries())) {
+        result.push({ label, count });
+      }
+      return result;
+    }),
+
+    // ── Vitelity Sync Settings ──
+    getSyncSettings: adminProcedure.query(async () => {
+      const { getSyncStatus } = await import("./services/vitelity-sync");
+      return getSyncStatus();
+    }),
+
+    updateSyncSettings: adminProcedure.input(z.object({
+      enabled: z.boolean(),
+      intervalMinutes: z.number().min(5).max(1440),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting("vitelity_sync_enabled", input.enabled ? "1" : "0", "Enable Vitelity auto-sync", 0, ctx.user.id);
+      await db.upsertAppSetting("vitelity_sync_interval_minutes", String(input.intervalMinutes), "Vitelity sync interval in minutes", 0, ctx.user.id);
+
+      if (input.enabled) {
+        const { startSyncScheduler } = await import("./services/vitelity-sync");
+        await startSyncScheduler(ctx.user.id);
+      } else {
+        const { stopSyncScheduler } = await import("./services/vitelity-sync");
+        stopSyncScheduler();
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "vitelity.sync_settings_updated",
+        resource: "settings",
+        details: { enabled: input.enabled, intervalMinutes: input.intervalMinutes },
+      });
+
+      return { success: true };
+    }),
+
+    runSyncNow: adminProcedure.mutation(async ({ ctx }) => {
+      const { performSync } = await import("./services/vitelity-sync");
+      return performSync(ctx.user.id);
+    }),
+
+    // ── DID Cost Transactions ──
+    getCostSummary: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(365).optional(),
+    }).optional()).query(async ({ ctx, input }) => {
+      const days = input?.days || 30;
+      const since = Date.now() - days * 24 * 60 * 60 * 1000;
+      const database = await db.getDb();
+      if (!database) return { transactions: [], totals: {} };
+      const { didCostTransactions } = await import("../drizzle/schema");
+      const { gte } = await import("drizzle-orm");
+      const txns = await database
+        .select()
+        .from(didCostTransactions)
+        .where(gte(didCostTransactions.transactionDate, since));
+      // Aggregate by type
+      const totals: Record<string, number> = {};
+      for (const t of txns) {
+        const amt = parseFloat(t.amount) || 0;
+        totals[t.type] = (totals[t.type] || 0) + amt;
+      }
+      // Aggregate by DID
+      const byDid: Record<string, { phoneNumber: string; total: number; breakdown: Record<string, number> }> = {};
+      for (const t of txns) {
+        const amt = parseFloat(t.amount) || 0;
+        if (!byDid[t.phoneNumber]) {
+          byDid[t.phoneNumber] = { phoneNumber: t.phoneNumber, total: 0, breakdown: {} };
+        }
+        byDid[t.phoneNumber].total += amt;
+        byDid[t.phoneNumber].breakdown[t.type] = (byDid[t.phoneNumber].breakdown[t.type] || 0) + amt;
+      }
+      return {
+        transactions: txns,
+        totals,
+        byDid: Object.values(byDid).sort((a, b) => b.total - a.total),
+        grandTotal: Object.values(totals).reduce((s, v) => s + v, 0),
+      };
+    }),
+
+    // ── Bulk Release DIDs to Vitelity ──
+    bulkReleaseDIDs: adminProcedure.input(z.object({
+      ids: z.array(z.number()).min(1),
+      releaseFromVitelity: z.boolean().default(true),
+      deleteFromFreepbx: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const callerIdsList = await db.getCallerIds();
+      const toRelease = callerIdsList.filter(c => input.ids.includes(c.id));
+      if (toRelease.length === 0) throw new TRPCError({ code: "NOT_FOUND", message: "No matching caller IDs" });
+
+      const results: Array<{ phoneNumber: string; vitelityReleased: boolean; freepbxDeleted: boolean; dbDeleted: boolean; error?: string }> = [];
+
+      for (const did of toRelease) {
+        const result: { phoneNumber: string; vitelityReleased: boolean; freepbxDeleted: boolean; dbDeleted: boolean; error?: string } = {
+          phoneNumber: did.phoneNumber,
+          vitelityReleased: false,
+          freepbxDeleted: false,
+          dbDeleted: false,
+        };
+
+        // Release from Vitelity
+        if (input.releaseFromVitelity) {
+          try {
+            const { removeDID } = await import("./services/vitelity");
+            await removeDID(did.phoneNumber);
+            result.vitelityReleased = true;
+          } catch (err: unknown) {
+            result.error = `Vitelity release failed: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+
+        // Delete from FreePBX
+        if (input.deleteFromFreepbx) {
+          try {
+            const { deleteInboundRoutes } = await import("./services/freepbx-routes");
+            await deleteInboundRoutes([did.phoneNumber]);
+            result.freepbxDeleted = true;
+          } catch (err: unknown) {
+            result.error = (result.error ? result.error + "; " : "") + `FreePBX delete failed: ${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+
+        // Delete from DB
+        try {
+          await db.deleteCallerId(did.id);
+          result.dbDeleted = true;
+        } catch (err: unknown) {
+          result.error = (result.error ? result.error + "; " : "") + `DB delete failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+
+        // Log cost transaction (credit)
+        try {
+          const database = await db.getDb();
+          if (database) {
+            const { didCostTransactions: dctTable } = await import("../drizzle/schema");
+            await database.insert(dctTable).values({
+              userId: ctx.user.id,
+              callerIdId: did.id,
+              phoneNumber: did.phoneNumber,
+              type: "release",
+              amount: "0.00",
+              description: `Released DID${input.releaseFromVitelity ? " from Vitelity" : ""}${input.deleteFromFreepbx ? " and FreePBX" : ""}`,
+              transactionDate: Date.now(),
+            });
+          }
+        } catch {}
+
+        results.push(result);
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkRelease",
+        resource: "callerIds",
+        details: {
+          count: toRelease.length,
+          released: results.filter(r => r.vitelityReleased).length,
+          freepbxDeleted: results.filter(r => r.freepbxDeleted).length,
+          dbDeleted: results.filter(r => r.dbDeleted).length,
+        },
+      });
+
+      return { results };
     }),
   }),
 
@@ -1950,6 +3078,78 @@ Return ONLY the message text, nothing else.`;
       const rows = await db.getScriptPerformanceMetrics(input.scriptId);
       return rows[0] || null;
     }),
+    // ─── Export / Import ─────────────────────────────────────────────
+    exportAll: protectedProcedure.query(async ({ ctx }) => {
+      const scripts = await db.getCallScripts();
+      const exportData = scripts.map(s => ({
+        name: s.name,
+        description: s.description,
+        callbackNumber: s.callbackNumber,
+        segments: s.segments,
+        status: s.status,
+        estimatedDuration: s.estimatedDuration,
+      }));
+      return { version: "1.0", type: "call_scripts", exportedAt: Date.now(), count: exportData.length, data: exportData };
+    }),
+    importAll: protectedProcedure.input(z.object({
+      data: z.array(z.object({
+        name: z.string(),
+        description: z.string().nullable().optional(),
+        callbackNumber: z.string().nullable().optional(),
+        segments: z.array(z.object({
+          id: z.string(),
+          type: z.enum(["tts", "recorded"]),
+          position: z.number(),
+          text: z.string().optional(),
+          voice: z.string().optional(),
+          provider: z.enum(["openai", "google"]).optional(),
+          speed: z.string().optional(),
+          audioFileId: z.number().optional(),
+          audioName: z.string().optional(),
+          audioUrl: z.string().optional(),
+        })),
+        status: z.enum(["draft", "active", "archived"]).optional(),
+        estimatedDuration: z.number().nullable().optional(),
+      })),
+      skipDuplicates: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getCallScripts();
+      const existingNames = new Set(existing.map(s => s.name.toLowerCase()));
+      let imported = 0;
+      let skipped = 0;
+      for (const item of input.data) {
+        if (input.skipDuplicates && existingNames.has(item.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        const result = await db.createCallScript({
+          userId: ctx.user.id,
+          name: item.name,
+          description: item.description || null,
+          callbackNumber: item.callbackNumber || null,
+          segments: item.segments as ScriptSegment[],
+          status: item.status || "active",
+          estimatedDuration: item.estimatedDuration || null,
+        });
+        // Create initial version for imported script
+        await db.createScriptVersion({
+          scriptId: result.id,
+          version: 1,
+          userId: ctx.user.id,
+          userName: ctx.user.name || "Unknown",
+          changeType: "created",
+          changeSummary: "Imported from backup",
+          name: item.name,
+          description: item.description || null,
+          callbackNumber: item.callbackNumber || null,
+          segments: item.segments as ScriptSegment[],
+          status: item.status || "active",
+        });
+        imported++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.import", resource: "callScript", details: { imported, skipped, total: input.data.length } });
+      return { success: true, imported, skipped, total: input.data.length };
+    }),
   }),
 
   pbxAgent: router({
@@ -2368,6 +3568,41 @@ Return ONLY the message text, nothing else.`;
       };
     }),
 
+    /** Get branding settings (public - needed for all users to see the brand) */
+    getBranding: publicProcedure.query(async () => {
+      const [appName, logoUrl, primaryColor, accentColor, tagline] = await Promise.all([
+        db.getAppSetting("branding_app_name"),
+        db.getAppSetting("branding_logo_url"),
+        db.getAppSetting("branding_primary_color"),
+        db.getAppSetting("branding_accent_color"),
+        db.getAppSetting("branding_tagline"),
+      ]);
+      return {
+        appName: appName || "AI TTS Broadcast Dialer",
+        logoUrl: logoUrl || null,
+        primaryColor: primaryColor || "#16a34a",
+        accentColor: accentColor || "#f97316",
+        tagline: tagline || "Intelligent Voice Broadcasting Platform",
+      };
+    }),
+
+    /** Upload logo image (admin only) - accepts base64 */
+    uploadLogo: adminProcedure.input(z.object({
+      base64: z.string().min(1),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/svg+xml", "image/webp"]),
+      fileName: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      const { storagePut } = await import("./storage");
+      const buffer = Buffer.from(input.base64, "base64");
+      if (buffer.length > 2 * 1024 * 1024) throw new Error("Logo must be under 2MB");
+      const ext = input.mimeType.split("/")[1] === "svg+xml" ? "svg" : input.mimeType.split("/")[1];
+      const fileKey = `branding/logo-${Date.now()}.${ext}`;
+      const { url } = await storagePut(fileKey, buffer, input.mimeType);
+      await db.upsertAppSetting("branding_logo_url", url, "Client logo URL");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "branding.uploadLogo", resource: "appSettings", details: { url, size: buffer.length } });
+      return { url };
+    }),
+
     /** Reconnect AMI with fresh settings from DB (admin only) */
     freepbxReconnect: adminProcedure.mutation(async ({ ctx }) => {
       const { reconnectAMI } = await import("./services/ami");
@@ -2708,16 +3943,34 @@ Return ONLY the message text, nothing else.`;
       const contactLists = await db.getContactLists();
       const hasContacts = contactLists.some((l: any) => (l.contactCount ?? 0) > 0);
 
-      // Step 5: Campaign created
+      // Step 5: API Keys configured (at least OpenAI or Google TTS)
+      const hasOpenAI = !!process.env.OPENAI_API_KEY;
+      const hasGoogleTTS = !!process.env.GOOGLE_TTS_API_KEY;
+      const hasApiKeys = hasOpenAI || hasGoogleTTS;
+      const apiKeyDetail = hasApiKeys
+        ? [hasOpenAI && "OpenAI", hasGoogleTTS && "Google TTS"].filter(Boolean).join(" + ")
+        : undefined;
+
+      // Step 6: Voice AI Bridge installed
+      const bridgeChecks = await db.getBridgeHealthChecks(1);
+      const hasBridge = bridgeChecks.length > 0 && bridgeChecks[0].status === "healthy";
+
+      // Step 7: Campaign created
       const campaigns = await db.getCampaigns();
       const hasCampaigns = campaigns.length > 0;
+
+      // Step 8: System health — all critical services up
+      const systemHealthy = pbxOnline && hasCallerIds && hasApiKeys;
 
       const steps = [
         { id: "account", label: "Create Account", completed: accountCreated },
         { id: "pbx", label: "Connect FreePBX", completed: pbxConnected, detail: pbxOnline ? "Online" : pbxConnected ? "Registered (offline)" : undefined },
         { id: "callerIds", label: "Add Caller IDs", completed: hasCallerIds, detail: hasCallerIds ? `${callerIds.length} DID(s)` : undefined },
         { id: "contacts", label: "Import Contacts", completed: hasContacts, detail: hasContacts ? `${contactLists.length} list(s)` : undefined },
+        { id: "apiKeys", label: "Configure API Keys", completed: hasApiKeys, detail: apiKeyDetail },
+        { id: "voiceAiBridge", label: "Install Voice AI Bridge", completed: hasBridge, detail: hasBridge ? "Connected" : undefined },
         { id: "campaign", label: "Create Campaign", completed: hasCampaigns, detail: hasCampaigns ? `${campaigns.length} campaign(s)` : undefined },
+        { id: "systemHealth", label: "System Health Check", completed: systemHealthy, detail: systemHealthy ? "All systems go" : undefined },
       ];
 
       const completedCount = steps.filter(s => s.completed).length;
@@ -2903,6 +4156,113 @@ Return ONLY the message text, nothing else.`;
       if (callsLastMinute > totalCps * 50) alerts.push({ level: "warning", message: `High call volume: ${callsLastMinute} calls in last minute` });
 
       return { activeCalls, maxConcurrent: totalMaxConcurrent, cpsLimit: totalCps, callsLastMinute, callsLastHour, trunkCapacity, utilizationPct, alerts };
+    }),
+  }),
+
+  // ─── Client Deployments (Admin Dashboard) ──────────────────────────────
+  deployments: router({
+    /** List all client deployments (admin only) */
+    list: adminProcedure.query(async () => {
+      return db.listClientDeployments();
+    }),
+
+    /** Get a single deployment by ID */
+    get: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const deployment = await db.getClientDeployment(input.id);
+      if (!deployment) throw new TRPCError({ code: "NOT_FOUND", message: "Deployment not found" });
+      return deployment;
+    }),
+
+    /** Create a new client deployment record */
+    create: adminProcedure.input(z.object({
+      clientName: z.string().min(1).max(255),
+      serverIp: z.string().min(1).max(45),
+      domain: z.string().max(255).optional(),
+      version: z.string().max(50).optional(),
+      environment: z.enum(["production", "staging", "development"]).default("production"),
+      pbxHost: z.string().max(255).optional(),
+      notes: z.string().optional(),
+      contactEmail: z.string().email().optional(),
+      contactPhone: z.string().max(20).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const id = await db.createClientDeployment({
+        ...input,
+        domain: input.domain || null,
+        version: input.version || null,
+        pbxHost: input.pbxHost || null,
+        notes: input.notes || null,
+        contactEmail: input.contactEmail || null,
+        contactPhone: input.contactPhone || null,
+        status: "provisioning",
+        installedAt: Date.now(),
+      });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.create", resource: "clientDeployment", resourceId: id, details: { clientName: input.clientName, serverIp: input.serverIp } });
+      return { id };
+    }),
+
+    /** Update an existing deployment */
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      clientName: z.string().min(1).max(255).optional(),
+      serverIp: z.string().min(1).max(45).optional(),
+      domain: z.string().max(255).nullable().optional(),
+      version: z.string().max(50).nullable().optional(),
+      environment: z.enum(["production", "staging", "development"]).optional(),
+      status: z.enum(["online", "offline", "degraded", "maintenance", "provisioning"]).optional(),
+      pbxHost: z.string().max(255).nullable().optional(),
+      pbxAgentVersion: z.string().max(50).nullable().optional(),
+      bridgeStatus: z.enum(["connected", "disconnected", "unknown"]).optional(),
+      sslExpiry: z.number().nullable().optional(),
+      notes: z.string().nullable().optional(),
+      contactEmail: z.string().email().nullable().optional(),
+      contactPhone: z.string().max(20).nullable().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateClientDeployment(id, data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.update", resource: "clientDeployment", resourceId: id, details: data });
+      return { success: true };
+    }),
+
+    /** Delete a deployment record */
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteClientDeployment(input.id);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "deployment.delete", resource: "clientDeployment", resourceId: input.id });
+      return { success: true };
+    }),
+
+    /** Heartbeat endpoint for client installations to report status (public with API key auth) */
+    heartbeat: publicProcedure.input(z.object({
+      deploymentId: z.number(),
+      apiKey: z.string().min(1),
+      version: z.string().optional(),
+      status: z.enum(["online", "offline", "degraded", "maintenance"]).optional(),
+      diskUsagePercent: z.number().min(0).max(100).optional(),
+      memoryUsageMb: z.number().min(0).optional(),
+      cpuUsagePercent: z.number().min(0).max(100).optional(),
+      pbxAgentVersion: z.string().optional(),
+      bridgeStatus: z.enum(["connected", "disconnected", "unknown"]).optional(),
+    })).mutation(async ({ input }) => {
+      // Simple API key check — use the deployment heartbeat key from app settings
+      const expectedKey = await db.getAppSetting("deployment_heartbeat_api_key");
+      if (!expectedKey || input.apiKey !== expectedKey) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid API key" });
+      }
+      const { deploymentId, apiKey, ...data } = input;
+      await db.updateDeploymentHeartbeat(deploymentId, data);
+      return { success: true };
+    }),
+
+    /** Get deployment summary stats */
+    stats: adminProcedure.query(async () => {
+      const deployments = await db.listClientDeployments();
+      const now = Date.now();
+      const fiveMinAgo = now - 5 * 60 * 1000;
+      const online = deployments.filter(d => d.status === "online" && d.lastHeartbeat && d.lastHeartbeat > fiveMinAgo).length;
+      const degraded = deployments.filter(d => d.status === "degraded").length;
+      const offline = deployments.filter(d => d.status === "offline" || (d.lastHeartbeat && d.lastHeartbeat < fiveMinAgo && d.status === "online")).length;
+      const maintenance = deployments.filter(d => d.status === "maintenance").length;
+      const provisioning = deployments.filter(d => d.status === "provisioning").length;
+      return { total: deployments.length, online, degraded, offline, maintenance, provisioning };
     }),
   }),
 });

@@ -55,6 +55,7 @@ const adminMenuItems = [
   { icon: Phone, label: "FreePBX", path: "/freepbx" },
   { icon: Settings, label: "Settings", path: "/settings" },
   { icon: Workflow, label: "System Architecture", path: "/system-architecture" },
+  { icon: Activity, label: "Deployments", path: "/deployments" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
 ];
 

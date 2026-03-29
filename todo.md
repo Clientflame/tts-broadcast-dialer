@@ -710,6 +710,128 @@
 - [x] Add "Last Active" column to User Management showing when each user last performed an action — added lastActiveAt to schema, auto-updated via protectedProcedure middleware (throttled 1/min), relative time display
 - [x] Prepare cloud hosting specs recommendation for Vultr and Hostinger — researched plans and prepared tier recommendations
 - [x] Create FULL self-hosted deployment package for Hostinger KVM 4 VPS (187.124.94.97, Ubuntu 22.04, app.407hosted.com) — 21-section guide with service replacement matrix, MinIO storage, local MySQL, standalone auth, PM2, Nginx SSL, backup strategy, client install checklist
-- [ ] Create self-hosted branch with code modifications for storage.ts, llm.ts, voiceTranscription.ts, imageGeneration.ts
-- [ ] Install @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner dependencies
-- [ ] Build automated install.sh script wrapping the 23-step client deployment checklist
+- [x] Create self-hosted branch with code modifications for storage.ts, llm.ts, voiceTranscription.ts, imageGeneration.ts, notification.ts — pushed to GitHub as `self-hosted` branch
+- [x] Install @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner dependencies — added to package.json
+- [x] Build automated install.sh script wrapping the 23-step client deployment checklist — 14-step interactive installer with color output, credential generation, MySQL/MinIO/Nginx/SSL/PM2/UFW/backup/update scripts
+- [x] Add nodemailer to self-hosted branch for SMTP notification support — installed and notification.ts rewritten for SMTP
+- [x] Create Client Onboarding Checklist page — expanded from 5 to 8 steps (added API Keys, Voice AI Bridge, System Health), Quick Reference card with copyable URLs
+- [x] Add Client Branding section to Settings — logo upload (base64→S3), app name, primary/accent colors, tagline, live preview. Backend: getBranding (public) + uploadLogo (admin) tRPC procedures
+- [x] Build Deployment Status admin page — client_deployments table (21 columns), full CRUD tRPC router with heartbeat endpoint, stats summary, expandable rows with system metrics (disk/memory/CPU), PBX integration status, SSL expiry, contact info. 14 new vitest tests
+- [ ] Test self-hosted deployment on Hostinger VPS (187.124.94.97) — SSH in, run install.sh, verify all services
+- [ ] Verify DNS A record for app.407hosted.com points to 187.124.94.97
+- [ ] Verify SSL auto-configures via Certbot on VPS
+- [ ] Test all features in self-hosted mode (MinIO storage, direct OpenAI API, MySQL database, standalone auth)
+- [ ] Verify FreePBX connectivity from VPS static IP
+- [x] FIX: Self-hosted Docker deployment login redirect loop — cookie sameSite:none rejected by browsers on plain HTTP. Fixed: sameSite:lax for HTTP, sameSite:none for HTTPS. Added trust proxy for reverse proxy support. 7 new cookie tests, all 558 passing.
+- [x] FIX: Dashboard button not working on self-hosted deployment after fresh install — onboarding auto-redirect now uses sessionStorage so it only fires once per browser session, clicking Dashboard in sidebar always works
+- [x] FIX: PBX Agent single-command copy button not working in self-hosted mode — navigator.clipboard requires HTTPS; created shared clipboard.ts utility with execCommand fallback for HTTP. Fixed in FreePBX.tsx, AiGenerator.tsx, Onboarding.tsx
+- [x] FIX: PBX Agent not registering on self-hosted deployment — (1) Dockerfile missing COPY for pbx-agent/ and voice-ai-bridge/ directories so install endpoint returned 500, (2) protocol detection defaulted to 'https' instead of 'http' for self-hosted. Fixed Dockerfile, pbx-api.ts, voice-ai-installer.ts
+- [x] Update FreePBX connection to new fresh install at 187.124.153.234 (replacing 45.77.75.198)
+- [x] Configure AMI user on fresh FreePBX at 187.124.153.234 — created 'dialer' user in manager_custom.conf, bindaddr=0.0.0.0, full read/write permissions
+- [x] Whitelist dialer server IP (187.124.94.97) on new FreePBX firewall — iptables rule + Responsive Firewall trusted zone
+- [ ] Update .env on self-hosted VPS (187.124.94.97) with new FreePBX IP — user needs to run: nano /opt/tts-dialer/.env
+- [x] Add export functionality for Audio/TTS files (JSON metadata + audio URLs)
+- [x] Add import functionality for Audio/TTS files (upload JSON to recreate entries)
+- [x] Add export functionality for Voice AI configurations (JSON with all settings)
+- [x] Add import functionality for Voice AI configurations (upload JSON to recreate)
+- [x] Add export functionality for Call Scripts (JSON with script content and segments)
+- [x] Add import functionality for Call Scripts (upload JSON to recreate scripts)
+- [x] Add import/export UI buttons on Audio/TTS, Voice AI, and Call Scripts pages — shared ImportExportButtons component, 13 new vitest tests, all 571 passing
+- [x] FIX: Self-hosted script preview fails with "Storage proxy credentials missing" — added local filesystem storage fallback (data/storage/ dir), Express route to serve files, resolveStorageUrl() for server-side fetch, relative URLs for browser, absolute URLs for PBX agent. All 558 tests passing
+- [x] FIX: Voice AI test call stuck at 'Queued, waiting for PBX agent to pick up' on self-hosted VPS 187.124.94.97 — PBX agent AMI credentials were wrong (auto-generated vs what we created). Updated systemd service with correct dialer/D1al3r@2026!Secure credentials.
+- [x] FIX: Calls connect but no audio plays on self-hosted deployment (both TTS and Voice AI) — Two issues: (1) Dialplan used ${AUDIO_FILE} but PBX agent sets AUDIOFILE (no underscore), fixed in extensions_custom.conf. (2) ARI was disabled (enabled=no in ari_general_additional.conf), enabled via ari_general_custom.conf, voice-ai-bridge now connected.
+- [x] FIX: Campaigns with call scripts not dialing out on self-hosted deployment — isWithinTimeWindow didn't handle overnight windows (e.g. 09:00-02:00). Fixed with OR logic for overnight spans. Added diagnostic logging for time window, campaign status, and Intl midnight normalization.
+- [x] FIX: PBX agent version showing v1.5.0 on dashboard instead of v1.5.3 — updated AGENT_VERSION in pbx_agent.py to 1.5.3 and applied on live FreePBX server
+- [x] Update PBX agent installer to automatically deploy correct dialplan (AUDIOFILE variable) in extensions_custom.conf
+- [x] Update PBX agent installer to automatically enable ARI (ari_general_custom.conf) during installation
+- [x] Update PBX agent installer to configure voice-ai-bridge dialplan context during installation
+- [x] Update Docker deployment to expose app on port 80 instead of port 3000 for dedicated server
+- [x] Revert default port back to 3000 (port 80 conflicts with Caddy in SSL setups)
+- [x] Auto-create inbound routes on FreePBX when DIDs are imported (SSH + fwconsole)
+- [x] Fetch available FreePBX destinations (Queues, Ring Groups, IVRs, Extensions, Voicemail, etc.)
+- [x] Dropdown menu for destination selection during DID import
+- [x] Per-number destination choice with bulk "apply to all" option
+- [x] Route label defaults to "TTS Dialer" with custom name option
+- [x] CID name prefix option for callbacks
+- [x] fwconsole reload after route creation
+- [x] Inbound Routes management tab on Caller IDs page
+- [x] View all existing inbound routes from FreePBX with destination details
+- [x] Edit inbound route destination from the dashboard
+- [x] Delete inbound routes from the dashboard
+- [x] Route destination display with human-readable labels
+- [x] Improve destination selector to two-step pattern: pick type (Extension, Ring Group, Call Queue) then pick specific item
+- [x] Update destination dropdown in bulk add, CSV import, per-number config, and edit route dialog
+- [x] FIX: Bulk Add destination picker only showing 'No route' and 'Terminate' — improved SSH reliability with single-query batch, fallback to individual queries, increased timeout, SSH warning in UI when connection fails
+- [x] FIX: MySQL credential extraction from freepbx.conf failing — grep pattern only matched single quotes but FreePBX uses double quotes. Fixed all 6 mysqlCmd instances to handle both formats
+- [x] FIX: FreePBX SQL queries using wrong column names (users.id instead of users.extension) and querying non-existent voicemail table
+- [x] FIX: Bash syntax error in SSH MySQL commands — replaced complex grep -oP with simple awk -F'"' '{print $4}' approach across all 6 mysqlCmd instances to avoid escaping issues through JS template literal -> SSH -> bash chain
+- [x] FIX: Only 1 of 8 inbound routes being created — added batch INSERT with per-route logging and stderr checking, fallback to individual inserts on error
+- [x] FIX: INSERT INTO incoming using non-existent columns (faxenabled, faxdetection, legacy_email, grptime, grpnum) — updated to match actual FreePBX 17 table schema
+- [x] FIX: privacyman column is tinyint(1) not varchar — changed 'no' to 0 in INSERT statements
+- [x] Add label field to Caller IDs (DIDs) — label column already exists in database schema
+- [x] Bulk label during import (Bulk Add dialog has "Apply Label to All" field; per-line labels take priority)
+- [x] Edit DID label individually (inline click-to-edit with Enter/Escape keyboard shortcuts)
+- [x] Bulk edit DID labels (select multiple, click "Edit Labels" button, set new label for all selected)
+- [x] Backend bulkUpdate procedure for callerIds with audit logging
+- [x] Vitest tests for label features (25 tests)
+- [x] Filter/search DIDs by label
+- [x] Auto-delete FreePBX inbound routes when single Caller ID is deleted
+- [x] Auto-delete FreePBX inbound routes when bulk deleting Caller IDs
+- [x] Vitest tests for cascade route deletion (11 tests)
+- [x] Filter/search DIDs by label — search bar + label dropdown on Caller IDs page
+- [x] Confirmation dialog before delete — warn that FreePBX inbound routes will also be removed
+- [x] Confirmation dialog before bulk delete — same warning for bulk operations
+- [x] Vitest tests for label filter and delete confirmation features (29 tests)
+- [x] Label-based DID rotation — didLabel column on campaigns, dialer filters DID pool by label
+- [x] Campaign UI — DID label selector in campaign create/edit forms (dropdown of unique labels)
+- [x] CSV export of filtered DIDs — export button on Caller IDs page respecting search/filter
+- [x] Vitest tests for label-based rotation and CSV export (26 tests)
+- [x] BUG: Caller ID import (bulk add / CSV) does not create inbound routes on FreePBX
+- [x] BUG: bulkCreateWithRoutes reports 0 routes created even when routes are configured
+- [x] Default "Create inbound routes on FreePBX" toggle to ON
+- [x] Default destination to first available queue instead of "none"
+- [x] Single DID add with inbound route — extend Add Caller ID dialog with route config
+- [x] Backend createWithRoute procedure for single DID + route creation
+- [x] Progress indicator for bulk add with routes — show progress during SSH operations (28 tests)
+- [x] Vitelity/Voyant DID import — backend service to fetch DIDs from Vitelity API
+- [x] Vitelity API credentials management (VITELITY_API_LOGIN/VITELITY_API_PASS env vars)
+- [x] Frontend DID import from Vitelity UI — browse and select DIDs to import
+- [x] Per-DID route conflict resolution dialog — when importing DIDs with routes, show conflicts and let user choose per-DID (Update / Skip / Keep existing)
+- [x] Vitest tests for Vitelity import and conflict resolution (40 tests)
+- [x] Vitelity DID purchasing — search available DIDs by state/area code/rate center
+- [x] Backend: Vitelity searchAvailableDIDs, purchaseDID, bulkPurchaseDIDs, routeDID, removeDID, getVitelityBalance
+- [x] Backend: Purchase DID via Vitelity API (getlocaldid command)
+- [x] Frontend: DID purchasing UI — state → rate center → search → select → purchase with routing
+- [x] Auto-create inbound route on FreePBX after purchasing a DID
+- [x] Auto-add purchased DID to Caller IDs table with label
+- [x] Incoming CNAM lookup — per-DID lookup button and bulk CNAM in selection toolbar
+- [x] Backend: cnamLookup, bulkCnamLookup, setLidb procedures with DB persistence
+- [x] Frontend: CNAM column in table, per-DID lookup button ($0.01/lookup), bulk CNAM lookup
+- [x] Database: cnamName and cnamLookedUpAt columns on callerIds
+- [x] Vitest tests for DID purchasing and CNAM lookup (39 tests)
+- [x] Auto-sync Vitelity DIDs — periodic sync to detect new/removed DIDs from Vitelity account
+- [x] Backend: syncVitelityDIDs procedure that compares Vitelity inventory with local DB
+- [x] Auto-add new DIDs found on Vitelity, flag removed DIDs
+- [x] Manual sync trigger button on Caller IDs page ("Sync Vitelity" button)
+- [x] Sync status display (toast with added/removed/matched counts)
+- [x] DID pool count preview — show matching DID count next to label dropdown in campaign forms
+- [x] Update campaign form label selector to show count (e.g., "Sales (12 DIDs)")
+- [x] Toll-free DID purchasing — search and order toll-free numbers via Vitelity API
+- [x] Backend: searchAvailableTollFreeDIDs, purchaseTollFreeDID, bulkPurchaseTollFreeDIDs
+- [x] Frontend: Toll-free tab in Purchase DIDs dialog
+- [x] Vitest tests for auto-sync, pool count, and toll-free purchasing (32 tests)
+- [x] Scheduled auto-sync — automatic Vitelity inventory sync on configurable interval
+- [x] Backend: cron/interval-based sync job with configurable frequency
+- [x] Settings UI: auto-sync toggle, interval selector (5min to 24hr), last sync display
+- [x] Sync history log with timestamps and results
+- [x] DID cost tracking dashboard — aggregate costs per DID on Analytics page
+- [x] Database: didCostTransactions schema for tracking DID costs (purchase, CNAM lookups, monthly fees, release credits)
+- [x] Backend: cost aggregation queries and procedures (getCostSummary with configurable time range)
+- [x] Frontend: cost dashboard with pie chart, bar chart, per-DID cost breakdown table, search/sort
+- [x] Cost transaction logging on CNAM lookups ($0.01/lookup), DID purchases, toll-free purchases, and releases
+- [x] Bulk DID release — release/cancel DIDs back to Vitelity from Caller IDs page
+- [x] Backend: bulkReleaseDIDs procedure via Vitelity removeDID API with per-DID results
+- [x] Frontend: Release button in selection toolbar with bulk release support
+- [x] Confirmation dialog before releasing DIDs (warns about permanent removal, toggles for Vitelity/FreePBX)
+- [x] Auto-remove inbound routes from FreePBX when releasing DIDs
+- [x] Vitest tests for auto-sync, cost tracking, and bulk release (69 new tests)

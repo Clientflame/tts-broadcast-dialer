@@ -18,6 +18,7 @@ import {
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
   History, BarChart3, RotateCcw, Eye,
 } from "lucide-react";
+import { ImportExportButtons } from "@/components/ImportExportButtons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Segment = {
@@ -270,6 +271,9 @@ export default function Scripts() {
   const [versionHistoryScriptId, setVersionHistoryScriptId] = useState<number | null>(null);
   const [metricsScriptId, setMetricsScriptId] = useState<number | null>(null);
 
+  const utils = trpc.useUtils();
+  const importScriptsMut = trpc.callScripts.importAll.useMutation();
+
   const scripts = trpc.callScripts.list.useQuery();
   const scriptMetrics = trpc.callScripts.metrics.useQuery();
   const versions = trpc.callScripts.versions.useQuery(
@@ -458,6 +462,20 @@ export default function Scripts() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+          <ImportExportButtons
+            label="Call Scripts"
+            expectedType="call_scripts"
+            onExport={async () => {
+              const result = await utils.callScripts.exportAll.fetch();
+              return result;
+            }}
+            onImport={async (data, skipDuplicates) => {
+              const result = await importScriptsMut.mutateAsync({ data, skipDuplicates });
+              return result;
+            }}
+            isImporting={importScriptsMut.isPending}
+            onImportSuccess={() => utils.callScripts.list.invalidate()}
+          />
           {selectedIds.length > 0 && (
             <Button variant="destructive" onClick={() => {
               if (confirm(`Delete ${selectedIds.length} script(s)?`)) bulkDeleteScripts.mutate({ ids: selectedIds });

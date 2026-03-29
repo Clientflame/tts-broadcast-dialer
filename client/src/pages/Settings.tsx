@@ -11,9 +11,10 @@ import {
   Loader2, ExternalLink, Save, Server, FlaskConical, ShieldCheck, ShieldAlert,
   PlugZap, Unplug, Wifi, Terminal, RotateCcw, AlertTriangle, Bell, BellOff,
   Mail, MessageSquare, Phone, Send, Smartphone, Hash,
+  Paintbrush, Upload, Palette, Type, Image, RefreshCw, Trash2,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 
 // Known setting keys for TTS API configuration
@@ -71,6 +72,7 @@ export default function Settings() {
 
         {isAdmin ? (
           <>
+            <BrandingSection />
             <TTSApiKeysSection />
             <FreePBXSettingsSection />
             <SmtpSettingsSection />
@@ -86,6 +88,237 @@ export default function Settings() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+// ─── Branding Section ───────────────────────────────────────────────────────
+const BRANDING_KEYS = [
+  { key: "branding_app_name", label: "Application Name", placeholder: "AI TTS Broadcast Dialer", icon: Type },
+  { key: "branding_tagline", label: "Tagline", placeholder: "Intelligent Voice Broadcasting Platform", icon: Type },
+  { key: "branding_primary_color", label: "Primary Color", placeholder: "#16a34a", icon: Palette, isColor: true },
+  { key: "branding_accent_color", label: "Accent Color", placeholder: "#f97316", icon: Palette, isColor: true },
+];
+
+function BrandingSection() {
+  const branding = trpc.appSettings.getBranding.useQuery();
+  const bulkUpdate = trpc.appSettings.bulkUpdate.useMutation();
+  const uploadLogo = trpc.appSettings.uploadLogo.useMutation();
+  const utils = trpc.useUtils();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [isDirty, setIsDirty] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (branding.data) {
+      setValues({
+        branding_app_name: branding.data.appName || "",
+        branding_tagline: branding.data.tagline || "",
+        branding_primary_color: branding.data.primaryColor || "#16a34a",
+        branding_accent_color: branding.data.accentColor || "#f97316",
+      });
+    }
+  }, [branding.data]);
+
+  const handleChange = (key: string, value: string) => {
+    setValues(prev => ({ ...prev, [key]: value }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    const updates = BRANDING_KEYS.map(bk => ({
+      key: bk.key,
+      value: values[bk.key] || null,
+      description: `Branding: ${bk.label}`,
+      isSecret: 0,
+    }));
+    try {
+      await bulkUpdate.mutateAsync(updates);
+      await utils.appSettings.getBranding.invalidate();
+      setIsDirty(false);
+      toast.success("Branding saved successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save branding");
+    }
+  };
+
+  const handleLogoUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo must be under 2MB");
+      return;
+    }
+    const validTypes = ["image/png", "image/jpeg", "image/svg+xml", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      toast.error("Supported formats: PNG, JPEG, SVG, WebP");
+      return;
+    }
+    setUploading(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await uploadLogo.mutateAsync({
+        base64,
+        mimeType: file.type as "image/png" | "image/jpeg" | "image/svg+xml" | "image/webp",
+        fileName: file.name,
+      });
+      await utils.appSettings.getBranding.invalidate();
+      toast.success("Logo uploaded successfully");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to upload logo");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [uploadLogo, utils]);
+
+  const handleRemoveLogo = async () => {
+    try {
+      await bulkUpdate.mutateAsync([{ key: "branding_logo_url", value: null, isSecret: 0 }]);
+      await utils.appSettings.getBranding.invalidate();
+      toast.success("Logo removed");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to remove logo");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Paintbrush className="h-5 w-5" />
+          Client Branding
+        </CardTitle>
+        <CardDescription>
+          Customize the application appearance for white-label deployments. Changes apply to all users.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Logo Upload */}
+        <div className="space-y-3">
+          <Label className="text-sm font-medium flex items-center gap-2">
+            <Image className="h-4 w-4" />
+            Logo
+          </Label>
+          <div className="flex items-center gap-4">
+            <div className="h-16 w-16 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center overflow-hidden bg-muted/30">
+              {branding.data?.logoUrl ? (
+                <img src={branding.data.logoUrl} alt="Logo" className="h-full w-full object-contain" />
+              ) : (
+                <Image className="h-6 w-6 text-muted-foreground/50" />
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  {uploading ? "Uploading..." : "Upload Logo"}
+                </Button>
+                {branding.data?.logoUrl && (
+                  <Button variant="ghost" size="sm" className="gap-1.5 text-destructive" onClick={handleRemoveLogo}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">PNG, JPEG, SVG, or WebP. Max 2MB. Recommended: 256x256px.</p>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml,image/webp"
+              className="hidden"
+              onChange={handleLogoUpload}
+            />
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Text Fields */}
+        {BRANDING_KEYS.map(bk => (
+          <div key={bk.key} className="space-y-2">
+            <Label htmlFor={bk.key} className="text-sm font-medium flex items-center gap-2">
+              <bk.icon className="h-4 w-4" />
+              {bk.label}
+            </Label>
+            <div className="flex gap-2 items-center">
+              {bk.isColor && (
+                <input
+                  type="color"
+                  value={values[bk.key] || bk.placeholder}
+                  onChange={e => handleChange(bk.key, e.target.value)}
+                  className="h-9 w-9 rounded border cursor-pointer shrink-0"
+                />
+              )}
+              <Input
+                id={bk.key}
+                placeholder={bk.placeholder}
+                value={values[bk.key] || ""}
+                onChange={e => handleChange(bk.key, e.target.value)}
+                className={bk.isColor ? "font-mono text-sm" : ""}
+              />
+            </div>
+          </div>
+        ))}
+
+        {/* Preview */}
+        <div className="p-4 rounded-lg border bg-muted/30">
+          <Label className="text-xs text-muted-foreground mb-2 block">Preview</Label>
+          <div className="flex items-center gap-3">
+            <div
+              className="h-10 w-10 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+              style={{ backgroundColor: values.branding_primary_color || "#16a34a" }}
+            >
+              {branding.data?.logoUrl ? (
+                <img src={branding.data.logoUrl} alt="" className="h-full w-full object-contain rounded-lg" />
+              ) : (
+                (values.branding_app_name || "A")[0]
+              )}
+            </div>
+            <div>
+              <div className="font-semibold" style={{ color: values.branding_primary_color || "#16a34a" }}>
+                {values.branding_app_name || "AI TTS Broadcast Dialer"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {values.branding_tagline || "Intelligent Voice Broadcasting Platform"}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <div className="h-6 w-20 rounded text-xs text-white flex items-center justify-center" style={{ backgroundColor: values.branding_primary_color || "#16a34a" }}>Primary</div>
+            <div className="h-6 w-20 rounded text-xs text-white flex items-center justify-center" style={{ backgroundColor: values.branding_accent_color || "#f97316" }}>Accent</div>
+          </div>
+        </div>
+
+        {/* Save */}
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSave}
+            disabled={!isDirty || bulkUpdate.isPending}
+            className="gap-2"
+          >
+            {bulkUpdate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Branding
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

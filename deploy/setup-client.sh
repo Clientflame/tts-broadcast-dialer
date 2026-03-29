@@ -583,11 +583,15 @@ services:
       - "\${APP_PORT:-3000}:3000"
     env_file:
       - .env
+    volumes:
+      - dialer-storage:/app/data/storage
     environment:
       - NODE_ENV=production
       - PORT=3000
       - DATABASE_URL=mysql://\${MYSQL_USER:-dialer}:\${MYSQL_PASSWORD}@db:3306/\${MYSQL_DATABASE:-tts_dialer}
       - TZ=\${TZ:-America/New_York}
+      - APP_DOMAIN=\${APP_DOMAIN:-}
+      - APP_PROTOCOL=\${APP_PROTOCOL:-http}
     depends_on:
       db:
         condition: service_healthy
@@ -676,6 +680,7 @@ if [ "$ENABLE_SSL" = "true" ]; then
 
 volumes:
   mysql-data:
+  dialer-storage:
   caddy-data:
   caddy-config:
 
@@ -687,6 +692,7 @@ else
 
 volumes:
   mysql-data:
+  dialer-storage:
 
 networks:
   dialer-net:
@@ -741,6 +747,8 @@ TZ=${APP_TZ}
 
 # --- Domain & SSL ---
 DOMAIN=${APP_DOMAIN}
+APP_DOMAIN=${APP_DOMAIN:+${APP_DOMAIN}}
+APP_PROTOCOL=${ENABLE_SSL:+https}
 
 # --- Database (auto-generated, do not change) ---
 MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}

@@ -167,6 +167,7 @@ export const campaigns = mysqlTable("campaigns", {
   usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
+  didLabel: varchar("didLabel", { length: 100 }), // Filter DID rotation pool by label
   // Call Script (mixed TTS + recorded segments)
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),
@@ -303,6 +304,9 @@ export const callerIds = mysqlTable("caller_ids", {
   flaggedAt: bigint("flaggedAt", { mode: "number" }),
   flagReason: varchar("flagReason", { length: 255 }),
   cooldownUntil: bigint("cooldownUntil", { mode: "number" }),
+  // CNAM lookup fields
+  cnamName: varchar("cnamName", { length: 255 }),
+  cnamLookedUpAt: bigint("cnamLookedUpAt", { mode: "number" }),
 });
 
 export type CallerId = typeof callerIds.$inferSelect;
@@ -957,3 +961,57 @@ export const bridgeHealthChecks = mysqlTable("bridge_health_checks", {
 
 export type BridgeHealthCheck = typeof bridgeHealthChecks.$inferSelect;
 export type InsertBridgeHealthCheck = typeof bridgeHealthChecks.$inferInsert;
+
+// ─── Client Deployments (Admin Dashboard) ──────────────────────────────────
+export const clientDeployments = mysqlTable("client_deployments", {
+  id: int("id").autoincrement().primaryKey(),
+  clientName: varchar("clientName", { length: 255 }).notNull(),
+  serverIp: varchar("serverIp", { length: 45 }).notNull(), // IPv4 or IPv6
+  domain: varchar("domain", { length: 255 }),
+  version: varchar("version", { length: 50 }),
+  environment: mysqlEnum("environment", ["production", "staging", "development"]).default("production").notNull(),
+  status: mysqlEnum("status", ["online", "offline", "degraded", "maintenance", "provisioning"]).default("provisioning").notNull(),
+  lastHeartbeat: bigint("lastHeartbeat", { mode: "number" }),
+  sslExpiry: bigint("sslExpiry", { mode: "number" }),
+  diskUsagePercent: int("diskUsagePercent"),
+  memoryUsageMb: int("memoryUsageMb"),
+  cpuUsagePercent: int("cpuUsagePercent"),
+  pbxHost: varchar("pbxHost", { length: 255 }),
+  pbxAgentVersion: varchar("pbxAgentVersion", { length: 50 }),
+  bridgeStatus: mysqlEnum("bridgeStatus", ["connected", "disconnected", "unknown"]).default("unknown").notNull(),
+  notes: text("notes"),
+  contactEmail: varchar("contactEmail", { length: 320 }),
+  contactPhone: varchar("contactPhone", { length: 20 }),
+  installedAt: bigint("installedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ClientDeployment = typeof clientDeployments.$inferSelect;
+export type InsertClientDeployment = typeof clientDeployments.$inferInsert;
+
+// ─── DID Cost Transactions ──────────────────────────────────────────────────
+export const didCostTransactions = mysqlTable("did_cost_transactions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  callerIdId: int("callerIdId"), // nullable — DID may have been deleted
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  type: mysqlEnum("type", [
+    "purchase",        // DID purchase from Vitelity
+    "monthly_rental",  // Monthly DID rental fee
+    "cnam_lookup",     // CNAM lookup charge
+    "cnam_lidb",       // CNAM LIDB (outbound caller name) charge
+    "release",         // Credit back on DID release
+    "minutes",         // Per-minute usage charge
+    "other",
+  ]).notNull(),
+  amount: varchar("amount", { length: 20 }).notNull(), // e.g., "1.50", negative for credits
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  description: text("description"),
+  referenceId: varchar("referenceId", { length: 255 }), // e.g., Vitelity order ID
+  transactionDate: bigint("transactionDate", { mode: "number" }).notNull(), // UTC ms
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DidCostTransaction = typeof didCostTransactions.$inferSelect;
+export type InsertDidCostTransaction = typeof didCostTransactions.$inferInsert;

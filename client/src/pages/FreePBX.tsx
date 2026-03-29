@@ -41,29 +41,16 @@ function InstallerWizard({ agentId, onDone }: { agentId: string; onDone: () => v
     { enabled: !!agentId }
   );
 
-  const copyCommand = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+  const copyCommand = useCallback(async (text: string) => {
+    const { copyToClipboard } = await import("@/lib/clipboard");
+    const ok = await copyToClipboard(text);
+    if (ok) {
       setCopiedCmd(true);
       toast.success("Install command copied to clipboard!");
       setTimeout(() => setCopiedCmd(false), 3000);
-    }).catch(() => {
-      // Fallback
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand("copy");
-        setCopiedCmd(true);
-        toast.success("Install command copied to clipboard!");
-        setTimeout(() => setCopiedCmd(false), 3000);
-      } catch {
-        toast.error("Failed to copy — please select and copy manually");
-      }
-      document.body.removeChild(textarea);
-    });
+    } else {
+      toast.error("Failed to copy — please select the command text and copy manually");
+    }
   }, []);
 
   if (isLoading) {
@@ -481,28 +468,16 @@ export default function FreePBX() {
     });
   };
 
-  const copyToClipboard = useCallback((text: string, key: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+  const copyToClipboard = useCallback(async (text: string, key: string) => {
+    const { copyToClipboard: clipCopy } = await import("@/lib/clipboard");
+    const ok = await clipCopy(text);
+    if (ok) {
       setCopiedStates(prev => ({ ...prev, [key]: true }));
       toast.success("Copied to clipboard");
       setTimeout(() => setCopiedStates(prev => ({ ...prev, [key]: false })), 2000);
-    }).catch(() => {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand("copy");
-        setCopiedStates(prev => ({ ...prev, [key]: true }));
-        toast.success("Copied to clipboard");
-        setTimeout(() => setCopiedStates(prev => ({ ...prev, [key]: false })), 2000);
-      } catch {
-        toast.error("Failed to copy");
-      }
-      document.body.removeChild(textarea);
-    });
+    } else {
+      toast.error("Failed to copy — please select the text and copy manually");
+    }
   }, []);
 
   const hasAgents = agents.data && agents.data.length > 0;

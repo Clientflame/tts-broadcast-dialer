@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -89,6 +89,7 @@ type FormState = {
   targetStates: string[]; useGeoCallerIds: boolean;
   usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
   useDidRotation: boolean;
+  didLabel: string;
   scriptId: number; callbackNumber: string; useDidCallbackNumber: boolean;
   pacingMode: "fixed" | "adaptive" | "predictive";
   pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
@@ -113,7 +114,7 @@ const DEFAULT_FORM: FormState = {
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-  useDidRotation: false, scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
+  useDidRotation: false, didLabel: "", scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
   predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
   amdEnabled: false, voicemailAudioId: 0, voicemailMessage: "",
@@ -172,7 +173,7 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
-function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts }: {
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels, labelCounts }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   messageRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -180,6 +181,8 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
   readyAudioFiles: any[];
   templates: any;
   scripts: any;
+  didLabels: string[];
+  labelCounts: { label: string | null; count: number }[];
 }) {
   const insertMergeField = (fieldKey: string) => {
     const textarea = messageRef.current;
@@ -484,12 +487,46 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
           ) : null}
 
           {/* DID Rotation */}
-          <div className="flex items-center justify-between p-3 rounded-lg border">
-            <div>
-              <Label>DID Rotation</Label>
-              <p className="text-xs text-muted-foreground">Automatically rotate through your active caller IDs</p>
+          <div className="p-3 rounded-lg border space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>DID Rotation</Label>
+                <p className="text-xs text-muted-foreground">Automatically rotate through your active caller IDs</p>
+              </div>
+              <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
             </div>
-            <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
+            {form.useDidRotation && (
+              <div className="pt-2 border-t">
+                <Label className="text-xs flex items-center gap-1.5 mb-1.5">
+                  <Tag className="h-3.5 w-3.5" /> DID Pool Label (optional)
+                </Label>
+                <Select value={form.didLabel || "__all__"} onValueChange={v => setForm(p => ({ ...p, didLabel: v === "__all__" ? "" : v }))}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="All active DIDs" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">
+                      All Active DIDs
+                      <span className="ml-2 text-xs text-muted-foreground">({labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)</span>
+                    </SelectItem>
+                    {(didLabels || []).map(label => {
+                      const lc = labelCounts.find(c => c.label === label);
+                      return (
+                        <SelectItem key={label} value={label}>
+                          {label}
+                          <span className="ml-2 text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.didLabel
+                    ? `Only DIDs labeled "${form.didLabel}" will be used (${labelCounts.find(c => c.label === form.didLabel)?.count || 0} DIDs)`
+                    : `All active DIDs will be used for rotation (${labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* A/B Testing */}
@@ -896,6 +933,8 @@ export default function Campaigns() {
   const callScripts = trpc.callScripts.list.useQuery();
   const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
   const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
+  const { data: didLabels } = trpc.callerIds.getLabels.useQuery();
+  const { data: labelCounts = [] } = trpc.callerIds.labelCounts.useQuery();
 
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
@@ -1034,6 +1073,7 @@ export default function Campaigns() {
       messageText: c.messageText || "",
       ttsSpeed: c.ttsSpeed || "1.0",
       useDidRotation: !!c.useDidRotation,
+      didLabel: (c as any).didLabel || "",
       pacingMode: (c as any).pacingMode || "fixed",
       pacingTargetDropRate: (c as any).pacingTargetDropRate || 3,
       pacingMinConcurrent: (c as any).pacingMinConcurrent || 1,
@@ -1086,6 +1126,7 @@ export default function Campaigns() {
       messageText: editForm.usePersonalizedTTS ? editForm.messageText : undefined,
       ttsSpeed: editForm.ttsSpeed !== "1.0" ? editForm.ttsSpeed : undefined,
       useDidRotation: editForm.useDidRotation ? 1 : 0,
+      didLabel: editForm.useDidRotation && editForm.didLabel ? editForm.didLabel : null,
       pacingMode: editForm.pacingMode,
       pacingTargetDropRate: editForm.pacingMode !== "fixed" ? editForm.pacingTargetDropRate : undefined,
       pacingMinConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMinConcurrent : undefined,
@@ -1139,6 +1180,7 @@ export default function Campaigns() {
       messageText: form.usePersonalizedTTS ? form.messageText : undefined,
       ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
       useDidRotation: form.useDidRotation ? 1 : 0,
+      didLabel: form.useDidRotation && form.didLabel ? form.didLabel : null,
       pacingMode: form.pacingMode,
       pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
       pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
@@ -1349,7 +1391,7 @@ export default function Campaigns() {
                 )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
               </CardContent>
             </Card>
             <Card>
@@ -1404,6 +1446,8 @@ export default function Campaigns() {
               readyAudioFiles={readyAudioFiles}
               templates={templates.data}
               scripts={callScripts.data}
+              didLabels={didLabels || []}
+              labelCounts={labelCounts}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -1450,6 +1494,8 @@ export default function Campaigns() {
                 readyAudioFiles={readyAudioFiles}
                 templates={templates.data}
                 scripts={callScripts.data}
+                didLabels={didLabels || []}
+                labelCounts={labelCounts}
               />
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setCreateOpen(false); setForm({ ...DEFAULT_FORM }); }}>Cancel</Button>

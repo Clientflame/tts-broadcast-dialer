@@ -43,7 +43,7 @@ function createPublicContext() {
 }
 
 describe("onboarding.status", () => {
-  it("returns onboarding status with all 5 steps", async () => {
+  it("returns onboarding status with all 8 steps", async () => {
     const { ctx } = createAuthenticatedContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.onboarding.status();
@@ -52,8 +52,8 @@ describe("onboarding.status", () => {
     expect(result).toHaveProperty("completedCount");
     expect(result).toHaveProperty("totalSteps");
     expect(result).toHaveProperty("isComplete");
-    expect(result.totalSteps).toBe(5);
-    expect(result.steps).toHaveLength(5);
+    expect(result.totalSteps).toBe(8);
+    expect(result.steps).toHaveLength(8);
   });
 
   it("returns the correct step IDs in order", async () => {
@@ -62,7 +62,7 @@ describe("onboarding.status", () => {
     const result = await caller.onboarding.status();
 
     const stepIds = result.steps.map((s: any) => s.id);
-    expect(stepIds).toEqual(["account", "pbx", "callerIds", "contacts", "campaign"]);
+    expect(stepIds).toEqual(["account", "pbx", "callerIds", "contacts", "apiKeys", "voiceAiBridge", "campaign", "systemHealth"]);
   });
 
   it("always marks account step as completed for authenticated users", async () => {

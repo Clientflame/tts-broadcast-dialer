@@ -24,7 +24,7 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
 # ─── Version ────────────────────────────────────────────────────────────────
-AGENT_VERSION = "1.5.0"  # Bump this on every agent update
+AGENT_VERSION = "1.5.3"  # Bump this on every agent update
 AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer"]
 
 # ─── Configuration ───────────────────────────────────────────────────────────

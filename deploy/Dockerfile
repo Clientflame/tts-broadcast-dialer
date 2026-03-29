@@ -61,6 +61,10 @@ COPY --from=builder /app/dist ./dist
 COPY drizzle/ ./drizzle/
 COPY drizzle.config.ts ./
 
+# Copy PBX agent and Voice AI bridge scripts (served by installer endpoints)
+COPY pbx-agent/ ./pbx-agent/
+COPY voice-ai-bridge/ ./voice-ai-bridge/
+
 # Copy the entrypoint script
 COPY deploy/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

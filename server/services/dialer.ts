@@ -180,12 +180,13 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const updatedCampaign = await db.getCampaign(campaignId);
   if (!updatedCampaign) throw new Error("Campaign not found after update");
 
-  // Load caller IDs for DID rotation
+  // Load caller IDs for DID rotation (optionally filtered by label)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
-    callerIdPool = await db.getActiveCallerIds();
+    const didLabel = (campaign as any).didLabel || null;
+    callerIdPool = await db.getActiveCallerIds(didLabel);
     if (callerIdPool.length > 0) {
-      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs`);
+      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs${didLabel ? ` (label: "${didLabel}")` : ""}`);
     }
   }
 
@@ -260,6 +261,7 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
 
   const campaign = await db.getCampaign(campaignId);
   if (!campaign || campaign.status !== "running") {
+    console.log(`[Dialer] Campaign ${campaignId} status=${campaign?.status || 'not found'} — stopping dialer loop`);
     stopCampaignInternal(campaignId);
     return;
   }
@@ -709,9 +711,27 @@ function isWithinTimeWindow(start: string, end: string, timezone: string): boole
       minute: "2-digit",
       hour12: false,
     });
-    const currentTime = formatter.format(now);
-    return currentTime >= start && currentTime <= end;
-  } catch {
+    let currentTime = formatter.format(now);
+    // Intl may return "24:xx" for midnight in some environments — normalize to "00:xx"
+    if (currentTime.startsWith("24:")) {
+      currentTime = "00:" + currentTime.slice(3);
+    }
+    
+    let inWindow: boolean;
+    if (end >= start) {
+      // Normal window: e.g. 09:00 to 21:00
+      inWindow = currentTime >= start && currentTime <= end;
+    } else {
+      // Overnight window: e.g. 09:00 to 02:00 (spans midnight)
+      inWindow = currentTime >= start || currentTime <= end;
+    }
+    
+    if (!inWindow) {
+      console.log(`[Dialer] Outside time window: current=${currentTime} (${timezone}), window=${start}-${end}`);
+    }
+    return inWindow;
+  } catch (err) {
+    console.warn(`[Dialer] Time window check failed:`, err);
     return true;
   }
 }
@@ -747,11 +767,12 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     }
   }
 
-  // Load caller IDs
+  // Load caller IDs (optionally filtered by label)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
     try {
-      callerIdPool = await db.getActiveCallerIds();
+      const didLabel = (campaign as any).didLabel || null;
+      callerIdPool = await db.getActiveCallerIds(didLabel);
     } catch (err) {
       console.warn(`[Dialer Recovery] Could not load caller IDs for campaign ${campaignId}:`, err);
     }

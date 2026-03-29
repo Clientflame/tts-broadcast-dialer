@@ -42,9 +42,14 @@ export default function AiGenerator() {
     onError: (e) => toast.error(e.message),
   });
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
+  const copyToClipboard = async (text: string) => {
+    const { copyToClipboard: clipCopy } = await import("@/lib/clipboard");
+    const ok = await clipCopy(text);
+    if (ok) {
+      toast.success("Copied to clipboard");
+    } else {
+      toast.error("Failed to copy — please select the text and copy manually");
+    }
   };
 
   return (

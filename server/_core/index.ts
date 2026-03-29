@@ -12,6 +12,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { pbxRouter, installerRouter } from "../services/pbx-api";
 import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
+import { mountLocalStorageRoute } from "../storage";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -34,6 +35,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Trust proxy headers (required for Docker, Caddy, Nginx reverse proxies)
+  // Ensures req.protocol reads X-Forwarded-Proto correctly for secure cookie handling
+  app.set("trust proxy", 1);
   const server = createServer(app);
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -44,6 +48,8 @@ async function startServer() {
   app.use("/api/pbx", installerRouter);
   // Voice AI Bridge installer (no auth - uses API key in query param)
   app.use("/api/voice-ai", createVoiceAiInstallerRouter());
+  // Local filesystem storage route (self-hosted only, no-op when Forge is configured)
+  mountLocalStorageRoute(app);
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
   // tRPC API

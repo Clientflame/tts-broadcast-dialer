@@ -34,6 +34,7 @@ import {
   campaignTemplates, InsertCampaignTemplate,
   campaignSchedules, InsertCampaignSchedule,
   bridgeHealthChecks, InsertBridgeHealthCheck,
+  clientDeployments, InsertClientDeployment,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -785,9 +786,12 @@ export async function getCallerIds() {
   return db.select().from(callerIds).orderBy(desc(callerIds.createdAt));
 }
 
-export async function getActiveCallerIds() {
+export async function getActiveCallerIds(label?: string | null) {
   const db = await getDb();
   if (!db) return [];
+  if (label) {
+    return db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
+  }
   return db.select().from(callerIds).where(eq(callerIds.isActive, 1)).orderBy(callerIds.callCount);
 }
 
@@ -801,6 +805,13 @@ export async function deleteCallerId(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(callerIds).where(eq(callerIds.id, id));
+}
+
+export async function bulkUpdateCallerIds(ids: number[], data: { label?: string; isActive?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (ids.length === 0) return;
+  await db.update(callerIds).set(data).where(inArray(callerIds.id, ids));
 }
 
 export async function bulkDeleteCallerIds(ids: number[]) {
@@ -3397,4 +3408,56 @@ export async function getBridgeHealthStats() {
     avgResponseTime: Math.round(Number(stats?.avgResponseTime) || 0),
     uptimePercent: total > 0 ? Math.round((healthy / total) * 100) : 0,
   };
+}
+
+
+// ─── Client Deployments ─────────────────────────────────────────────────────
+
+export async function listClientDeployments() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(clientDeployments).orderBy(desc(clientDeployments.updatedAt));
+}
+
+export async function getClientDeployment(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(clientDeployments).where(eq(clientDeployments.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createClientDeployment(data: Omit<InsertClientDeployment, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(clientDeployments).values(data);
+  return result[0].insertId;
+}
+
+export async function updateClientDeployment(id: number, data: Partial<InsertClientDeployment>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(clientDeployments).set(data).where(eq(clientDeployments.id, id));
+}
+
+export async function deleteClientDeployment(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(clientDeployments).where(eq(clientDeployments.id, id));
+}
+
+export async function updateDeploymentHeartbeat(id: number, data: {
+  status?: "online" | "offline" | "degraded" | "maintenance" | "provisioning";
+  version?: string;
+  diskUsagePercent?: number;
+  memoryUsageMb?: number;
+  cpuUsagePercent?: number;
+  pbxAgentVersion?: string;
+  bridgeStatus?: "connected" | "disconnected" | "unknown";
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(clientDeployments).set({
+    ...data,
+    lastHeartbeat: Date.now(),
+  }).where(eq(clientDeployments.id, id));
 }
