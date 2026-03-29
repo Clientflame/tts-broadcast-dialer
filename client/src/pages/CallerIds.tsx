@@ -560,6 +560,53 @@ export default function CallerIds() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Vitelity DID import
+  const [showVitelityImport, setShowVitelityImport] = useState(false);
+  const [vitelitySelected, setVitelitySelected] = useState<Set<string>>(new Set());
+  const [vitelityLabel, setVitelityLabel] = useState("");
+  const [vitelityRouteEnabled, setVitelityRouteEnabled] = useState(true);
+  const [vitelityRouteDest, setVitelityRouteDest] = useState("none");
+  const [vitelityRouteDesc, setVitelityRouteDesc] = useState("TTS Dialer");
+  const [vitelityRouteCidPrefix, setVitelityRouteCidPrefix] = useState("");
+  const [vitelityImportProgress, setVitelityImportProgress] = useState<string | null>(null);
+
+  // Route conflict resolution state
+  type ConflictAction = "update" | "skip" | "keep";
+  type ConflictEntry = {
+    did: string;
+    existingRoute: { destination: string; description: string; cidPrefix: string };
+    newRoute: { destination: string; description: string; cidPrefix?: string };
+    action: ConflictAction;
+  };
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictEntry[]>([]);
+  const [conflictSource, setConflictSource] = useState<"bulk" | "vitelity">("bulk");
+  const [pendingNonConflictEntries, setPendingNonConflictEntries] = useState<any[]>([]);
+  const checkConflictsMut = trpc.callerIds.checkInboundRoutesDetailed.useMutation();
+
+  const { data: vitelityDIDs = [], isLoading: vitelityLoading, refetch: refetchVitelity, error: vitelityError } = trpc.callerIds.listVitelityDIDs.useQuery(undefined, {
+    enabled: showVitelityImport,
+    staleTime: 30000,
+    retry: false,
+  });
+  const vitelityImportMut = trpc.callerIds.importFromVitelity.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      const cidMsg = `${r.callerIds.count} DID(s) imported${r.callerIds.duplicatesOmitted > 0 ? ` (${r.callerIds.duplicatesOmitted} duplicates skipped)` : ""}`;
+      if (r.inboundRoutes) {
+        const rm = r.inboundRoutes.summary;
+        toast.success(`${cidMsg}. Routes: ${rm.created} created, ${rm.skipped} existing, ${rm.failed} failed`);
+      } else {
+        toast.success(cidMsg);
+      }
+      setShowVitelityImport(false);
+      setVitelitySelected(new Set());
+      setVitelityLabel("");
+      setVitelityImportProgress(null);
+    },
+    onError: (e) => { toast.error(e.message); setVitelityImportProgress(null); },
+  });
+
   // Parse FreePBX destination string to human-readable label
   const destToLabel = (dest: string): string => {
     if (!dest) return "Not set";
@@ -738,16 +785,57 @@ export default function CallerIds() {
     const hasRoutes = routeEntries.some(e => e.destination && e.destination !== "none");
 
     if (hasRoutes) {
-      bulkCreateWithRoutesMut.mutate({
-        entries: routeEntries.map(e => ({
-          phoneNumber: e.phoneNumber,
-          label: e.label,
-          inboundRoute: e.destination && e.destination !== "none" ? {
-            destination: e.destination,
-            description: e.description || "TTS Dialer",
-            cidPrefix: e.cidPrefix || undefined,
-          } : undefined,
-        })),
+      // Check for existing routes before creating
+      const didsWithRoutes = routeEntries.filter(e => e.destination && e.destination !== "none").map(e => e.phoneNumber);
+      checkConflictsMut.mutate({ dids: didsWithRoutes }, {
+        onSuccess: (existingRoutes) => {
+          const conflictList: ConflictEntry[] = [];
+          const nonConflictEntries = routeEntries.map(e => {
+            const existing = existingRoutes[e.phoneNumber];
+            if (existing && e.destination && e.destination !== "none") {
+              conflictList.push({
+                did: e.phoneNumber,
+                existingRoute: { destination: existing.destination, description: existing.description, cidPrefix: existing.cidPrefix },
+                newRoute: { destination: e.destination, description: e.description || "TTS Dialer", cidPrefix: e.cidPrefix || undefined },
+                action: "update",
+              });
+              return null; // Will be handled via conflict dialog
+            }
+            return {
+              phoneNumber: e.phoneNumber,
+              label: e.label,
+              inboundRoute: e.destination && e.destination !== "none" ? {
+                destination: e.destination,
+                description: e.description || "TTS Dialer",
+                cidPrefix: e.cidPrefix || undefined,
+              } : undefined,
+            };
+          }).filter(Boolean);
+
+          if (conflictList.length > 0) {
+            setConflicts(conflictList);
+            setConflictSource("bulk");
+            setPendingNonConflictEntries(nonConflictEntries);
+            setShowConflictDialog(true);
+          } else {
+            // No conflicts — proceed directly
+            bulkCreateWithRoutesMut.mutate({ entries: nonConflictEntries as any });
+          }
+        },
+        onError: () => {
+          // If conflict check fails, proceed anyway (best effort)
+          bulkCreateWithRoutesMut.mutate({
+            entries: routeEntries.map(e => ({
+              phoneNumber: e.phoneNumber,
+              label: e.label,
+              inboundRoute: e.destination && e.destination !== "none" ? {
+                destination: e.destination,
+                description: e.description || "TTS Dialer",
+                cidPrefix: e.cidPrefix || undefined,
+              } : undefined,
+            })),
+          });
+        },
       });
     } else {
       // Route toggle is on but no destinations selected — still create without routes
@@ -885,6 +973,9 @@ export default function CallerIds() {
             <input type="file" ref={fileRef} accept=".csv,.txt" className="hidden" onChange={handleCSVImport} />
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
               <Upload className="h-4 w-4 mr-1" /> Import CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setShowVitelityImport(true); setFetchDests(true); }}>
+              <ExternalLink className="h-4 w-4 mr-1" /> Import from Vitelity
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
@@ -1645,6 +1736,405 @@ export default function CallerIds() {
                 ) : (
                   <><Tag className="h-4 w-4 mr-1" /> Update Labels</>
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Vitelity DID Import Dialog */}
+        <Dialog open={showVitelityImport} onOpenChange={(open) => {
+          setShowVitelityImport(open);
+          if (!open) {
+            setVitelitySelected(new Set());
+            setVitelityLabel("");
+            setVitelityImportProgress(null);
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ExternalLink className="h-5 w-5" /> Import DIDs from Vitelity
+              </DialogTitle>
+              <DialogDescription>
+                Select DIDs from your Vitelity account to import. Already-existing DIDs will be skipped.
+              </DialogDescription>
+            </DialogHeader>
+
+            {vitelityLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                <span className="text-muted-foreground">Fetching DIDs from Vitelity...</span>
+              </div>
+            ) : vitelityError ? (
+              <div className="py-8 text-center">
+                <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-2" />
+                <p className="text-destructive font-medium">Failed to connect to Vitelity</p>
+                <p className="text-sm text-muted-foreground mt-1">{vitelityError.message}</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => refetchVitelity()}>
+                  <RefreshCw className="h-4 w-4 mr-1" /> Retry
+                </Button>
+              </div>
+            ) : vitelityDIDs.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No DIDs found on your Vitelity account.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-4 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={vitelitySelected.size === vitelityDIDs.length && vitelityDIDs.length > 0}
+                      onCheckedChange={(checked) => {
+                        if (checked) setVitelitySelected(new Set(vitelityDIDs.map(d => d.did)));
+                        else setVitelitySelected(new Set());
+                      }}
+                    />
+                    <span className="text-sm font-medium">
+                      {vitelitySelected.size > 0 ? `${vitelitySelected.size} of ${vitelityDIDs.length} selected` : `${vitelityDIDs.length} DIDs available`}
+                    </span>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => refetchVitelity()}>
+                    <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+                  </Button>
+                </div>
+
+                <div className="border rounded-md max-h-60 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr>
+                        <th className="p-2 w-8"></th>
+                        <th className="p-2 text-left font-medium">Phone Number</th>
+                        <th className="p-2 text-left font-medium">Rate Center</th>
+                        <th className="p-2 text-left font-medium">State</th>
+                        <th className="p-2 text-left font-medium">Rate/Min</th>
+                        <th className="p-2 text-left font-medium">Sub Account</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vitelityDIDs.map((d) => (
+                        <tr key={d.did} className={`border-t hover:bg-muted/30 cursor-pointer ${vitelitySelected.has(d.did) ? "bg-primary/5" : ""}`}
+                          onClick={() => {
+                            const next = new Set(vitelitySelected);
+                            if (next.has(d.did)) next.delete(d.did); else next.add(d.did);
+                            setVitelitySelected(next);
+                          }}>
+                          <td className="p-2">
+                            <Checkbox checked={vitelitySelected.has(d.did)} onCheckedChange={() => {}} />
+                          </td>
+                          <td className="p-2 font-mono">{d.did.length === 10 ? `(${d.did.slice(0,3)}) ${d.did.slice(3,6)}-${d.did.slice(6)}` : d.did}</td>
+                          <td className="p-2 text-muted-foreground">{d.rateCenter}</td>
+                          <td className="p-2 text-muted-foreground">{d.state}</td>
+                          <td className="p-2 text-muted-foreground">${d.ratePerMinute}</td>
+                          <td className="p-2 text-muted-foreground">{d.subAccount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Label */}
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium">Apply Label to All</Label>
+                    <Input
+                      placeholder="e.g., Vitelity Import, Sales, Region A"
+                      value={vitelityLabel}
+                      onChange={(e) => setVitelityLabel(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+
+                  {/* Inbound Route Config */}
+                  <div className="border rounded-lg p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Route className="h-4 w-4" />
+                        <Label className="text-sm font-medium">Create Inbound Routes on FreePBX</Label>
+                      </div>
+                      <Switch checked={vitelityRouteEnabled} onCheckedChange={setVitelityRouteEnabled} />
+                    </div>
+                    {vitelityRouteEnabled && (
+                      <div className="space-y-2 pl-6">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Destination</Label>
+                          {destsLoading ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground py-1">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Loading destinations...
+                            </div>
+                          ) : (
+                            <Select value={vitelityRouteDest} onValueChange={setVitelityRouteDest}>
+                              <SelectTrigger className="mt-1">
+                                <SelectValue placeholder="Select destination" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {destinations.map((d: any) => (
+                                  <SelectItem key={d.destination} value={d.destination}>
+                                    <span className="capitalize">{d.type}</span>: {d.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Description</Label>
+                            <Input value={vitelityRouteDesc} onChange={(e) => setVitelityRouteDesc(e.target.value)} className="mt-1" />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">CID Prefix (optional)</Label>
+                            <Input value={vitelityRouteCidPrefix} onChange={(e) => setVitelityRouteCidPrefix(e.target.value)} placeholder="e.g., [VIT]" className="mt-1" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress */}
+                {vitelityImportProgress && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-md p-3">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {vitelityImportProgress}
+                  </div>
+                )}
+              </>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowVitelityImport(false)} disabled={vitelityImportMut.isPending}>
+                Cancel
+              </Button>
+              <Button
+                disabled={vitelitySelected.size === 0 || vitelityImportMut.isPending || (vitelityRouteEnabled && vitelityRouteDest === "none")}
+                onClick={() => {
+                  const selectedDids = Array.from(vitelitySelected);
+                  const dids = selectedDids.map(did => ({
+                    phoneNumber: did,
+                    label: vitelityLabel || undefined,
+                    inboundRoute: vitelityRouteEnabled && vitelityRouteDest !== "none" ? {
+                      destination: vitelityRouteDest,
+                      description: vitelityRouteDesc || "TTS Dialer",
+                      cidPrefix: vitelityRouteCidPrefix || undefined,
+                    } : undefined,
+                  }));
+
+                  // If routes are enabled, check for conflicts first
+                  if (vitelityRouteEnabled && vitelityRouteDest !== "none") {
+                    setVitelityImportProgress("Checking for existing routes...");
+                    checkConflictsMut.mutate({ dids: selectedDids }, {
+                      onSuccess: (existingRoutes) => {
+                        const conflictList: ConflictEntry[] = [];
+                        const nonConflictDids = dids.filter(d => {
+                          const existing = existingRoutes[d.phoneNumber];
+                          if (existing && d.inboundRoute) {
+                            conflictList.push({
+                              did: d.phoneNumber,
+                              existingRoute: { destination: existing.destination, description: existing.description, cidPrefix: existing.cidPrefix },
+                              newRoute: { destination: d.inboundRoute.destination, description: d.inboundRoute.description || "TTS Dialer", cidPrefix: d.inboundRoute.cidPrefix },
+                              action: "update",
+                            });
+                            return false;
+                          }
+                          return true;
+                        });
+
+                        if (conflictList.length > 0) {
+                          setVitelityImportProgress(null);
+                          setConflicts(conflictList);
+                          setConflictSource("vitelity");
+                          // Store non-conflict entries for after conflict resolution
+                          setPendingNonConflictEntries(nonConflictDids);
+                          setShowConflictDialog(true);
+                        } else {
+                          setVitelityImportProgress(`Importing ${dids.length} DID(s) and creating inbound routes...`);
+                          vitelityImportMut.mutate({ dids });
+                        }
+                      },
+                      onError: () => {
+                        // If conflict check fails, proceed anyway
+                        setVitelityImportProgress(`Importing ${dids.length} DID(s) and creating inbound routes...`);
+                        vitelityImportMut.mutate({ dids });
+                      },
+                    });
+                  } else {
+                    setVitelityImportProgress("Importing DIDs...");
+                    vitelityImportMut.mutate({ dids });
+                  }
+                }}
+              >
+                {vitelityImportMut.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Importing...</>
+                ) : (
+                  <><Download className="h-4 w-4 mr-1" /> Import {vitelitySelected.size} DID(s)</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Route Conflict Resolution Dialog */}
+        <Dialog open={showConflictDialog} onOpenChange={(open) => {
+          if (!open) { setShowConflictDialog(false); setConflicts([]); setPendingNonConflictEntries([]); }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" /> Route Conflicts Detected
+              </DialogTitle>
+              <DialogDescription>
+                {conflicts.length} DID(s) already have inbound routes on FreePBX. Choose how to handle each one.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Quick actions */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Set all to:</span>
+              <Button variant="outline" size="sm" onClick={() => setConflicts(conflicts.map(c => ({ ...c, action: "update" })))}>
+                <RefreshCw className="h-3 w-3 mr-1" /> Update All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setConflicts(conflicts.map(c => ({ ...c, action: "skip" })))}>
+                <X className="h-3 w-3 mr-1" /> Skip All
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setConflicts(conflicts.map(c => ({ ...c, action: "keep" })))}>
+                <Check className="h-3 w-3 mr-1" /> Keep All Existing
+              </Button>
+            </div>
+
+            <div className="border rounded-md max-h-80 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left font-medium">DID</th>
+                    <th className="p-2 text-left font-medium">Existing Route</th>
+                    <th className="p-2 text-left font-medium">New Route</th>
+                    <th className="p-2 text-left font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {conflicts.map((c, idx) => {
+                    const existDestName = destinations.find((d: any) => d.destination === c.existingRoute.destination)?.name || c.existingRoute.destination;
+                    const newDestName = destinations.find((d: any) => d.destination === c.newRoute.destination)?.name || c.newRoute.destination;
+                    return (
+                      <tr key={c.did} className="border-t">
+                        <td className="p-2 font-mono">
+                          {c.did.length === 10 ? `(${c.did.slice(0,3)}) ${c.did.slice(3,6)}-${c.did.slice(6)}` : c.did}
+                        </td>
+                        <td className="p-2">
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Dest:</span> {existDestName}
+                          </div>
+                          {c.existingRoute.description && (
+                            <div className="text-xs text-muted-foreground">{c.existingRoute.description}</div>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          <div className="text-xs">
+                            <span className="text-muted-foreground">Dest:</span> {newDestName}
+                          </div>
+                          {c.newRoute.description && (
+                            <div className="text-xs text-muted-foreground">{c.newRoute.description}</div>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          <Select value={c.action} onValueChange={(val) => {
+                            const updated = [...conflicts];
+                            updated[idx] = { ...c, action: val as ConflictAction };
+                            setConflicts(updated);
+                          }}>
+                            <SelectTrigger className="w-[130px] h-8 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="update">
+                                <span className="flex items-center gap-1"><RefreshCw className="h-3 w-3" /> Update</span>
+                              </SelectItem>
+                              <SelectItem value="skip">
+                                <span className="flex items-center gap-1"><X className="h-3 w-3" /> Skip</span>
+                              </SelectItem>
+                              <SelectItem value="keep">
+                                <span className="flex items-center gap-1"><Check className="h-3 w-3" /> Keep Existing</span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p><strong>Update</strong> — Replace the existing route with the new destination</p>
+              <p><strong>Skip</strong> — Don't create a route for this DID (DID still gets imported)</p>
+              <p><strong>Keep Existing</strong> — Keep the current route as-is (DID still gets imported)</p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setShowConflictDialog(false); setConflicts([]); setPendingNonConflictEntries([]); }}>
+                Cancel Import
+              </Button>
+              <Button onClick={async () => {
+                setShowConflictDialog(false);
+
+                // Process conflicts: update routes that user chose to update
+                const toUpdate = conflicts.filter(c => c.action === "update");
+                const toSkip = conflicts.filter(c => c.action === "skip" || c.action === "keep");
+
+                // Update existing routes
+                let updateCount = 0;
+                for (const c of toUpdate) {
+                  try {
+                    await utils.client.callerIds.updateInboundRoute.mutate({
+                      did: c.did,
+                      destination: c.newRoute.destination,
+                      description: c.newRoute.description,
+                      cidPrefix: c.newRoute.cidPrefix || undefined,
+                    });
+                    updateCount++;
+                  } catch (e) {
+                    console.error(`Failed to update route for ${c.did}:`, e);
+                  }
+                }
+
+                if (updateCount > 0) toast.success(`Updated ${updateCount} existing route(s)`);
+                if (toSkip.length > 0) toast.info(`Skipped/kept ${toSkip.length} existing route(s)`);
+
+                // Now proceed with non-conflict entries
+                if (conflictSource === "vitelity") {
+                  // For Vitelity imports, use the vitelity import mutation
+                  const allConflictDids = conflicts.map(c => ({
+                    phoneNumber: c.did,
+                    label: vitelityLabel || undefined,
+                    inboundRoute: undefined as any, // Routes already handled above
+                  }));
+                  const allDids = [...(pendingNonConflictEntries as any[]), ...allConflictDids];
+                  if (allDids.length > 0) {
+                    setVitelityImportProgress(`Importing ${allDids.length} DID(s)...`);
+                    vitelityImportMut.mutate({ dids: allDids });
+                  }
+                } else {
+                  // For bulk add
+                  if (pendingNonConflictEntries.length > 0) {
+                    setBulkProgress({ stage: "adding", count: pendingNonConflictEntries.length });
+                    bulkCreateWithRoutesMut.mutate({ entries: pendingNonConflictEntries as any });
+                  } else {
+                    // All entries were conflicts — just create the DIDs without routes
+                    const allDids = conflicts.map(c => c.did);
+                    const entries = allDids.map(did => {
+                      const entry = bulkRouteEntries.find(e => e.phoneNumber === did);
+                      return { phoneNumber: did, label: entry?.label };
+                    });
+                    if (entries.length > 0) bulkCreateMut.mutate({ entries });
+                  }
+                }
+
+                setConflicts([]);
+                setPendingNonConflictEntries([]);
+              }}>
+                <Check className="h-4 w-4 mr-1" /> Proceed with Import
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -244,13 +244,20 @@ export async function fetchFreePBXDestinations(): Promise<FreePBXDestination[]> 
  * Check which DIDs already have inbound routes on FreePBX.
  */
 export async function checkExistingRoutes(dids: string[]): Promise<Map<string, boolean>> {
-  const config = await getSSHConfig();
+  const detailed = await checkExistingRoutesDetailed(dids);
   const result = new Map<string, boolean>();
+  for (const did of dids) result.set(did, detailed.has(did));
+  return result;
+}
+
+/**
+ * Check which DIDs already have inbound routes on FreePBX, returning full route details.
+ */
+export async function checkExistingRoutesDetailed(dids: string[]): Promise<Map<string, ExistingInboundRoute>> {
+  const config = await getSSHConfig();
+  const result = new Map<string, ExistingInboundRoute>();
   
   if (dids.length === 0) return result;
-
-  // Initialize all as false
-  for (const did of dids) result.set(did, false);
 
   const mysqlCmd = (query: string) =>
     `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
@@ -260,10 +267,19 @@ export async function checkExistingRoutes(dids: string[]): Promise<Map<string, b
   try {
     const didList = dids.map(d => `'${d.replace(/'/g, "")}'`).join(",");
     const { stdout } = await sshExec(config, mysqlCmd(
-      `SELECT extension FROM incoming WHERE extension IN (${didList})`
+      `SELECT extension, description, destination, pricid FROM incoming WHERE extension IN (${didList})`
     ));
     for (const line of stdout.trim().split("\n").filter(Boolean)) {
-      result.set(line.trim(), true);
+      const parts = line.split("\t");
+      const did = parts[0]?.trim();
+      if (did) {
+        result.set(did, {
+          did,
+          description: parts[1] || "",
+          destination: parts[2] || "",
+          cidPrefix: parts[3] || "",
+        });
+      }
     }
   } catch (e) {
     console.error("[FreePBX Routes] Error checking existing routes:", e);

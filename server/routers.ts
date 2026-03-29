@@ -21,7 +21,7 @@ import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
-import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, updateInboundRoute } from "./services/freepbx-routes";
+import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -1254,6 +1254,18 @@ export const appRouter = router({
       return Object.fromEntries(existing);
     }),
 
+    /** Check which DIDs have inbound routes, returning full route details for conflict resolution */
+    checkInboundRoutesDetailed: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(1000),
+    })).mutation(async ({ input }) => {
+      const existing = await checkExistingRoutesDetailed(input.dids);
+      const result: Record<string, { did: string; description: string; destination: string; cidPrefix: string }> = {};
+      existing.forEach((route, did) => {
+        result[did] = route;
+      });
+      return result;
+    }),
+
     /** Create inbound routes on FreePBX for imported DIDs */
     createInboundRoutes: adminProcedure.input(z.object({
       routes: z.array(z.object({
@@ -1375,6 +1387,77 @@ export const appRouter = router({
         details: { did: input.did, updates: { destination: input.destination, description: input.description, cidPrefix: input.cidPrefix } },
       });
       return result;
+    }),
+
+    // ─── Vitelity DID Import ─────────────────────────────────────────────
+
+    /** Test Vitelity API connection */
+    testVitelityConnection: adminProcedure.query(async () => {
+      const { testVitelityConnection } = await import("./services/vitelity");
+      return testVitelityConnection();
+    }),
+
+    /** Fetch all DIDs from Vitelity account */
+    listVitelityDIDs: adminProcedure.query(async () => {
+      const { listVitelityDIDs } = await import("./services/vitelity");
+      const dids = await listVitelityDIDs();
+      return dids;
+    }),
+
+    /** Import selected DIDs from Vitelity into our system (with optional inbound routes) */
+    importFromVitelity: adminProcedure.input(z.object({
+      dids: z.array(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        label: z.string().max(255).optional(),
+        inboundRoute: z.object({
+          destination: z.string().min(1),
+          description: z.string().max(255).default("TTS Dialer"),
+          cidPrefix: z.string().max(50).optional(),
+        }).optional(),
+      })).min(1).max(1000),
+    })).mutation(async ({ ctx, input }) => {
+      // Step 1: Create caller IDs in our database
+      const callerIdData = input.dids.map(d => ({
+        phoneNumber: d.phoneNumber,
+        label: d.label,
+        userId: ctx.user.id,
+      }));
+      const callerIdResult = await db.bulkCreateCallerIds(callerIdData);
+
+      // Step 2: Create inbound routes on FreePBX for entries that have route config
+      const routeEntries = input.dids.filter(d => d.inboundRoute);
+      let routeResults = null;
+      if (routeEntries.length > 0) {
+        const routes = routeEntries.map(d => ({
+          did: d.phoneNumber,
+          destination: d.inboundRoute!.destination,
+          description: d.inboundRoute!.description,
+          cidPrefix: d.inboundRoute?.cidPrefix,
+        }));
+        const results = await createInboundRoutes(routes);
+        const created = results.filter(r => r.success && !r.alreadyExists).length;
+        const skipped = results.filter(r => r.alreadyExists).length;
+        const failed = results.filter(r => !r.success).length;
+        routeResults = { results, summary: { created, skipped, failed } };
+      }
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.importFromVitelity",
+        resource: "callerId",
+        details: {
+          callerIds: callerIdResult.count,
+          dupes: callerIdResult.duplicatesOmitted,
+          routes: routeResults?.summary || null,
+          source: "vitelity",
+        },
+      });
+
+      return {
+        callerIds: callerIdResult,
+        inboundRoutes: routeResults,
+      };
     }),
   }),
 

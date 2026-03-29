@@ -793,3 +793,8 @@
 - [x] Single DID add with inbound route — extend Add Caller ID dialog with route config
 - [x] Backend createWithRoute procedure for single DID + route creation
 - [x] Progress indicator for bulk add with routes — show progress during SSH operations (28 tests)
+- [x] Vitelity/Voyant DID import — backend service to fetch DIDs from Vitelity API
+- [x] Vitelity API credentials management (VITELITY_API_LOGIN/VITELITY_API_PASS env vars)
+- [x] Frontend DID import from Vitelity UI — browse and select DIDs to import
+- [x] Per-DID route conflict resolution dialog — when importing DIDs with routes, show conflicts and let user choose per-DID (Update / Skip / Keep existing)
+- [x] Vitest tests for Vitelity import and conflict resolution (40 tests)
