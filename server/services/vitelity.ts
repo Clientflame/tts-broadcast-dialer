@@ -154,3 +154,274 @@ export async function testVitelityConnection(): Promise<{ success: boolean; mess
     return { success: false, message: err.message || "Connection failed" };
   }
 }
+
+/**
+ * Parse a simple Vitelity text response (success/error/data after [[).
+ */
+function parseSimpleResponse(body: string): { success: boolean; data: string } {
+  const match = body.match(/\[\[([\s\S]*)/);
+  if (!match) return { success: false, data: body.trim() };
+  const data = match[1].replace(/\]\].*/, "").trim();
+  if (data === "success") return { success: true, data: "success" };
+  // Check for known error codes
+  const errors = ["missingdata", "invalidauth", "invalid", "missingrc", "unavailable", "none", "missingdid"];
+  if (errors.includes(data)) return { success: false, data };
+  return { success: true, data };
+}
+
+// ─── DID Purchasing ───────────────────────────────────────────────
+
+export interface AvailableState {
+  state: string;
+  name: string;
+}
+
+export interface AvailableRateCenter {
+  rateCenter: string;
+  state: string;
+}
+
+export interface AvailableDID {
+  did: string;
+  rateCenter: string;
+  state: string;
+  ratePerMinute: string;
+  ratePerMonth: string;
+  type: string;
+}
+
+/**
+ * List states with available DIDs for purchase.
+ * cmd=listavailstates&type=perminute
+ * Returns newline-separated state codes
+ */
+export async function listAvailableStates(type: string = "perminute"): Promise<string[]> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "listavailstates", type });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (!success) throw new Error(`Vitelity error: ${data}`);
+  return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+}
+
+/**
+ * List available rate centers in a state.
+ * cmd=listavailratecenters&state=XX
+ * Returns newline-separated rate center names
+ */
+export async function listAvailableRateCenters(state: string): Promise<string[]> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "listavailratecenters", state: state.toUpperCase() });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (!success) throw new Error(`Vitelity error: ${data}`);
+  return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+}
+
+/**
+ * Search available local DIDs for purchase.
+ * cmd=listlocal&state=XX&ratecenter=XXXX&withrates=yes&type=perminute
+ * Returns CSV: DID,RATECENTER,RATE_PER_MINUTE,RATE_PER_MONTH
+ */
+export async function searchAvailableDIDs(
+  state: string,
+  rateCenter?: string,
+  type: string = "perminute"
+): Promise<AvailableDID[]> {
+  const { login, pass } = getCredentials();
+  const paramObj: Record<string, string> = {
+    login, pass, cmd: "listlocal",
+    state: state.toUpperCase(),
+    withrates: "yes",
+    type,
+  };
+  if (rateCenter) paramObj.ratecenter = rateCenter;
+  const params = new URLSearchParams(paramObj);
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (!success) {
+    if (data === "none" || data === "unavailable") return [];
+    throw new Error(`Vitelity error: ${data}`);
+  }
+  const lines = data.split("\n").filter(l => l.trim());
+  return lines.map(line => {
+    const parts = line.trim().split(",");
+    return {
+      did: parts[0]?.trim() || "",
+      rateCenter: parts[1]?.trim() || rateCenter || "",
+      ratePerMinute: parts[2]?.trim() || "",
+      ratePerMonth: parts[3]?.trim() || "",
+      state: state.toUpperCase(),
+      type,
+    };
+  }).filter(d => d.did.length >= 10);
+}
+
+/**
+ * Purchase a local DID.
+ * cmd=getlocaldid&did=XXXXXXXXXX&type=perminute
+ * Returns "success" on successful purchase.
+ */
+export async function purchaseDID(
+  did: string,
+  type: string = "perminute"
+): Promise<{ success: boolean; message: string }> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "getlocaldid", did, type });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success) {
+    return { success: true, message: `DID ${did} purchased successfully` };
+  }
+  const errorMessages: Record<string, string> = {
+    missingdata: "Missing required parameters",
+    invalidauth: "Invalid Vitelity credentials",
+    invalid: "Invalid DID number",
+    unavailable: "DID is no longer available",
+    none: "DID not found",
+  };
+  return { success: false, message: errorMessages[data] || `Purchase failed: ${data}` };
+}
+
+/**
+ * Route a DID to a SIP endpoint.
+ * cmd=reroute&did=XXXXXXXXXX&routesip=sip.server.com
+ */
+export async function routeDID(
+  did: string,
+  routeSip: string
+): Promise<{ success: boolean; message: string }> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "reroute", did, routesip: routeSip });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success) return { success: true, message: `DID ${did} routed to ${routeSip}` };
+  return { success: false, message: `Routing failed: ${data}` };
+}
+
+/**
+ * Remove/release a DID from the account.
+ * cmd=removedid&did=XXXXXXXXXX
+ */
+export async function removeDID(
+  did: string
+): Promise<{ success: boolean; message: string }> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "removedid", did });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success) return { success: true, message: `DID ${did} removed from account` };
+  return { success: false, message: `Remove failed: ${data}` };
+}
+
+// ─── CNAM Lookup ──────────────────────────────────────────────────
+
+export interface CnamResult {
+  did: string;
+  name: string;
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Perform a CNAM (Caller ID Name) lookup on a phone number.
+ * cmd=cnam&did=XXXXXXXXXX
+ * Returns the caller name associated with the number.
+ * This is a paid service - charged per lookup.
+ */
+export async function cnamLookup(did: string): Promise<CnamResult> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "cnam", did });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success && data !== "success") {
+    return { did, name: data, success: true };
+  }
+  if (!success) {
+    return { did, name: "", success: false, error: data };
+  }
+  return { did, name: "", success: true };
+}
+
+/**
+ * Set the LIDB (Caller ID Name) for a DID you own.
+ * cmd=lidb&did=XXXXXXXXXX&name=YourBusinessName
+ */
+export async function setLidb(
+  did: string,
+  name: string
+): Promise<{ success: boolean; message: string }> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "lidb", did, name });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (success) return { success: true, message: `LIDB set for ${did}: ${name}` };
+  return { success: false, message: `LIDB failed: ${data}` };
+}
+
+/**
+ * List all DIDs where LIDB/CNAM name change is available.
+ * cmd=lidbavailall
+ */
+export async function listLidbAvailable(): Promise<string[]> {
+  const { login, pass } = getCredentials();
+  const params = new URLSearchParams({ login, pass, cmd: "lidbavailall" });
+  const response = await fetch(VITELITY_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  if (!response.ok) throw new Error(`Vitelity API HTTP error: ${response.status}`);
+  const body = await response.text();
+  const { success, data } = parseSimpleResponse(body);
+  if (!success) return [];
+  return data.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+}

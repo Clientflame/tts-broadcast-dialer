@@ -304,6 +304,9 @@ export const callerIds = mysqlTable("caller_ids", {
   flaggedAt: bigint("flaggedAt", { mode: "number" }),
   flagReason: varchar("flagReason", { length: 255 }),
   cooldownUntil: bigint("cooldownUntil", { mode: "number" }),
+  // CNAM lookup fields
+  cnamName: varchar("cnamName", { length: 255 }),
+  cnamLookedUpAt: bigint("cnamLookedUpAt", { mode: "number" }),
 });
 
 export type CallerId = typeof callerIds.$inferSelect;

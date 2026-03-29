@@ -798,3 +798,14 @@
 - [x] Frontend DID import from Vitelity UI — browse and select DIDs to import
 - [x] Per-DID route conflict resolution dialog — when importing DIDs with routes, show conflicts and let user choose per-DID (Update / Skip / Keep existing)
 - [x] Vitest tests for Vitelity import and conflict resolution (40 tests)
+- [x] Vitelity DID purchasing — search available DIDs by state/area code/rate center
+- [x] Backend: Vitelity searchAvailableDIDs, purchaseDID, bulkPurchaseDIDs, routeDID, removeDID, getVitelityBalance
+- [x] Backend: Purchase DID via Vitelity API (getlocaldid command)
+- [x] Frontend: DID purchasing UI — state → rate center → search → select → purchase with routing
+- [x] Auto-create inbound route on FreePBX after purchasing a DID
+- [x] Auto-add purchased DID to Caller IDs table with label
+- [x] Incoming CNAM lookup — per-DID lookup button and bulk CNAM in selection toolbar
+- [x] Backend: cnamLookup, bulkCnamLookup, setLidb procedures with DB persistence
+- [x] Frontend: CNAM column in table, per-DID lookup button ($0.01/lookup), bulk CNAM lookup
+- [x] Database: cnamName and cnamLookedUpAt columns on callerIds
+- [x] Vitest tests for DID purchasing and CNAM lookup (39 tests)

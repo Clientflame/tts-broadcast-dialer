@@ -584,6 +584,19 @@ export default function CallerIds() {
   const [pendingNonConflictEntries, setPendingNonConflictEntries] = useState<any[]>([]);
   const checkConflictsMut = trpc.callerIds.checkInboundRoutesDetailed.useMutation();
 
+  // DID Purchase state
+  const [showPurchase, setShowPurchase] = useState(false);
+  const [purchaseStep, setPurchaseStep] = useState<"search" | "results" | "confirm">("search");
+  const [purchaseState, setPurchaseState] = useState("");
+  const [purchaseRateCenter, setPurchaseRateCenter] = useState("");
+  const [purchaseSelected, setPurchaseSelected] = useState<Set<string>>(new Set());
+  const [purchaseLabel, setPurchaseLabel] = useState("");
+  const [purchaseRouteEnabled, setPurchaseRouteEnabled] = useState(true);
+  const [purchaseRouteDest, setPurchaseRouteDest] = useState("none");
+  const [purchaseRouteDesc, setPurchaseRouteDesc] = useState("TTS Dialer");
+  const [purchaseRouteSip, setPurchaseRouteSip] = useState("");
+  const [purchaseProgress, setPurchaseProgress] = useState<string | null>(null);
+
   const { data: vitelityDIDs = [], isLoading: vitelityLoading, refetch: refetchVitelity, error: vitelityError } = trpc.callerIds.listVitelityDIDs.useQuery(undefined, {
     enabled: showVitelityImport,
     staleTime: 30000,
@@ -605,6 +618,63 @@ export default function CallerIds() {
       setVitelityImportProgress(null);
     },
     onError: (e) => { toast.error(e.message); setVitelityImportProgress(null); },
+  });
+
+  // DID Purchase queries and mutations
+  const { data: availableStates = [], isLoading: statesLoading } = trpc.callerIds.availableStates.useQuery(undefined, {
+    enabled: showPurchase,
+    staleTime: 60000,
+    retry: false,
+  });
+  const { data: availableRateCenters = [], isLoading: rateCentersLoading } = trpc.callerIds.availableRateCenters.useQuery(
+    { state: purchaseState },
+    { enabled: showPurchase && purchaseState.length === 2, staleTime: 60000, retry: false }
+  );
+  const { data: availableDIDs = [], isLoading: didsSearchLoading } = trpc.callerIds.searchAvailableDIDs.useQuery(
+    { state: purchaseState, rateCenter: purchaseRateCenter || undefined },
+    { enabled: showPurchase && purchaseStep === "results" && purchaseState.length === 2, staleTime: 30000, retry: false }
+  );
+  const { data: vitelityBalance } = trpc.callerIds.vitelityBalance.useQuery(undefined, {
+    enabled: showPurchase,
+    staleTime: 30000,
+  });
+  const bulkPurchaseMut = trpc.callerIds.bulkPurchaseDIDs.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      const purchased = r.results.filter(x => x.purchased).length;
+      const failed = r.results.filter(x => !x.purchased).length;
+      if (failed > 0) {
+        toast.warning(`${purchased} DID(s) purchased, ${failed} failed`);
+      } else {
+        toast.success(`${purchased} DID(s) purchased and added`);
+      }
+      setShowPurchase(false);
+      setPurchaseSelected(new Set());
+      setPurchaseStep("search");
+      setPurchaseProgress(null);
+    },
+    onError: (e) => { toast.error(e.message); setPurchaseProgress(null); },
+  });
+
+  // CNAM lookup mutations
+  const cnamLookupMut = trpc.callerIds.cnamLookup.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      if (r.success && r.name) {
+        toast.success(`CNAM: ${r.name}`);
+      } else {
+        toast.info(`CNAM lookup returned no name for ${r.did}`);
+      }
+    },
+    onError: (e) => toast.error(`CNAM lookup failed: ${e.message}`),
+  });
+  const bulkCnamLookupMut = trpc.callerIds.bulkCnamLookup.useMutation({
+    onSuccess: (results) => {
+      utils.callerIds.list.invalidate();
+      const found = results.filter(r => r.success && r.name).length;
+      toast.success(`CNAM lookup complete: ${found} of ${results.length} names found`);
+    },
+    onError: (e) => toast.error(`Bulk CNAM lookup failed: ${e.message}`),
   });
 
   // Parse FreePBX destination string to human-readable label
@@ -964,6 +1034,19 @@ export default function CallerIds() {
                 <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate({ ids: Array.from(selected) })} disabled={healthCheckMut.isPending}>
                   <Activity className="h-4 w-4 mr-1" /> Check {selected.size}
                 </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const ids = Array.from(selected);
+                  const dids = callerIds.filter(c => ids.includes(c.id)).map(c => ({
+                    did: c.phoneNumber.replace(/^1/, ""),
+                    callerIdId: c.id,
+                  }));
+                  bulkCnamLookupMut.mutate({ dids });
+                }} disabled={bulkCnamLookupMut.isPending}>
+                  {bulkCnamLookupMut.isPending
+                    ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Looking up...</>
+                    : <><Search className="h-4 w-4 mr-1" /> CNAM Lookup ({selected.size})</>
+                  }
+                </Button>
               </>
             )}
             <Button variant="outline" size="sm" onClick={() => healthCheckMut.mutate()} disabled={healthCheckMut.isPending}>
@@ -976,6 +1059,9 @@ export default function CallerIds() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => { setShowVitelityImport(true); setFetchDests(true); }}>
               <ExternalLink className="h-4 w-4 mr-1" /> Import from Vitelity
+            </Button>
+            <Button variant="default" size="sm" onClick={() => { setShowPurchase(true); setFetchDests(true); setPurchaseStep("search"); }}>
+              <Phone className="h-4 w-4 mr-1" /> Purchase DIDs
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
@@ -1376,19 +1462,20 @@ export default function CallerIds() {
                     <th className="p-3 text-left">Date Added</th>
                     <th className="p-3 text-left">Calls Made</th>
                     <th className="p-3 text-left">Last Used</th>
+                    <th className="p-3 text-left">CNAM</th>
                     <th className="p-3 text-right min-w-[100px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
+                    <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
                   ) : callerIds.length === 0 ? (
-                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">
+                    <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No caller IDs yet. Add DIDs to enable caller ID rotation.
                     </td></tr>
                   ) : filteredCallerIds.length === 0 ? (
-                    <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">
+                    <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">
                       <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No caller IDs match your search or filter.
                     </td></tr>
@@ -1433,6 +1520,48 @@ export default function CallerIds() {
                       <td className="p-3 font-medium">{cid.callCount}</td>
                       <td className="p-3 text-muted-foreground">
                         {cid.lastUsedAt ? new Date(cid.lastUsedAt).toLocaleString() : "Never"}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1">
+                          {(cid as any).cnamName ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="outline" className="text-xs max-w-[120px] truncate cursor-help">
+                                    {(cid as any).cnamName}
+                                  </Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{(cid as any).cnamName}</p>
+                                  {(cid as any).cnamLookedUpAt && (
+                                    <p className="text-xs text-muted-foreground">Looked up: {new Date((cid as any).cnamLookedUpAt).toLocaleString()}</p>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  onClick={() => {
+                                    const did = cid.phoneNumber.replace(/^1/, "");
+                                    cnamLookupMut.mutate({ did, callerIdId: cid.id });
+                                  }}
+                                  disabled={cnamLookupMut.isPending}
+                                >
+                                  <Search className="h-3 w-3" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>CNAM Lookup ($0.01/lookup)</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -2137,6 +2266,244 @@ export default function CallerIds() {
                 <Check className="h-4 w-4 mr-1" /> Proceed with Import
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {/* Purchase DIDs Dialog */}
+        <Dialog open={showPurchase} onOpenChange={(open) => {
+          setShowPurchase(open);
+          if (!open) {
+            setPurchaseStep("search");
+            setPurchaseState("");
+            setPurchaseRateCenter("");
+            setPurchaseSelected(new Set());
+            setPurchaseLabel("");
+            setPurchaseRouteEnabled(true);
+            setPurchaseRouteDest("none");
+            setPurchaseRouteDesc("TTS Dialer");
+            setPurchaseRouteSip("");
+            setPurchaseProgress(null);
+          }
+        }}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Phone className="h-5 w-5" /> Purchase DIDs from Vitelity
+              </DialogTitle>
+              <DialogDescription>
+                Search and purchase new phone numbers from your Vitelity account.
+                {vitelityBalance && <span className="ml-2 font-medium text-green-600">Balance: ${vitelityBalance}</span>}
+              </DialogDescription>
+            </DialogHeader>
+
+            {purchaseStep === "search" && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>State</Label>
+                    <Select value={purchaseState} onValueChange={(v) => { setPurchaseState(v); setPurchaseRateCenter(""); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={statesLoading ? "Loading states..." : "Select state"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {availableStates.map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Rate Center (optional)</Label>
+                    <Select value={purchaseRateCenter} onValueChange={setPurchaseRateCenter} disabled={!purchaseState}>
+                      <SelectTrigger>
+                        <SelectValue placeholder={rateCentersLoading ? "Loading..." : "All rate centers"} />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        <SelectItem value="all">All Rate Centers</SelectItem>
+                        {availableRateCenters.map(rc => (
+                          <SelectItem key={rc} value={rc}>{rc}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setPurchaseStep("results")}
+                  disabled={!purchaseState}
+                  className="w-full"
+                >
+                  <Search className="h-4 w-4 mr-2" /> Search Available DIDs
+                </Button>
+              </div>
+            )}
+
+            {purchaseStep === "results" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Button variant="ghost" size="sm" onClick={() => setPurchaseStep("search")}>
+                    <ArrowRight className="h-4 w-4 mr-1 rotate-180" /> Back to Search
+                  </Button>
+                  <Badge variant="secondary">
+                    {didsSearchLoading ? "Searching..." : `${availableDIDs.length} DID(s) found`}
+                  </Badge>
+                </div>
+
+                {didsSearchLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" /> Searching available DIDs...
+                  </div>
+                ) : availableDIDs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No DIDs available for this state/rate center. Try a different search.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Checkbox
+                        checked={purchaseSelected.size === availableDIDs.length && availableDIDs.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setPurchaseSelected(new Set(availableDIDs.map(d => d.did)));
+                          } else {
+                            setPurchaseSelected(new Set());
+                          }
+                        }}
+                      />
+                      <span className="text-sm text-muted-foreground">Select all ({availableDIDs.length})</span>
+                      {purchaseSelected.size > 0 && (
+                        <Badge>{purchaseSelected.size} selected</Badge>
+                      )}
+                    </div>
+                    <div className="border rounded-md max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="p-2 w-8"></th>
+                            <th className="p-2 text-left">Phone Number</th>
+                            <th className="p-2 text-left">Rate Center</th>
+                            <th className="p-2 text-left">State</th>
+                            <th className="p-2 text-right">$/min</th>
+                            <th className="p-2 text-right">$/month</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {availableDIDs.map(d => (
+                            <tr key={d.did} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => {
+                              const next = new Set(purchaseSelected);
+                              if (next.has(d.did)) next.delete(d.did); else next.add(d.did);
+                              setPurchaseSelected(next);
+                            }}>
+                              <td className="p-2">
+                                <Checkbox checked={purchaseSelected.has(d.did)} onCheckedChange={() => {
+                                  const next = new Set(purchaseSelected);
+                                  if (next.has(d.did)) next.delete(d.did); else next.add(d.did);
+                                  setPurchaseSelected(next);
+                                }} />
+                              </td>
+                              <td className="p-2 font-mono">{d.did.replace(/(\d{3})(\d{3})(\d{4})/, "($1) $2-$3")}</td>
+                              <td className="p-2">{d.rateCenter}</td>
+                              <td className="p-2">{d.state}</td>
+                              <td className="p-2 text-right">{d.ratePerMinute}</td>
+                              <td className="p-2 text-right">{d.ratePerMonth}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {purchaseSelected.size > 0 && (
+                  <Button onClick={() => setPurchaseStep("confirm")} className="w-full">
+                    <ArrowRight className="h-4 w-4 mr-2" /> Configure & Purchase {purchaseSelected.size} DID(s)
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {purchaseStep === "confirm" && (
+              <div className="space-y-4">
+                <Button variant="ghost" size="sm" onClick={() => setPurchaseStep("results")}>
+                  <ArrowRight className="h-4 w-4 mr-1 rotate-180" /> Back to Results
+                </Button>
+
+                <div className="bg-muted/50 rounded-md p-3">
+                  <span className="font-medium">{purchaseSelected.size} DID(s) selected for purchase</span>
+                  <div className="text-sm text-muted-foreground mt-1 font-mono">
+                    {Array.from(purchaseSelected).slice(0, 5).join(", ")}
+                    {purchaseSelected.size > 5 && ` +${purchaseSelected.size - 5} more`}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Label (applied to all purchased DIDs)</Label>
+                  <Input value={purchaseLabel} onChange={e => setPurchaseLabel(e.target.value)} placeholder="e.g., Sales, Marketing" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Route to SIP Server (optional)</Label>
+                  <Input value={purchaseRouteSip} onChange={e => setPurchaseRouteSip(e.target.value)} placeholder="e.g., sip.yourserver.com" />
+                  <p className="text-xs text-muted-foreground">Routes the DID on Vitelity's side to your SIP server</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Switch checked={purchaseRouteEnabled} onCheckedChange={setPurchaseRouteEnabled} />
+                  <Label>Create FreePBX inbound routes</Label>
+                </div>
+
+                {purchaseRouteEnabled && (
+                  <div className="space-y-3 pl-4 border-l-2 border-primary/20">
+                    <div className="space-y-2">
+                      <Label>Destination</Label>
+                      <DestinationPicker
+                        value={purchaseRouteDest}
+                        onChange={setPurchaseRouteDest}
+                        destinations={destinations}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Description</Label>
+                      <Input value={purchaseRouteDesc} onChange={e => setPurchaseRouteDesc(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+
+                {purchaseProgress && (
+                  <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md p-3">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-700 dark:text-blue-300">{purchaseProgress}</span>
+                    </div>
+                  </div>
+                )}
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowPurchase(false)}>Cancel</Button>
+                  <Button
+                    disabled={bulkPurchaseMut.isPending || purchaseSelected.size === 0}
+                    onClick={() => {
+                      setPurchaseProgress(`Purchasing ${purchaseSelected.size} DID(s)...`);
+                      const dids = Array.from(purchaseSelected).map(did => {
+                        const found = availableDIDs.find(d => d.did === did);
+                        return { did, rateCenter: found?.rateCenter, state: found?.state };
+                      });
+                      bulkPurchaseMut.mutate({
+                        dids,
+                        routeSip: purchaseRouteSip || undefined,
+                        label: purchaseLabel || undefined,
+                        createInboundRoute: purchaseRouteEnabled,
+                        destination: purchaseRouteEnabled ? purchaseRouteDest : undefined,
+                        description: purchaseRouteEnabled ? purchaseRouteDesc : undefined,
+                      });
+                    }}
+                  >
+                    {bulkPurchaseMut.isPending
+                      ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Purchasing...</>
+                      : <><Phone className="h-4 w-4 mr-1" /> Purchase {purchaseSelected.size} DID(s)</>
+                    }
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
