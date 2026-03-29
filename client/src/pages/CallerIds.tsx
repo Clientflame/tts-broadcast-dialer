@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -106,7 +106,6 @@ function DestinationPicker({
   destinations: any[];
   size?: "default" | "compact";
 }) {
-  // Parse current value to determine selected type and item
   const getTypeFromDest = (dest: string): string => {
     if (!dest || dest === "none") return "none";
     if (dest.startsWith("from-did-direct,")) return "extension";
@@ -121,7 +120,6 @@ function DestinationPicker({
 
   const [selectedType, setSelectedType] = useState(getTypeFromDest(value));
 
-  // Get items for the selected type
   const itemsForType = useMemo(() => {
     return destinations.filter(d => d.type === selectedType);
   }, [destinations, selectedType]);
@@ -131,12 +129,10 @@ function DestinationPicker({
     if (type === "none") {
       onChange("none");
     } else {
-      // Auto-select if there's only one item of this type
       const items = destinations.filter(d => d.type === type);
       if (items.length === 1) {
         onChange(items[0].destination);
       } else {
-        // Clear the specific item selection, user needs to pick
         onChange("none");
       }
     }
@@ -145,7 +141,6 @@ function DestinationPicker({
   const isCompact = size === "compact";
   const triggerClass = isCompact ? "h-8 text-xs" : "mt-1";
 
-  // Check if only terminate options loaded (SSH failure)
   const hasNonTerminate = destinations.some(d => d.type !== "terminate");
 
   return (
@@ -229,7 +224,6 @@ function InboundRouteConfigPanel({
   const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
   const [globalCidPrefix, setGlobalCidPrefix] = useState("");
 
-  // Apply global settings to all entries
   const applyToAll = (dest: string, desc: string, prefix: string) => {
     onEntriesChange(entries.map(e => ({
       ...e,
@@ -354,6 +348,73 @@ function InboundRouteConfigPanel({
   );
 }
 
+// ─── Inline Editable Label Cell ─────────────────────────────────────────────
+
+function InlineEditLabel({
+  value,
+  onSave,
+  isPending,
+}: {
+  value: string;
+  onSave: (newLabel: string) => void;
+  isPending: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(value);
+
+  const handleStartEdit = () => {
+    setEditValue(value);
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    if (editValue.trim() !== value) {
+      onSave(editValue.trim());
+    }
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value);
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSave();
+    if (e.key === "Escape") handleCancel();
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          className="h-7 text-xs w-32"
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus
+          placeholder="Label..."
+        />
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleSave} disabled={isPending}>
+          <Check className="h-3.5 w-3.5 text-green-600" />
+        </Button>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleCancel}>
+          <X className="h-3.5 w-3.5 text-muted-foreground" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 group cursor-pointer" onClick={handleStartEdit}>
+      <span className={`text-sm ${value ? "" : "text-muted-foreground"}`}>
+        {value || "—"}
+      </span>
+      <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function CallerIds() {
@@ -402,6 +463,15 @@ export default function CallerIds() {
     onSuccess: () => { utils.callerIds.list.invalidate(); setSelected(new Set()); toast.success("Selected caller IDs removed"); },
     onError: (e) => toast.error(e.message),
   });
+  const bulkUpdateMut = trpc.callerIds.bulkUpdate.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.list.invalidate();
+      toast.success(`Labels updated for ${r.count} caller ID(s)`);
+      setShowBulkEditLabel(false);
+      setBulkEditLabelValue("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const healthCheckMut = trpc.callerIds.triggerHealthCheck.useMutation({
     onSuccess: (r) => {
       toast.success(r.message);
@@ -425,7 +495,7 @@ export default function CallerIds() {
   const [fetchDests, setFetchDests] = useState(false);
   const { data: destinations = [], isLoading: destsLoading } = trpc.callerIds.getFreePBXDestinations.useQuery(undefined, {
     enabled: fetchDests,
-    staleTime: 60000, // Cache for 1 minute
+    staleTime: 60000,
   });
 
   // Inbound Routes tab state
@@ -455,10 +525,8 @@ export default function CallerIds() {
   // Parse FreePBX destination string to human-readable label
   const destToLabel = (dest: string): string => {
     if (!dest) return "Not set";
-    // Try to find in loaded destinations
     const found = destinations.find(d => d.destination === dest);
     if (found) return found.name;
-    // Parse common patterns
     if (dest.startsWith("from-did-direct,")) return `Extension ${dest.split(",")[1]}`;
     if (dest.startsWith("ext-queues,")) return `Queue ${dest.split(",")[1]}`;
     if (dest.startsWith("ext-group,")) return `Ring Group ${dest.split(",")[1]}`;
@@ -471,7 +539,6 @@ export default function CallerIds() {
     return dest;
   };
 
-  // Destination type badge color
   const destTypeBadge = (dest: string): { label: string; variant: "default" | "secondary" | "outline" | "destructive" } => {
     if (dest.startsWith("from-did-direct,")) return { label: "Extension", variant: "outline" };
     if (dest.startsWith("ext-queues,")) return { label: "Queue", variant: "default" };
@@ -498,7 +565,7 @@ export default function CallerIds() {
     setEditDest(route.destination);
     setEditDesc(route.description);
     setEditCidPrefix(route.cidPrefix);
-    setFetchDests(true); // Load destinations for the dropdown
+    setFetchDests(true);
   };
 
   const handleUpdateRoute = () => {
@@ -527,19 +594,22 @@ export default function CallerIds() {
   const [phone, setPhone] = useState("");
   const [label, setLabel] = useState("");
   const [bulkText, setBulkText] = useState("");
+  const [bulkLabel, setBulkLabel] = useState("");
   const [bulkRouteEntries, setBulkRouteEntries] = useState<InboundRouteEntry[]>([]);
   const [showRouteConfig, setShowRouteConfig] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [showBulkEditLabel, setShowBulkEditLabel] = useState(false);
+  const [bulkEditLabelValue, setBulkEditLabelValue] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Parse bulk text into route entries whenever text changes
-  const parseBulkEntries = (text: string): InboundRouteEntry[] => {
+  const parseBulkEntries = (text: string, globalLabel?: string): InboundRouteEntry[] => {
     const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
     return lines.map(line => {
       const parts = line.split(",").map(p => p.trim());
       return {
         phoneNumber: parts[0],
-        label: parts[1] || undefined,
+        label: parts[1] || globalLabel || undefined,
         destination: "none",
         description: "TTS Dialer",
         cidPrefix: "",
@@ -549,7 +619,27 @@ export default function CallerIds() {
 
   const handleBulkTextChange = (text: string) => {
     setBulkText(text);
-    setBulkRouteEntries(parseBulkEntries(text));
+    setBulkRouteEntries(parseBulkEntries(text, bulkLabel));
+  };
+
+  const handleBulkLabelChange = (newLabel: string) => {
+    setBulkLabel(newLabel);
+    // Apply the global label to entries that don't have a per-line label
+    if (bulkText) {
+      const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+      const updated = lines.map(line => {
+        const parts = line.split(",").map(p => p.trim());
+        const existing = bulkRouteEntries.find(e => e.phoneNumber === parts[0]);
+        return {
+          phoneNumber: parts[0],
+          label: parts[1] || newLabel || undefined,
+          destination: existing?.destination || "none",
+          description: existing?.description || "TTS Dialer",
+          cidPrefix: existing?.cidPrefix || "",
+        };
+      }).filter(e => e.phoneNumber);
+      setBulkRouteEntries(updated);
+    }
   };
 
   const handleAdd = () => {
@@ -559,9 +649,8 @@ export default function CallerIds() {
 
   const handleBulkAdd = () => {
     if (bulkRouteEntries.length === 0) {
-      const entries = parseBulkEntries(bulkText);
+      const entries = parseBulkEntries(bulkText, bulkLabel);
       if (entries.length === 0) return;
-      // No route config — use simple bulk create
       bulkCreateMut.mutate({ entries: entries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })) });
       return;
     }
@@ -570,7 +659,6 @@ export default function CallerIds() {
     const hasRoutes = bulkRouteEntries.some(e => e.destination && e.destination !== "none");
 
     if (hasRoutes) {
-      // Use the combined endpoint
       bulkCreateWithRoutesMut.mutate({
         entries: bulkRouteEntries.map(e => ({
           phoneNumber: e.phoneNumber,
@@ -583,7 +671,6 @@ export default function CallerIds() {
         })),
       });
     } else {
-      // No routes — simple bulk create
       bulkCreateMut.mutate({
         entries: bulkRouteEntries.map(e => ({ phoneNumber: e.phoneNumber, label: e.label })),
       });
@@ -603,7 +690,6 @@ export default function CallerIds() {
         return { phoneNumber: parts[0], label: parts[1] || undefined };
       }).filter(e => e.phoneNumber);
       if (entries.length === 0) { toast.error("No valid entries found"); return; }
-      // Pre-populate the bulk dialog with CSV data for route configuration
       const routeEntries: InboundRouteEntry[] = entries.map(e => ({
         phoneNumber: e.phoneNumber,
         label: e.label,
@@ -632,6 +718,15 @@ export default function CallerIds() {
     else setSelected(new Set(callerIds.map(c => c.id)));
   };
 
+  const handleBulkEditLabel = () => {
+    if (selected.size === 0) return;
+    bulkUpdateMut.mutate({ ids: Array.from(selected), label: bulkEditLabelValue });
+  };
+
+  const handleInlineEditLabel = (id: number, newLabel: string) => {
+    updateMut.mutate({ id, label: newLabel });
+  };
+
   const activeCount = callerIds.filter(c => c.isActive === 1).length;
   const healthyCount = callerIds.filter(c => c.healthStatus === "healthy").length;
   const failedCount = callerIds.filter(c => c.healthStatus === "failed").length;
@@ -651,6 +746,9 @@ export default function CallerIds() {
           <div className="flex gap-2 flex-wrap justify-end">
             {selected.size > 0 && (
               <>
+                <Button variant="outline" size="sm" onClick={() => { setBulkEditLabelValue(""); setShowBulkEditLabel(true); }}>
+                  <Tag className="h-4 w-4 mr-1" /> Edit Labels ({selected.size})
+                </Button>
                 <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Delete ${selected.size} caller ID(s)?`)) bulkDeleteMut.mutate({ ids: Array.from(selected) }); }}>
                   <Trash2 className="h-4 w-4 mr-1" /> Delete {selected.size}
                 </Button>
@@ -670,7 +768,7 @@ export default function CallerIds() {
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
               if (open) setFetchDests(true);
-              if (!open) { setShowRouteConfig(false); setBulkRouteEntries([]); }
+              if (!open) { setShowRouteConfig(false); setBulkRouteEntries([]); setBulkLabel(""); }
             }}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm"><Upload className="h-4 w-4 mr-1" /> Bulk Add</Button>
@@ -693,6 +791,22 @@ export default function CallerIds() {
                     {bulkRouteEntries.length} number(s) parsed
                   </div>
                 )}
+
+                {/* Global Label for all DIDs */}
+                <div>
+                  <Label className="text-sm flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5" /> Apply Label to All
+                  </Label>
+                  <Input
+                    className="mt-1"
+                    value={bulkLabel}
+                    onChange={e => handleBulkLabelChange(e.target.value)}
+                    placeholder="e.g. Campaign A, Sales, etc."
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Applied to all DIDs that don't have a per-line label. Per-line labels (after the comma) take priority.
+                  </p>
+                </div>
 
                 {/* Inbound Route Config Toggle */}
                 <div className="flex items-center gap-2">
@@ -904,7 +1018,13 @@ export default function CallerIds() {
                     <tr key={cid.id} className={`border-b hover:bg-muted/30 ${cid.autoDisabled ? "bg-red-50/30" : ""}`}>
                       <td className="p-3"><Checkbox checked={selected.has(cid.id)} onCheckedChange={() => toggleSelect(cid.id)} /></td>
                       <td className="p-3 font-mono">{cid.phoneNumber}</td>
-                      <td className="p-3">{cid.label || "—"}</td>
+                      <td className="p-3">
+                        <InlineEditLabel
+                          value={cid.label || ""}
+                          onSave={(newLabel) => handleInlineEditLabel(cid.id, newLabel)}
+                          isPending={updateMut.isPending}
+                        />
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <Switch
@@ -1150,6 +1270,50 @@ export default function CallerIds() {
           </TabsContent>
 
         </Tabs>
+
+        {/* Bulk Edit Label Dialog */}
+        <Dialog open={showBulkEditLabel} onOpenChange={setShowBulkEditLabel}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Tag className="h-5 w-5" /> Bulk Edit Labels
+              </DialogTitle>
+              <DialogDescription>
+                Update the label for {selected.size} selected caller ID{selected.size > 1 ? "s" : ""}. Leave empty to clear labels.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <Label>New Label</Label>
+                <Input
+                  className="mt-1"
+                  value={bulkEditLabelValue}
+                  onChange={e => setBulkEditLabelValue(e.target.value)}
+                  placeholder="e.g. Campaign A, Sales, etc."
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") handleBulkEditLabel(); }}
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {selected.size} DID{selected.size > 1 ? "s" : ""} selected:
+                <span className="font-mono ml-1">
+                  {callerIds.filter(c => selected.has(c.id)).slice(0, 5).map(c => c.phoneNumber).join(", ")}
+                  {selected.size > 5 ? ` +${selected.size - 5} more` : ""}
+                </span>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBulkEditLabel(false)}>Cancel</Button>
+              <Button onClick={handleBulkEditLabel} disabled={bulkUpdateMut.isPending}>
+                {bulkUpdateMut.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Updating...</>
+                ) : (
+                  <><Tag className="h-4 w-4 mr-1" /> Update Labels</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );

@@ -804,6 +804,13 @@ export async function deleteCallerId(id: number) {
   await db.delete(callerIds).where(eq(callerIds.id, id));
 }
 
+export async function bulkUpdateCallerIds(ids: number[], data: { label?: string; isActive?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (ids.length === 0) return;
+  await db.update(callerIds).set(data).where(inArray(callerIds.id, ids));
+}
+
 export async function bulkDeleteCallerIds(ids: number[]) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

@@ -1030,6 +1030,16 @@ export const appRouter = router({
       await db.bulkDeleteCallerIds(input.ids);
       return { success: true };
     }),
+    bulkUpdate: protectedProcedure.input(z.object({
+      ids: z.array(z.number()).min(1).max(10000),
+      label: z.string().max(255).optional(),
+      isActive: z.number().min(0).max(1).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { ids, ...data } = input;
+      await db.bulkUpdateCallerIds(ids, data);
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "callerId.bulkUpdate", resource: "callerId", details: { count: ids.length, fields: Object.keys(data) } });
+      return { success: true, count: ids.length };
+    }),
     // Set region mappings for geo targeting
     setRegions: protectedProcedure.input(z.object({
       callerIdId: z.number(),

@@ -768,3 +768,10 @@
 - [x] FIX: Only 1 of 8 inbound routes being created — added batch INSERT with per-route logging and stderr checking, fallback to individual inserts on error
 - [x] FIX: INSERT INTO incoming using non-existent columns (faxenabled, faxdetection, legacy_email, grptime, grpnum) — updated to match actual FreePBX 17 table schema
 - [x] FIX: privacyman column is tinyint(1) not varchar — changed 'no' to 0 in INSERT statements
+- [x] Add label field to Caller IDs (DIDs) — label column already exists in database schema
+- [x] Bulk label during import (Bulk Add dialog has "Apply Label to All" field; per-line labels take priority)
+- [x] Edit DID label individually (inline click-to-edit with Enter/Escape keyboard shortcuts)
+- [x] Bulk edit DID labels (select multiple, click "Edit Labels" button, set new label for all selected)
+- [x] Backend bulkUpdate procedure for callerIds with audit logging
+- [x] Vitest tests for label features (25 tests)
+- [ ] Filter/search DIDs by label
