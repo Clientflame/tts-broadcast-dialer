@@ -782,3 +782,7 @@
 - [x] Confirmation dialog before delete — warn that FreePBX inbound routes will also be removed
 - [x] Confirmation dialog before bulk delete — same warning for bulk operations
 - [x] Vitest tests for label filter and delete confirmation features (29 tests)
+- [x] Label-based DID rotation — didLabel column on campaigns, dialer filters DID pool by label
+- [x] Campaign UI — DID label selector in campaign create/edit forms (dropdown of unique labels)
+- [x] CSV export of filtered DIDs — export button on Caller IDs page respecting search/filter
+- [x] Vitest tests for label-based rotation and CSV export (26 tests)

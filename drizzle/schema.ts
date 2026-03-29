@@ -167,6 +167,7 @@ export const campaigns = mysqlTable("campaigns", {
   usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
+  didLabel: varchar("didLabel", { length: 100 }), // Filter DID rotation pool by label
   // Call Script (mixed TTS + recorded segments)
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),

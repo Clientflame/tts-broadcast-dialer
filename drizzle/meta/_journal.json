@@ -281,6 +281,13 @@
       "when": 1774663506701,
       "tag": "0039_empty_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1774796523838,
+      "tag": "0040_remarkable_darkhawk",
+      "breakpoints": true
     }
   ]
 }

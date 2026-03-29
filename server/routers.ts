@@ -584,6 +584,7 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -643,6 +644,7 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
+      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -989,6 +991,11 @@ export const appRouter = router({
   callerIds: router({
     list: protectedProcedure.query(async ({ ctx }) => {
       return db.getCallerIds();
+    }),
+    getLabels: protectedProcedure.query(async () => {
+      const all = await db.getCallerIds();
+      const labels = all.map(c => c.label).filter(Boolean) as string[];
+      return Array.from(new Set(labels)).sort();
     }),
     create: protectedProcedure.input(z.object({
       phoneNumber: z.string().min(1).max(20),

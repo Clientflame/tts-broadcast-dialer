@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `didLabel` varchar(100);

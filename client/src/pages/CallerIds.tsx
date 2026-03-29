@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -1068,6 +1068,33 @@ export default function CallerIds() {
                   Showing {filteredCallerIds.length} of {callerIds.length}
                 </Badge>
               )}
+              <div className="ml-auto">
+                <Button variant="outline" size="sm" onClick={() => {
+                  const rows = filteredCallerIds.map(c => ({
+                    phoneNumber: c.phoneNumber,
+                    label: c.label || "",
+                    status: c.isActive ? "Active" : "Inactive",
+                    healthStatus: (c as any).healthStatus || "unknown",
+                    callCount: c.callCount,
+                    lastUsedAt: c.lastUsedAt ? new Date(c.lastUsedAt).toLocaleString() : "",
+                    createdAt: c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
+                  }));
+                  const headers = ["Phone Number", "Label", "Status", "Health", "Call Count", "Last Used", "Created"];
+                  const csv = [headers.join(","), ...rows.map(r => [
+                    r.phoneNumber, `"${r.label}"`, r.status, r.healthStatus, r.callCount, `"${r.lastUsedAt}"`, `"${r.createdAt}"`
+                  ].join(","))].join("\n");
+                  const blob = new Blob([csv], { type: "text/csv" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `caller-ids${labelFilter !== "__all__" ? `-${labelFilter}` : ""}${didSearch ? `-search` : ""}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success(`Exported ${filteredCallerIds.length} DIDs to CSV`);
+                }}>
+                  <Download className="h-4 w-4 mr-1" /> Export CSV
+                </Button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[800px]">

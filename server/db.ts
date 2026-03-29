@@ -786,9 +786,12 @@ export async function getCallerIds() {
   return db.select().from(callerIds).orderBy(desc(callerIds.createdAt));
 }
 
-export async function getActiveCallerIds() {
+export async function getActiveCallerIds(label?: string | null) {
   const db = await getDb();
   if (!db) return [];
+  if (label) {
+    return db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
+  }
   return db.select().from(callerIds).where(eq(callerIds.isActive, 1)).orderBy(callerIds.callCount);
 }
 

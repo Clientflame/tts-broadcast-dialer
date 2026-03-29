@@ -180,12 +180,13 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const updatedCampaign = await db.getCampaign(campaignId);
   if (!updatedCampaign) throw new Error("Campaign not found after update");
 
-  // Load caller IDs for DID rotation
+  // Load caller IDs for DID rotation (optionally filtered by label)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
-    callerIdPool = await db.getActiveCallerIds();
+    const didLabel = (campaign as any).didLabel || null;
+    callerIdPool = await db.getActiveCallerIds(didLabel);
     if (callerIdPool.length > 0) {
-      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs`);
+      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs${didLabel ? ` (label: "${didLabel}")` : ""}`);
     }
   }
 
@@ -766,11 +767,12 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     }
   }
 
-  // Load caller IDs
+  // Load caller IDs (optionally filtered by label)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
   if ((campaign as any).useDidRotation) {
     try {
-      callerIdPool = await db.getActiveCallerIds();
+      const didLabel = (campaign as any).didLabel || null;
+      callerIdPool = await db.getActiveCallerIds(didLabel);
     } catch (err) {
       console.warn(`[Dialer Recovery] Could not load caller IDs for campaign ${campaignId}:`, err);
     }
