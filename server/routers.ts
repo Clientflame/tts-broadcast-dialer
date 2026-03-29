@@ -1023,11 +1023,39 @@ export const appRouter = router({
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      // Look up the phone number before deleting so we can remove the FreePBX route
+      const allCids = await db.getCallerIds();
+      const cid = allCids.find(c => c.id === input.id);
       await db.deleteCallerId(input.id);
+      // Best-effort: also delete the inbound route on FreePBX
+      if (cid?.phoneNumber) {
+        try {
+          const result = await deleteInboundRoutes([cid.phoneNumber]);
+          if (result.deleted > 0) {
+            console.log(`[CallerID Delete] Also removed inbound route for ${cid.phoneNumber}`);
+          }
+        } catch (e: any) {
+          console.warn(`[CallerID Delete] Could not remove inbound route for ${cid.phoneNumber}: ${e.message}`);
+        }
+      }
       return { success: true };
     }),
     bulkDelete: protectedProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+      // Look up phone numbers before deleting so we can remove FreePBX routes
+      const allCids = await db.getCallerIds();
+      const phoneNumbers = allCids.filter(c => input.ids.includes(c.id)).map(c => c.phoneNumber);
       await db.bulkDeleteCallerIds(input.ids);
+      // Best-effort: also delete inbound routes on FreePBX
+      if (phoneNumbers.length > 0) {
+        try {
+          const result = await deleteInboundRoutes(phoneNumbers);
+          if (result.deleted > 0) {
+            console.log(`[CallerID BulkDelete] Also removed ${result.deleted} inbound route(s) from FreePBX`);
+          }
+        } catch (e: any) {
+          console.warn(`[CallerID BulkDelete] Could not remove inbound routes: ${e.message}`);
+        }
+      }
       return { success: true };
     }),
     bulkUpdate: protectedProcedure.input(z.object({

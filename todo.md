@@ -775,3 +775,6 @@
 - [x] Backend bulkUpdate procedure for callerIds with audit logging
 - [x] Vitest tests for label features (25 tests)
 - [ ] Filter/search DIDs by label
+- [x] Auto-delete FreePBX inbound routes when single Caller ID is deleted
+- [x] Auto-delete FreePBX inbound routes when bulk deleting Caller IDs
+- [x] Vitest tests for cascade route deletion (11 tests)
