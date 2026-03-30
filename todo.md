@@ -851,3 +851,7 @@
 - [x] Add proprietary LICENSE file to protect IP (Clientflame LLC, All Rights Reserved)
 - [x] Add rate limiting on login endpoint (10 attempts per 15 min per IP via express-rate-limit)
 - [x] Suppress OAuth warning in self-hosted mode logs (shows 'self-hosted mode' instead of ERROR)
+- [x] Create client-facing user guide document for deployment with each client install
+- [x] Build in-app Help/Documentation page with searchable user guide content (28 sections, search, sidebar nav)
+- [x] Create branded PDF version of user guide with Clientflame branding (20-page PDF, blue/orange theme)
+- [x] Added USER-GUIDE.md to deploy/ directory for inclusion in client installations

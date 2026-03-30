@@ -37,6 +37,7 @@ import AgentDashboard from "./pages/AgentDashboard";
 import SystemArchitecture from "./pages/SystemArchitecture";
 import CommandPalette from "./components/CommandPalette";
 import DeploymentStatus from "./pages/DeploymentStatus";
+import Help from "./pages/Help";
 
 function Router() {
   return (
@@ -71,6 +72,7 @@ function Router() {
       <Route path={"/agent"} component={AgentDashboard} />
       <Route path={"/system-architecture"} component={SystemArchitecture} />
       <Route path={"/deployments"} component={DeploymentStatus} />
+      <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
       <Route path={"/404"} component={NotFound} />

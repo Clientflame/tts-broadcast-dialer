@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -56,6 +56,7 @@ const adminMenuItems = [
   { icon: Settings, label: "Settings", path: "/settings" },
   { icon: Workflow, label: "System Architecture", path: "/system-architecture" },
   { icon: Activity, label: "Deployments", path: "/deployments" },
+  { icon: BookOpen, label: "Help & Docs", path: "/help" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
 ];
 
