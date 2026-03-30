@@ -271,6 +271,7 @@ export const appRouter = router({
       return {
         ip: serverIp,
         hostname: os.hostname(),
+        uptimeSeconds: Math.floor(os.uptime()),
       };
     }),
 

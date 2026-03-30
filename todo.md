@@ -856,3 +856,5 @@
 - [x] Create branded PDF version of user guide with Clientflame branding (20-page PDF, blue/orange theme)
 - [x] Added USER-GUIDE.md to deploy/ directory for inclusion in client installations
 - [x] Display VPS server IP address on Dashboard next to version number (Globe icon + IP badge)
+- [x] Add copy-to-clipboard button on IP badge for quick copying (click IP → copies + toast + checkmark)
+- [x] Add server uptime display alongside IP on Dashboard (ArrowUp icon + formatted days/hours/mins)

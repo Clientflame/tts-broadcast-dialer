@@ -18,7 +18,7 @@ import {
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings, Volume2, Bot, Download, Globe,
+  Settings, Volume2, Bot, Download, Globe, Copy, Check, ArrowUp,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -744,6 +744,15 @@ function AreaCodeDistribution() {
 
 const ONBOARDING_DISMISSED_KEY = "onboarding_dismissed";
 
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -779,6 +788,7 @@ export default function Home() {
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 
   const isDialerActive = (dialerLive.data?.activeCampaignCount ?? 0) > 0;
+  const [ipCopied, setIpCopied] = useState(false);
 
   const totalDurationSecs = stats.data?.totalDurationSecs ?? 0;
   const avgDurationSecs = stats.data?.avgDurationSecs ?? 0;
@@ -788,13 +798,19 @@ export default function Home() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span>{serverInfo.data?.ip && serverInfo.data.ip !== "Unknown" && (<span className="text-xs font-mono text-muted-foreground ml-2 bg-muted/50 px-2 py-0.5 rounded inline-flex items-center gap-1"><Globe className="h-3 w-3" />{serverInfo.data.ip}</span>)}</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span>{serverInfo.data?.ip && serverInfo.data.ip !== "Unknown" && (<button onClick={() => { navigator.clipboard.writeText(serverInfo.data!.ip); setIpCopied(true); setTimeout(() => setIpCopied(false), 2000); toast.success("IP copied to clipboard"); }} className="text-xs font-mono text-muted-foreground ml-2 bg-muted/50 px-2 py-0.5 rounded inline-flex items-center gap-1 hover:bg-muted transition-colors cursor-pointer border-0" title="Click to copy IP"><Globe className="h-3 w-3" />{serverInfo.data.ip}{ipCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 opacity-50" />}</button>)}</h1>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-muted-foreground text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
               <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">
                 <Clock className="h-3 w-3" />
                 {estClock}
               </span>
+              {serverInfo.data?.uptimeSeconds != null && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">
+                  <ArrowUp className="h-3 w-3" />
+                  {formatUptime(serverInfo.data.uptimeSeconds)}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
