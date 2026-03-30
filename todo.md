@@ -855,3 +855,4 @@
 - [x] Build in-app Help/Documentation page with searchable user guide content (28 sections, search, sidebar nav)
 - [x] Create branded PDF version of user guide with Clientflame branding (20-page PDF, blue/orange theme)
 - [x] Added USER-GUIDE.md to deploy/ directory for inclusion in client installations
+- [x] Display VPS server IP address on Dashboard next to version number (Globe icon + IP badge)

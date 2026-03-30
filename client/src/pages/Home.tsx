@@ -18,7 +18,7 @@ import {
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings, Volume2, Bot, Download,
+  Settings, Volume2, Bot, Download, Globe,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -774,6 +774,7 @@ export default function Home() {
     }
   }, [onboardingStatus.data, setLocation]);
   const amiStatus = trpc.dashboard.amiStatus.useQuery(undefined, { enabled: !!user, refetchInterval: 15000 });
+  const serverInfo = trpc.dashboard.serverInfo.useQuery(undefined, { enabled: !!user, staleTime: 300000 });
   const agentAutoUpdate = trpc.agentAutoUpdate.update.useMutation();
   const dialerLive = trpc.dashboard.dialerLive.useQuery(undefined, { enabled: !!user, refetchInterval: 3000 });
 
@@ -787,7 +788,7 @@ export default function Home() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span></h1>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span>{serverInfo.data?.ip && serverInfo.data.ip !== "Unknown" && (<span className="text-xs font-mono text-muted-foreground ml-2 bg-muted/50 px-2 py-0.5 rounded inline-flex items-center gap-1"><Globe className="h-3 w-3" />{serverInfo.data.ip}</span>)}</h1>
             <div className="flex items-center gap-3 mt-1">
               <p className="text-muted-foreground text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
               <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">

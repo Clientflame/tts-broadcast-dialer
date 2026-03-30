@@ -238,6 +238,42 @@ export const appRouter = router({
       return db.getAreaCodeDistribution(input?.campaignId, input?.hours ?? 24);
     }),
 
+    /** Server info — returns server IP and hostname for display on dashboard */
+    serverInfo: protectedProcedure.query(async () => {
+      let serverIp = "Unknown";
+      try {
+        // Try to get public IP from an external service
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const resp = await fetch("https://api.ipify.org?format=json", { signal: controller.signal });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          const data = await resp.json() as { ip: string };
+          serverIp = data.ip;
+        }
+      } catch {
+        // Fallback: try to get from network interfaces
+        try {
+          const os = await import("os");
+          const interfaces = os.networkInterfaces();
+          for (const name of Object.keys(interfaces)) {
+            for (const iface of interfaces[name] || []) {
+              if (iface.family === "IPv4" && !iface.internal) {
+                serverIp = iface.address;
+                break;
+              }
+            }
+            if (serverIp !== "Unknown") break;
+          }
+        } catch {}
+      }
+      const os = await import("os");
+      return {
+        ip: serverIp,
+        hostname: os.hostname(),
+      };
+    }),
+
     /** System health check — returns status of all integrations at a glance */
     systemHealth: protectedProcedure.query(async () => {
       // 1. AMI / PBX Agent status
