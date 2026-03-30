@@ -18,7 +18,7 @@ import {
   Zap, Timer, Radio, ArrowDown, Pause, XCircle,
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
-  Settings, Volume2, Bot, Download, Globe, Copy, Check, ArrowUp,
+  Settings, Volume2, Bot, Download, Globe, Copy, Check, ArrowUp, Server, RotateCcw,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 
@@ -806,9 +806,21 @@ export default function Home() {
                 {estClock}
               </span>
               {serverInfo.data?.uptimeSeconds != null && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server uptime">
                   <ArrowUp className="h-3 w-3" />
                   {formatUptime(serverInfo.data.uptimeSeconds)}
+                </span>
+              )}
+              {serverInfo.data?.hostname && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server hostname">
+                  <Server className="h-3 w-3" />
+                  {serverInfo.data.hostname}
+                </span>
+              )}
+              {serverInfo.data?.startedAt && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Last restarted">
+                  <RotateCcw className="h-3 w-3" />
+                  {new Date(serverInfo.data.startedAt).toLocaleString()}
                 </span>
               )}
             </div>

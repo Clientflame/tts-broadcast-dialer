@@ -268,10 +268,13 @@ export const appRouter = router({
         } catch {}
       }
       const os = await import("os");
+      const uptimeSecs = Math.floor(os.uptime());
+      const startedAt = Date.now() - uptimeSecs * 1000;
       return {
         ip: serverIp,
         hostname: os.hostname(),
-        uptimeSeconds: Math.floor(os.uptime()),
+        uptimeSeconds: uptimeSecs,
+        startedAt,
       };
     }),
 

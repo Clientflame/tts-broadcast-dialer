@@ -858,3 +858,5 @@
 - [x] Display VPS server IP address on Dashboard next to version number (Globe icon + IP badge)
 - [x] Add copy-to-clipboard button on IP badge for quick copying (click IP → copies + toast + checkmark)
 - [x] Add server uptime display alongside IP on Dashboard (ArrowUp icon + formatted days/hours/mins)
+- [x] Add server hostname display on Dashboard for fleet identification (Server icon + hostname badge)
+- [x] Add last restarted timestamp on Dashboard for troubleshooting (RotateCcw icon + localized datetime)
