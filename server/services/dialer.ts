@@ -208,12 +208,17 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   // Load call script if campaign uses one
   let scriptSegments: ScriptSegment[] | null = null;
-  const callbackNumber = (campaign as any).callbackNumber || null;
+  let callbackNumber = (campaign as any).callbackNumber || null;
   if ((campaign as any).scriptId) {
     const script = await db.getCallScriptById((campaign as any).scriptId);
     if (script && script.segments) {
       scriptSegments = script.segments;
       console.log(`[Dialer] Script loaded: "${script.name}" with ${scriptSegments.length} segments`);
+      // Fall back to script-level callback number if campaign doesn't have one
+      if (!callbackNumber && script.callbackNumber) {
+        callbackNumber = script.callbackNumber;
+        console.log(`[Dialer] Using script callback number: ${callbackNumber}`);
+      }
     }
   }
 
@@ -796,13 +801,18 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
 
   // Load call script if campaign uses one
   let scriptSegments: ScriptSegment[] | null = null;
-  const callbackNumber = (campaign as any).callbackNumber || null;
+  let callbackNumber = (campaign as any).callbackNumber || null;
   if ((campaign as any).scriptId) {
     try {
       const script = await db.getCallScriptById((campaign as any).scriptId);
       if (script?.segments) {
         scriptSegments = script.segments;
         console.log(`[Dialer Recovery] Script loaded: "${script.name}" with ${scriptSegments.length} segments`);
+        // Fall back to script-level callback number if campaign doesn't have one
+        if (!callbackNumber && script.callbackNumber) {
+          callbackNumber = script.callbackNumber;
+          console.log(`[Dialer Recovery] Using script callback number: ${callbackNumber}`);
+        }
       }
     } catch (err) {
       console.warn(`[Dialer Recovery] Could not load script for campaign ${campaignId}:`, err);

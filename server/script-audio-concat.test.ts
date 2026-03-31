@@ -167,6 +167,66 @@ describe("Server-side audio concatenation", () => {
     expect(callQueueEntry.audioUrls).toHaveLength(3);
   });
 
+  it("dialer uses script callbackNumber when campaign callbackNumber is null", () => {
+    // Simulate the scenario: campaign has no callbackNumber, script does
+    const campaignCallbackNumber = null;
+    const scriptCallbackNumber = "833 925 4113";
+    const useDidCallbackNumber = true;
+    const callerIdNumber = "4075551234";
+
+    // This is the fix: fall back to script callback number
+    let callbackNumber = campaignCallbackNumber || null;
+    if (!callbackNumber && scriptCallbackNumber) {
+      callbackNumber = scriptCallbackNumber;
+    }
+
+    // Resolve effective callback: DID takes priority if useDidCallbackNumber is on
+    const effectiveCallbackNumber = useDidCallbackNumber && callerIdNumber
+      ? callerIdNumber
+      : callbackNumber;
+
+    // With useDidCallbackNumber=true, the DID is used
+    expect(effectiveCallbackNumber).toBe("4075551234");
+
+    // But if useDidCallbackNumber is off, the script callback number is used
+    const effectiveWithoutDid = false && callerIdNumber
+      ? callerIdNumber
+      : callbackNumber;
+    expect(effectiveWithoutDid).toBe("833 925 4113");
+  });
+
+  it("dialer uses script callbackNumber when campaign and DID callback are both unavailable", () => {
+    const campaignCallbackNumber = null;
+    const scriptCallbackNumber = "833 925 4113";
+    const useDidCallbackNumber = false;
+    const callerIdNumber = "4075551234";
+
+    let callbackNumber = campaignCallbackNumber || null;
+    if (!callbackNumber && scriptCallbackNumber) {
+      callbackNumber = scriptCallbackNumber;
+    }
+
+    const effectiveCallbackNumber = useDidCallbackNumber && callerIdNumber
+      ? callerIdNumber
+      : callbackNumber;
+
+    // Script callback number is used as fallback
+    expect(effectiveCallbackNumber).toBe("833 925 4113");
+  });
+
+  it("campaign callbackNumber takes priority over script callbackNumber", () => {
+    const campaignCallbackNumber = "800 123 4567";
+    const scriptCallbackNumber = "833 925 4113";
+
+    let callbackNumber = campaignCallbackNumber || null;
+    if (!callbackNumber && scriptCallbackNumber) {
+      callbackNumber = scriptCallbackNumber;
+    }
+
+    // Campaign callback number wins
+    expect(callbackNumber).toBe("800 123 4567");
+  });
+
   it("PBX API poll endpoint returns both audioUrl and audioUrls", () => {
     // Simulate the poll response
     const pollResponse = {

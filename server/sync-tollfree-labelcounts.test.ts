@@ -129,7 +129,7 @@ describe("DID Pool Label Counts", () => {
   });
 
   it("should show DID count next to All Active DIDs option", () => {
-    expect(campaignsSrc).toContain("labelCounts.reduce((sum, lc) => sum + lc.count, 0)");
+    expect(campaignsSrc).toContain('labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)');
     expect(campaignsSrc).toContain("DIDs)");
   });
 

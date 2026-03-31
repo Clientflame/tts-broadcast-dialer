@@ -507,7 +507,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   <SelectContent>
                     <SelectItem value="__all__">
                       All Active DIDs
-                      <span className="ml-2 text-xs text-muted-foreground">({labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)</span>
+                      <span className="ml-2 text-xs text-muted-foreground">({labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)} DIDs)</span>
                     </SelectItem>
                     {(didLabels || []).map(label => {
                       const lc = labelCounts.find(c => c.label === label);
@@ -523,7 +523,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 <p className="text-xs text-muted-foreground mt-1">
                   {form.didLabel
                     ? `Only DIDs labeled "${form.didLabel}" will be used (${labelCounts.find(c => c.label === form.didLabel)?.count || 0} DIDs)`
-                    : `All active DIDs will be used for rotation (${labelCounts.reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
+                    : `All active DIDs will be used for rotation (${labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
                 </p>
               </div>
             )}
