@@ -24,8 +24,8 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
 # ─── Version ────────────────────────────────────────────────────────────────
-AGENT_VERSION = "1.5.3"  # Bump this on every agent update
-AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer"]
+AGENT_VERSION = "1.6.0"  # Bump this on every agent update
+AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control"]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 CONFIG = {
@@ -57,6 +57,7 @@ log = logging.getLogger("pbx-agent")
 # ─── Active call tracking ───────────────────────────────────────────────────
 active_calls = {}  # queue_id -> { channel, start_time, phone_number }
 active_calls_lock = threading.Lock()
+global_ami = None  # Set in main() so heartbeat thread can execute call control commands
 
 
 # ─── HTTP Helpers ────────────────────────────────────────────────────────────
@@ -958,12 +959,107 @@ def monitor_ami_events(ami):
     log.info("AMI event monitor stopped")
 
 
+# ─── Remote Call Control ─────────────────────────────────────────────────────
+def process_pending_commands(commands):
+    """
+    Process call control commands received from the server via heartbeat.
+    Supports: hangup, transfer, park
+    """
+    global global_ami
+    if not commands or not global_ami or not global_ami.connected:
+        return
+
+    for cmd in commands:
+        cmd_id = cmd.get("id", "unknown")
+        cmd_type = cmd.get("type")
+        channel = cmd.get("channel")
+        phone_number = cmd.get("phoneNumber", "")
+        queue_id = cmd.get("queueId")
+        result = {"commandId": cmd_id, "status": "failed", "error": ""}
+
+        try:
+            # If no channel specified, try to find it from active_calls by queueId
+            if not channel and queue_id:
+                with active_calls_lock:
+                    call_info = active_calls.get(queue_id) or active_calls.get(str(queue_id))
+                    if call_info:
+                        channel = call_info.get("actual_channel") or call_info.get("channel")
+
+            if not channel:
+                log.warning(f"Command {cmd_id}: No channel found for queue_id={queue_id}, phone={phone_number}")
+                result["error"] = "No active channel found for this call"
+                api_request("command-result", method="POST", data=result)
+                continue
+
+            if cmd_type == "hangup":
+                log.info(f"Command {cmd_id}: Hanging up channel {channel} (phone: {phone_number})")
+                resp = global_ami.send_action({"Action": "Hangup", "Channel": channel})
+                if resp and resp.get("Response") == "Success":
+                    result["status"] = "executed"
+                    log.info(f"Command {cmd_id}: Hangup successful")
+                else:
+                    result["error"] = resp.get("Message", "AMI hangup failed") if resp else "No AMI response"
+                    log.warning(f"Command {cmd_id}: Hangup failed - {result['error']}")
+
+            elif cmd_type == "transfer":
+                transfer_ext = cmd.get("transferExtension", "")
+                if not transfer_ext:
+                    result["error"] = "No transfer extension specified"
+                else:
+                    log.info(f"Command {cmd_id}: Transferring {channel} to ext {transfer_ext}")
+                    resp = global_ami.send_action({
+                        "Action": "Redirect",
+                        "Channel": channel,
+                        "Context": "from-internal",
+                        "Exten": str(transfer_ext),
+                        "Priority": "1",
+                    })
+                    if resp and resp.get("Response") == "Success":
+                        result["status"] = "executed"
+                        log.info(f"Command {cmd_id}: Transfer to {transfer_ext} successful")
+                    else:
+                        result["error"] = resp.get("Message", "AMI redirect failed") if resp else "No AMI response"
+                        log.warning(f"Command {cmd_id}: Transfer failed - {result['error']}")
+
+            elif cmd_type == "park":
+                park_slot = cmd.get("parkSlot", "71")
+                log.info(f"Command {cmd_id}: Parking {channel} in slot {park_slot}")
+                resp = global_ami.send_action({
+                    "Action": "Redirect",
+                    "Channel": channel,
+                    "Context": "parkedcalls",
+                    "Exten": str(park_slot),
+                    "Priority": "1",
+                })
+                if resp and resp.get("Response") == "Success":
+                    result["status"] = "executed"
+                    log.info(f"Command {cmd_id}: Park in slot {park_slot} successful")
+                else:
+                    result["error"] = resp.get("Message", "AMI park failed") if resp else "No AMI response"
+                    log.warning(f"Command {cmd_id}: Park failed - {result['error']}")
+
+            else:
+                result["error"] = f"Unknown command type: {cmd_type}"
+                log.warning(f"Command {cmd_id}: Unknown type '{cmd_type}'")
+
+        except Exception as e:
+            result["error"] = str(e)
+            log.error(f"Command {cmd_id}: Exception - {e}")
+
+        # Report result back to server
+        try:
+            api_request("command-result", method="POST", data=result)
+        except Exception as e:
+            log.error(f"Failed to report command result {cmd_id}: {e}")
+
+
 # ─── Independent Heartbeat Thread ────────────────────────────────────────────
 def heartbeat_loop():
     """
     Independent heartbeat thread that runs every 10 seconds.
     This ensures the agent stays "online" in the dashboard even when
     the poll loop is slow (e.g., during large batch deletes on the server).
+    Also processes pending call control commands from the server.
     """
     consecutive_failures = 0
     while True:
@@ -977,6 +1073,11 @@ def heartbeat_loop():
             })
             if resp:
                 consecutive_failures = 0
+                # Process any pending call control commands from the server
+                pending = resp.get("pendingCommands", [])
+                if pending:
+                    log.info(f"Received {len(pending)} pending command(s) from server")
+                    process_pending_commands(pending)
             else:
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
@@ -1011,6 +1112,8 @@ def main():
     log.info("Independent heartbeat thread started (every 10s)")
 
     ami = AMIConnection()
+    global global_ami
+    global_ami = ami  # Make AMI available to heartbeat thread for call control commands
     poll_failures = 0  # Track consecutive poll failures
 
     while True:

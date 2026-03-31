@@ -5,6 +5,7 @@ import { recordCallResult, getCurrentConcurrent, getPacingStats, initPacing, cle
 import { notifyOwner } from "../_core/notification";
 import { dispatchNotification } from "./notification-dispatcher";
 import { recordCarrierError, attemptRampUp, isCarrierError, getThrottleStatus } from "./auto-throttle";
+import { drainCommandsForAgent, reportCommandResult } from "./call-control";
 import { createIvrPayment } from "./ivr-payment";
 
 const pbxRouter = Router();
@@ -358,7 +359,9 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
     // Attempt auto-throttle ramp-up on each heartbeat
     await attemptRampUp(agent.agentId);
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
-    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.5.0" });
+    // Drain any pending call control commands for this agent
+    const commands = drainCommandsForAgent(agent.agentId);
+    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.5.0", pendingCommands: commands.length > 0 ? commands : undefined });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }
@@ -985,6 +988,23 @@ pbxRouter.post("/recording/upload", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[PBX-API] Recording upload error:", err);
     res.status(500).json({ error: "Recording upload failed" });
+  }
+});
+
+// ─── Command Result Reporting ──────────────────────────────────────────────
+// PBX agent reports back after executing a call control command
+pbxRouter.post("/command-result", async (req: Request, res: Response) => {
+  try {
+    const { commandId, success, message } = req.body;
+    if (!commandId) {
+      res.status(400).json({ error: "Missing commandId" });
+      return;
+    }
+    reportCommandResult(commandId, !!success, message || undefined);
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error("[PBX-API] Command result error:", err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 

@@ -6,12 +6,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { trpc } from "@/lib/trpc";
 import VtigerCrmButton from "@/components/VtigerCrmButton";
+import { toast } from "sonner";
 import {
   Phone,
   PhoneCall,
   PhoneOff,
+  PhoneForwarded,
   Search,
   RefreshCw,
   Wifi,
@@ -28,6 +39,12 @@ import {
   Minimize2,
   LayoutGrid,
   List,
+  ParkingSquare,
+  X,
+  History,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -97,9 +114,115 @@ function getCallStatusBadge(status: string): { variant: "default" | "secondary" 
   }
 }
 
+// ─── Call Control Buttons Component ───────────────────────────────────────
+
+function CallControlButtons({
+  call,
+  agentId,
+  onTransferClick,
+  onParkClick,
+}: {
+  call: AgentCall;
+  agentId?: string;
+  onTransferClick: (call: AgentCall, agentId?: string) => void;
+  onParkClick: (call: AgentCall, agentId?: string) => void;
+}) {
+  const utils = trpc.useUtils();
+
+  const hangupMutation = trpc.operatorPanel.hangupCall.useMutation({
+    onSuccess: () => {
+      toast.success(`Hangup command sent for ${call.phoneNumber}`);
+      utils.operatorPanel.liveStatus.invalidate();
+    },
+    onError: (err) => {
+      toast.error(`Hangup failed: ${err.message}`);
+    },
+  });
+
+  const isActive = call.status === "in_progress" || call.status === "dialing" || call.status === "claimed";
+
+  if (!isActive) return null;
+
+  return (
+    <div className="flex items-center gap-1">
+      {/* Hangup */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-950/30"
+            onClick={(e) => {
+              e.stopPropagation();
+              hangupMutation.mutate({
+                queueId: call.id,
+                channel: call.channel,
+                phoneNumber: call.phoneNumber,
+                targetAgentId: agentId,
+              });
+            }}
+            disabled={hangupMutation.isPending}
+          >
+            {hangupMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <PhoneOff className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Hangup Call</TooltipContent>
+      </Tooltip>
+
+      {/* Transfer */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-100 dark:hover:bg-blue-950/30"
+            onClick={(e) => {
+              e.stopPropagation();
+              onTransferClick(call, agentId);
+            }}
+          >
+            <PhoneForwarded className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Transfer Call</TooltipContent>
+      </Tooltip>
+
+      {/* Park */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-amber-500 hover:text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-950/30"
+            onClick={(e) => {
+              e.stopPropagation();
+              onParkClick(call, agentId);
+            }}
+          >
+            <ParkingSquare className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Park Call</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 // ─── Agent Card Component ──────────────────────────────────────────────────
 
-function AgentCard({ agent }: { agent: AgentData }) {
+function AgentCard({
+  agent,
+  onTransferClick,
+  onParkClick,
+}: {
+  agent: AgentData;
+  onTransferClick: (call: AgentCall, agentId?: string) => void;
+  onParkClick: (call: AgentCall, agentId?: string) => void;
+}) {
   const [expanded, setExpanded] = useState(agent.activeCalls > 0);
   const utilizationPct = agent.maxCalls > 0 ? Math.round((agent.activeCalls / agent.maxCalls) * 100) : 0;
 
@@ -147,10 +270,7 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
         {/* Utilization bar */}
         <div className="mb-2">
-          <Progress
-            value={utilizationPct}
-            className="h-1.5"
-          />
+          <Progress value={utilizationPct} className="h-1.5" />
         </div>
 
         {/* Stats row */}
@@ -202,7 +322,15 @@ function AgentCard({ agent }: { agent: AgentData }) {
                       {call.claimedAt && (
                         <span className="text-muted-foreground shrink-0">{formatDuration(call.claimedAt)}</span>
                       )}
-                      <VtigerCrmButton phoneNumber={call.phoneNumber} compact />
+                      <div className="ml-auto flex items-center gap-1">
+                        <CallControlButtons
+                          call={call}
+                          agentId={agent.agentId}
+                          onTransferClick={onTransferClick}
+                          onParkClick={onParkClick}
+                        />
+                        <VtigerCrmButton phoneNumber={call.phoneNumber} compact />
+                      </div>
                     </div>
                   );
                 })}
@@ -217,7 +345,15 @@ function AgentCard({ agent }: { agent: AgentData }) {
 
 // ─── Active Call Row (for list view) ───────────────────────────────────────
 
-function ActiveCallRow({ call }: { call: any }) {
+function ActiveCallRow({
+  call,
+  onTransferClick,
+  onParkClick,
+}: {
+  call: any;
+  onTransferClick: (call: AgentCall, agentId?: string) => void;
+  onParkClick: (call: AgentCall, agentId?: string) => void;
+}) {
   const badge = getCallStatusBadge(call.status);
   return (
     <div className="flex items-center gap-3 px-3 py-2 border-b last:border-0 hover:bg-muted/50 transition-colors">
@@ -231,9 +367,301 @@ function ActiveCallRow({ call }: { call: any }) {
       {call.audioName && (
         <span className="text-xs text-muted-foreground truncate hidden lg:block">{call.audioName}</span>
       )}
-      <div className="ml-auto shrink-0">
+      <div className="ml-auto flex items-center gap-1">
+        <CallControlButtons
+          call={call}
+          agentId={call.claimedBy}
+          onTransferClick={onTransferClick}
+          onParkClick={onParkClick}
+        />
         <VtigerCrmButton phoneNumber={call.phoneNumber} compact />
       </div>
+    </div>
+  );
+}
+
+// ─── Transfer Dialog ──────────────────────────────────────────────────────
+
+function TransferDialog({
+  open,
+  call,
+  agentId,
+  onClose,
+}: {
+  open: boolean;
+  call: AgentCall | null;
+  agentId?: string;
+  onClose: () => void;
+}) {
+  const [extension, setExtension] = useState("");
+  const utils = trpc.useUtils();
+
+  const transferMutation = trpc.operatorPanel.transferCall.useMutation({
+    onSuccess: () => {
+      toast.success(`Transfer command sent: ${call?.phoneNumber} → ext ${extension}`);
+      utils.operatorPanel.liveStatus.invalidate();
+      setExtension("");
+      onClose();
+    },
+    onError: (err) => {
+      toast.error(`Transfer failed: ${err.message}`);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <PhoneForwarded className="h-5 w-5 text-blue-500" />
+            Transfer Call
+          </DialogTitle>
+          <DialogDescription>
+            Transfer the call to {call?.phoneNumber} to another extension.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="transfer-ext">Target Extension</Label>
+            <Input
+              id="transfer-ext"
+              placeholder="e.g., 100, 200, 5001"
+              value={extension}
+              onChange={(e) => setExtension(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && extension.trim()) {
+                  transferMutation.mutate({
+                    queueId: call!.id,
+                    channel: call?.channel,
+                    phoneNumber: call?.phoneNumber,
+                    transferExtension: extension.trim(),
+                    targetAgentId: agentId,
+                  });
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p>The call will be redirected to the specified SIP extension via AMI Redirect.</p>
+            <p>Common extensions: 100-199 (SIP phones), 700-799 (ring groups), 800-899 (queues)</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!extension.trim() || !call) return;
+              transferMutation.mutate({
+                queueId: call.id,
+                channel: call.channel,
+                phoneNumber: call.phoneNumber,
+                transferExtension: extension.trim(),
+                targetAgentId: agentId,
+              });
+            }}
+            disabled={!extension.trim() || transferMutation.isPending}
+          >
+            {transferMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <PhoneForwarded className="h-4 w-4 mr-2" />
+            )}
+            Transfer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Park Dialog ──────────────────────────────────────────────────────────
+
+function ParkDialog({
+  open,
+  call,
+  agentId,
+  onClose,
+}: {
+  open: boolean;
+  call: AgentCall | null;
+  agentId?: string;
+  onClose: () => void;
+}) {
+  const [parkSlot, setParkSlot] = useState("71");
+  const utils = trpc.useUtils();
+
+  const parkMutation = trpc.operatorPanel.parkCall.useMutation({
+    onSuccess: () => {
+      toast.success(`Park command sent: ${call?.phoneNumber} → slot ${parkSlot}`);
+      utils.operatorPanel.liveStatus.invalidate();
+      setParkSlot("71");
+      onClose();
+    },
+    onError: (err) => {
+      toast.error(`Park failed: ${err.message}`);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ParkingSquare className="h-5 w-5 text-amber-500" />
+            Park Call
+          </DialogTitle>
+          <DialogDescription>
+            Park the call to {call?.phoneNumber} in a parking lot slot.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="park-slot">Parking Slot</Label>
+            <Input
+              id="park-slot"
+              placeholder="e.g., 71, 72, 73"
+              value={parkSlot}
+              onChange={(e) => setParkSlot(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && parkSlot.trim()) {
+                  parkMutation.mutate({
+                    queueId: call!.id,
+                    channel: call?.channel,
+                    phoneNumber: call?.phoneNumber,
+                    parkSlot: parkSlot.trim(),
+                    targetAgentId: agentId,
+                  });
+                }
+              }}
+              autoFocus
+            />
+          </div>
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p>The call will be transferred to the parking lot extension.</p>
+            <p>Default FreePBX parking: 71-79. Dial the slot number to retrieve the parked call.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!parkSlot.trim() || !call) return;
+              parkMutation.mutate({
+                queueId: call.id,
+                channel: call.channel,
+                phoneNumber: call.phoneNumber,
+                parkSlot: parkSlot.trim(),
+                targetAgentId: agentId,
+              });
+            }}
+            disabled={!parkSlot.trim() || parkMutation.isPending}
+            className="bg-amber-600 hover:bg-amber-700"
+          >
+            {parkMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <ParkingSquare className="h-4 w-4 mr-2" />
+            )}
+            Park
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Command History Panel ────────────────────────────────────────────────
+
+function CommandHistoryPanel() {
+  const [showHistory, setShowHistory] = useState(false);
+  const commandHistory = trpc.operatorPanel.commandHistory.useQuery(undefined, {
+    enabled: showHistory,
+    refetchInterval: showHistory ? 5000 : false,
+  });
+
+  return (
+    <div>
+      <button
+        onClick={() => setShowHistory(!showHistory)}
+        className="flex items-center gap-2 mb-3 text-sm font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wider"
+      >
+        {showHistory ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        <History className="h-4 w-4" />
+        Command History
+      </button>
+
+      {showHistory && (
+        <Card>
+          <CardContent className="p-0">
+            {!commandHistory.data || commandHistory.data.length === 0 ? (
+              <div className="py-6 text-center text-muted-foreground text-sm">
+                No recent commands
+              </div>
+            ) : (
+              <div className="max-h-[300px] overflow-y-auto divide-y">
+                {commandHistory.data.map((cmd: any) => (
+                  <div key={cmd.id} className="flex items-center gap-3 px-3 py-2 text-xs hover:bg-muted/50">
+                    {/* Status icon */}
+                    {cmd.status === "executed" ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                    ) : cmd.status === "failed" ? (
+                      <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                    ) : cmd.status === "delivered" ? (
+                      <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0" />
+                    ) : (
+                      <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+
+                    {/* Command type badge */}
+                    <Badge
+                      variant={cmd.type === "hangup" ? "destructive" : cmd.type === "transfer" ? "default" : "secondary"}
+                      className="text-[10px] h-4 px-1.5 shrink-0"
+                    >
+                      {cmd.type}
+                    </Badge>
+
+                    {/* Phone number */}
+                    <span className="font-mono">{cmd.phoneNumber || `#${cmd.queueId}`}</span>
+
+                    {/* Transfer target */}
+                    {cmd.transferExtension && (
+                      <span className="text-muted-foreground">→ ext {cmd.transferExtension}</span>
+                    )}
+                    {cmd.parkSlot && (
+                      <span className="text-muted-foreground">→ slot {cmd.parkSlot}</span>
+                    )}
+
+                    {/* Status */}
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] h-4 px-1 shrink-0 ${
+                        cmd.status === "executed"
+                          ? "border-emerald-300 text-emerald-600"
+                          : cmd.status === "failed"
+                          ? "border-red-300 text-red-600"
+                          : ""
+                      }`}
+                    >
+                      {cmd.status}
+                    </Badge>
+
+                    {/* Issued by */}
+                    <span className="text-muted-foreground ml-auto shrink-0">
+                      {cmd.issuedBy || "—"}
+                    </span>
+
+                    {/* Time */}
+                    <span className="text-muted-foreground shrink-0">
+                      {new Date(cmd.createdAt).toLocaleTimeString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -246,6 +674,24 @@ export default function OperatorPanel() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [agentSectionCollapsed, setAgentSectionCollapsed] = useState(false);
   const [callSectionCollapsed, setCallSectionCollapsed] = useState(false);
+
+  // Transfer/Park dialog state
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [parkDialogOpen, setParkDialogOpen] = useState(false);
+  const [selectedCall, setSelectedCall] = useState<AgentCall | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
+
+  const handleTransferClick = (call: AgentCall, agentId?: string) => {
+    setSelectedCall(call);
+    setSelectedAgentId(agentId);
+    setTransferDialogOpen(true);
+  };
+
+  const handleParkClick = (call: AgentCall, agentId?: string) => {
+    setSelectedCall(call);
+    setSelectedAgentId(agentId);
+    setParkDialogOpen(true);
+  };
 
   // Auto-refresh every 3 seconds
   const liveStatus = trpc.operatorPanel.liveStatus.useQuery(undefined, {
@@ -402,7 +848,12 @@ export default function OperatorPanel() {
             ) : viewMode === "grid" ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {sortedAgents.map((agent) => (
-                  <AgentCard key={agent.id} agent={agent as AgentData} />
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent as AgentData}
+                    onTransferClick={handleTransferClick}
+                    onParkClick={handleParkClick}
+                  />
                 ))}
               </div>
             ) : (
@@ -469,11 +920,16 @@ export default function OperatorPanel() {
                     <span className="flex-1">Agent</span>
                     <span className="w-16">Duration</span>
                     <span className="hidden lg:block flex-1">Script</span>
-                    <span className="w-8">CRM</span>
+                    <span className="w-32 text-right">Actions</span>
                   </div>
                   <div className="max-h-[400px] overflow-y-auto">
                     {filteredCalls.map((call) => (
-                      <ActiveCallRow key={call.id} call={call} />
+                      <ActiveCallRow
+                        key={call.id}
+                        call={call}
+                        onTransferClick={handleTransferClick}
+                        onParkClick={handleParkClick}
+                      />
                     ))}
                   </div>
                 </CardContent>
@@ -483,6 +939,9 @@ export default function OperatorPanel() {
         )}
       </div>
 
+      {/* ─── Command History ─────────────────────────────────────────── */}
+      <CommandHistoryPanel />
+
       {/* Auto-refresh indicator */}
       <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
         <Wifi className="h-3 w-3" />
@@ -491,6 +950,26 @@ export default function OperatorPanel() {
           <span>· Last update: {new Date(liveStatus.dataUpdatedAt).toLocaleTimeString()}</span>
         )}
       </div>
+
+      {/* ─── Dialogs ─────────────────────────────────────────────────── */}
+      <TransferDialog
+        open={transferDialogOpen}
+        call={selectedCall}
+        agentId={selectedAgentId}
+        onClose={() => {
+          setTransferDialogOpen(false);
+          setSelectedCall(null);
+        }}
+      />
+      <ParkDialog
+        open={parkDialogOpen}
+        call={selectedCall}
+        agentId={selectedAgentId}
+        onClose={() => {
+          setParkDialogOpen(false);
+          setSelectedCall(null);
+        }}
+      />
     </div>
   );
 

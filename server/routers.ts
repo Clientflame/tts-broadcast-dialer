@@ -4627,6 +4627,93 @@ Return ONLY the message text, nothing else.`;
         },
       };
     }),
+    /** Hangup an active call remotely */
+    hangupCall: adminProcedure.input(z.object({
+      queueId: z.number(),
+      channel: z.string().optional(),
+      phoneNumber: z.string().optional(),
+      targetAgentId: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { enqueueCommand } = await import("./services/call-control");
+      const cmd = enqueueCommand({
+        type: "hangup",
+        queueId: input.queueId,
+        channel: input.channel,
+        phoneNumber: input.phoneNumber,
+        targetAgentId: input.targetAgentId,
+        issuedBy: ctx.user.name || ctx.user.openId,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: "call_hangup",
+        resource: "call",
+        resourceId: input.queueId,
+        details: { phoneNumber: input.phoneNumber, channel: input.channel, commandId: cmd.id },
+      });
+      return { success: true, commandId: cmd.id };
+    }),
+
+    /** Transfer an active call to another extension */
+    transferCall: adminProcedure.input(z.object({
+      queueId: z.number(),
+      channel: z.string().optional(),
+      phoneNumber: z.string().optional(),
+      transferExtension: z.string().min(1),
+      targetAgentId: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { enqueueCommand } = await import("./services/call-control");
+      const cmd = enqueueCommand({
+        type: "transfer",
+        queueId: input.queueId,
+        channel: input.channel,
+        phoneNumber: input.phoneNumber,
+        transferExtension: input.transferExtension,
+        targetAgentId: input.targetAgentId,
+        issuedBy: ctx.user.name || ctx.user.openId,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: "call_transfer",
+        resource: "call",
+        resourceId: input.queueId,
+        details: { phoneNumber: input.phoneNumber, transferExtension: input.transferExtension, commandId: cmd.id },
+      });
+      return { success: true, commandId: cmd.id };
+    }),
+
+    /** Park an active call */
+    parkCall: adminProcedure.input(z.object({
+      queueId: z.number(),
+      channel: z.string().optional(),
+      phoneNumber: z.string().optional(),
+      parkSlot: z.string().optional(),
+      targetAgentId: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const { enqueueCommand } = await import("./services/call-control");
+      const cmd = enqueueCommand({
+        type: "park",
+        queueId: input.queueId,
+        channel: input.channel,
+        phoneNumber: input.phoneNumber,
+        parkSlot: input.parkSlot,
+        targetAgentId: input.targetAgentId,
+        issuedBy: ctx.user.name || ctx.user.openId,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: "call_park",
+        resource: "call",
+        resourceId: input.queueId,
+        details: { phoneNumber: input.phoneNumber, parkSlot: input.parkSlot, commandId: cmd.id },
+      });
+      return { success: true, commandId: cmd.id };
+    }),
+
+    /** Get recent command history */
+    commandHistory: protectedProcedure.query(async () => {
+      const { getCommandHistory } = await import("./services/call-control");
+      return getCommandHistory(50);
+    }),
   }),
 
   // ─── vTiger CRM Integration ──────────────────────────────────────────────

@@ -873,3 +873,12 @@
 - [x] Client License Key System — generate unique license keys per client installation for distribution control
 - [x] FOP2-style Operator Panel — modern real-time extension monitoring panel with color-coded status grid, call controls, park slots, queue status, and search/filter (inspired by fop2.com)
 - [x] vTiger CRM Integration — auto-open vTiger Cloud contact page in new tab when call comes in, matching by phone number (vTiger Cloud at company1233712.od2.vtiger.com)
+
+## v1.9.1 Operator Panel Enhancements
+
+- [x] Remote Hangup — admin can remotely hang up an active call from the Operator Panel
+- [x] Call Transfer — click-to-transfer active calls to another extension or phone number
+- [x] Call Park — park active calls into park slots and retrieve them
+- [x] Command History panel — collapsible panel showing recent command status (pending/delivered/executed/failed)
+- [x] PBX Agent v1.6.0 — process_pending_commands() handles hangup/transfer/park from heartbeat response
+- [x] Server-side call control service — in-memory command queue with TTL, per-agent delivery, result reporting
