@@ -912,3 +912,4 @@
 - [x] Fix: Added all missing env vars to DEPLOYMENT-GUIDE.md reference table
 - [x] Fix: APP_PROTOCOL in setup-client.sh now correctly evaluates to http/https
 - [x] Verify build and all tests pass (922 tests passing, build succeeds)
+- [x] Fix: Bump package.json version to 1.9.4 (was still 1.9.3 in Docker image)
