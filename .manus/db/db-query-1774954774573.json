@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, agentId, name, status, apiKey, lastHeartbeat FROM pbx_agents ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway03.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3tmNk4KiQphQsi9.6a10ffd04b61 --database QaP68Z2AATogwpccsoDAFH --execute SELECT id, agentId, name, status, apiKey, lastHeartbeat FROM pbx_agents ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "60014",
+      "agentId": "agent-6e59b17c",
+      "name": "Agent HD",
+      "status": "online",
+      "apiKey": "pbx-b253ca8d3664110e7e076265a109beb7f49328e76c7d206997904c7321311e55",
+      "lastHeartbeat": "1774658194333"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tagentId\tname\tstatus\tapiKey\tlastHeartbeat\n60014\tagent-6e59b17c\tAgent HD\tonline\tpbx-b253ca8d3664110e7e076265a109beb7f49328e76c7d206997904c7321311e55\t1774658194333\n",
+  "stderr": "",
+  "execution_time_ms": 101
+}

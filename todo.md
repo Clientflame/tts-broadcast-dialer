@@ -892,3 +892,5 @@
 - [x] Link active calls to extensions — show caller ID, duration, and call controls per extension tile
 - [x] Extension search and status filter pills
 - [x] Hangup button on active extension tiles with CRM lookup integration
+- [x] Fix PBX agent 404 errors on heartbeat/poll — fixed API URL, API key, and AMI Output parsing bug (duplicate keys overwritten)
+- [x] Fix AMI _read_message to collect Output lines as list instead of overwriting duplicate keys
