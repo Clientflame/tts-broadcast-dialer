@@ -915,3 +915,4 @@
 - [x] Fix: Bump package.json version to 1.9.4 (was still 1.9.3 in Docker image)
 - [x] Bug: Final Notice call script segment 3 not reading callback number during voice call (dialer now falls back to script-level callbackNumber)
 - [x] Bug: Campaign shows 28 DIDs but only 14 exist — DID count was doubled because labelCounts.reduce summed the __all__ entry too
+- [x] Bug: Call script callback number cannot be cleared — fixed: Zod schema now accepts nullable, frontend sends null when field is empty

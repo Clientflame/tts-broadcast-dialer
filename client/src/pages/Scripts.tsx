@@ -411,17 +411,23 @@ export default function Scripts() {
       }
     }
 
-    const payload = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      callbackNumber: callbackNumber.trim() || undefined,
-      segments: segments.map((s, i) => ({ ...s, position: i })),
-    };
+    const trimmedCallback = callbackNumber.trim();
 
     if (editingScript) {
-      updateScript.mutate({ id: editingScript.id, ...payload });
+      updateScript.mutate({
+        id: editingScript.id,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        callbackNumber: trimmedCallback || null,
+        segments: segments.map((s, i) => ({ ...s, position: i })),
+      });
     } else {
-      createScript.mutate(payload);
+      createScript.mutate({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        callbackNumber: trimmedCallback || null,
+        segments: segments.map((s, i) => ({ ...s, position: i })),
+      });
     }
   };
 

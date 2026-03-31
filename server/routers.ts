@@ -2945,7 +2945,7 @@ Return ONLY the message text, nothing else.`;
     create: protectedProcedure.input(z.object({
       name: z.string().min(1).max(255),
       description: z.string().optional(),
-      callbackNumber: z.string().max(20).optional(),
+      callbackNumber: z.string().max(20).nullable().optional(),
       segments: z.array(z.object({
         id: z.string(),
         type: z.enum(["tts", "recorded"]),
@@ -2993,7 +2993,7 @@ Return ONLY the message text, nothing else.`;
       id: z.number(),
       name: z.string().min(1).max(255).optional(),
       description: z.string().optional(),
-      callbackNumber: z.string().max(20).optional(),
+      callbackNumber: z.string().max(20).nullable().optional(),
       segments: z.array(z.object({
         id: z.string(),
         type: z.enum(["tts", "recorded"]),
@@ -3009,6 +3009,10 @@ Return ONLY the message text, nothing else.`;
       status: z.enum(["draft", "active", "archived"]).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      // Normalize empty callback number to null
+      if (data.callbackNumber !== undefined) {
+        data.callbackNumber = data.callbackNumber?.trim() || null;
+      }
       if (data.segments) {
         const recordedCount = data.segments.filter(s => s.type === "recorded").length;
         if (recordedCount > 2) {
