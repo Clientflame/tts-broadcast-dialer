@@ -874,6 +874,13 @@ export const appRouter = router({
     scheduleHistory: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
       return db.getCampaignScheduleHistory(input.campaignId);
     }),
+    /** Get all campaign schedules for calendar view */
+    allSchedules: protectedProcedure.input(z.object({
+      startMs: z.number().optional(),
+      endMs: z.number().optional(),
+    })).query(async ({ input }) => {
+      return db.getAllCampaignSchedules(input.startMs, input.endMs);
+    }),
   }),
 
   // ─── Campaign Templates ──────────────────────────────────────────────
@@ -4305,6 +4312,358 @@ Return ONLY the message text, nothing else.`;
       const maintenance = deployments.filter(d => d.status === "maintenance").length;
       const provisioning = deployments.filter(d => d.status === "provisioning").length;
       return { total: deployments.length, online, degraded, offline, maintenance, provisioning };
+    }),
+  }),
+
+  // ─── Database Backups ──────────────────────────────────────────────────
+  backups: router({
+    list: adminProcedure.query(async () => {
+      return db.getDatabaseBackups();
+    }),
+
+    create: adminProcedure.mutation(async ({ ctx }) => {
+      // Create a backup record
+      const backup = await db.createDatabaseBackup({
+        fileName: `backup-${new Date().toISOString().replace(/[:.]/g, "-")}.sql`,
+        fileKey: "",
+        startedAt: Date.now(),
+        type: "manual",
+        createdBy: ctx.user.id,
+      });
+      if (!backup) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to create backup record" });
+
+      // Run the backup in the background
+      (async () => {
+        try {
+          const dbUrl = process.env.DATABASE_URL || "";
+          // Parse DATABASE_URL to get connection details
+          const url = new URL(dbUrl);
+          const host = url.hostname;
+          const port = url.port || "3306";
+          const user = url.username;
+          const password = url.password;
+          const database = url.pathname.slice(1).split("?")[0];
+
+          // Use mysqldump to create backup
+          const { execSync } = await import("child_process");
+          const dumpFile = `/tmp/backup-${backup.id}.sql`;
+          const cmd = `mysqldump --ssl-mode=REQUIRED -h ${host} -P ${port} -u ${user} -p'${password}' ${database} --single-transaction --routines --triggers > ${dumpFile} 2>/dev/null`;
+          execSync(cmd, { timeout: 120000 });
+
+          // Read the dump file and upload to S3
+          const fs = await import("fs");
+          const fileBuffer = fs.readFileSync(dumpFile);
+          const fileSize = fileBuffer.length;
+
+          // Count tables and rows from dump
+          const dumpContent = fileBuffer.toString("utf-8").substring(0, 50000);
+          const tableMatches = dumpContent.match(/CREATE TABLE/g);
+          const tablesIncluded = tableMatches ? tableMatches.length : 0;
+
+          // Upload to S3
+          const { storagePut } = await import("./storage");
+          const fileKey = `backups/db-backup-${backup.id}-${Date.now()}.sql`;
+          const { url: fileUrl } = await storagePut(fileKey, fileBuffer, "application/sql");
+
+          // Clean up temp file
+          fs.unlinkSync(dumpFile);
+
+          // Update backup record
+          await db.updateDatabaseBackup(backup.id, {
+            status: "completed",
+            fileKey,
+            fileUrl,
+            fileSizeBytes: fileSize,
+            tablesIncluded,
+            completedAt: Date.now(),
+          });
+
+          await db.createAuditLog({
+            userId: ctx.user.id,
+            userName: ctx.user.name || undefined,
+            action: "backup.create",
+            resource: "system",
+            details: { backupId: backup.id, fileSize, tablesIncluded },
+          });
+        } catch (err: any) {
+          console.error("[Backup] Failed:", err.message);
+          await db.updateDatabaseBackup(backup.id, {
+            status: "failed",
+            errorMessage: err.message,
+            completedAt: Date.now(),
+          });
+        }
+      })();
+
+      return { id: backup.id, status: "running" };
+    }),
+
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const backup = await db.getDatabaseBackup(input.id);
+      if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Backup not found" });
+      await db.deleteDatabaseBackup(input.id);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "backup.delete",
+        resource: "system",
+        details: { backupId: input.id, fileName: backup.fileName },
+      });
+      return { success: true };
+    }),
+
+    download: adminProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      const backup = await db.getDatabaseBackup(input.id);
+      if (!backup) throw new TRPCError({ code: "NOT_FOUND", message: "Backup not found" });
+      if (!backup.fileUrl) throw new TRPCError({ code: "NOT_FOUND", message: "Backup file not available" });
+      return { url: backup.fileUrl, fileName: backup.fileName };
+    }),
+  }),
+
+  // ─── License Keys ────────────────────────────────────────────────────────
+  licenses: router({
+    list: adminProcedure.query(async () => {
+      return db.getLicenseKeys();
+    }),
+
+    create: adminProcedure.input(z.object({
+      clientName: z.string().min(1).max(255),
+      clientEmail: z.string().email().optional(),
+      maxDids: z.number().min(1).max(1000).default(10),
+      maxConcurrentCalls: z.number().min(1).max(500).default(5),
+      maxAgents: z.number().min(1).max(100).default(3),
+      features: z.array(z.string()).optional(),
+      expiresAt: z.number().optional(), // UTC timestamp ms
+      deploymentId: z.number().optional(),
+      notes: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      // Generate a unique license key
+      const crypto = await import("crypto");
+      const keyParts = [
+        crypto.randomBytes(4).toString("hex").toUpperCase(),
+        crypto.randomBytes(4).toString("hex").toUpperCase(),
+        crypto.randomBytes(4).toString("hex").toUpperCase(),
+        crypto.randomBytes(4).toString("hex").toUpperCase(),
+      ];
+      const licenseKey = keyParts.join("-");
+
+      const result = await db.createLicenseKey({
+        licenseKey,
+        clientName: input.clientName,
+        clientEmail: input.clientEmail,
+        maxDids: input.maxDids,
+        maxConcurrentCalls: input.maxConcurrentCalls,
+        maxAgents: input.maxAgents,
+        features: input.features || ["broadcast", "tts", "ivr"],
+        expiresAt: input.expiresAt,
+        deploymentId: input.deploymentId,
+        notes: input.notes,
+        createdBy: ctx.user.id,
+      });
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "license.create",
+        resource: "system",
+        details: { clientName: input.clientName, licenseKey },
+      });
+
+      return { id: result?.id, licenseKey };
+    }),
+
+    update: adminProcedure.input(z.object({
+      id: z.number(),
+      clientName: z.string().min(1).max(255).optional(),
+      clientEmail: z.string().email().optional(),
+      maxDids: z.number().min(1).max(1000).optional(),
+      maxConcurrentCalls: z.number().min(1).max(500).optional(),
+      maxAgents: z.number().min(1).max(100).optional(),
+      features: z.array(z.string()).optional(),
+      status: z.enum(["active", "suspended", "expired", "revoked"]).optional(),
+      expiresAt: z.number().optional(),
+      deploymentId: z.number().optional(),
+      notes: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      await db.updateLicenseKey(id, data);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "license.update",
+        resource: "system",
+        details: { licenseId: id, changes: Object.keys(data) },
+      });
+      return { success: true };
+    }),
+
+    delete: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const key = await db.getLicenseKey(input.id);
+      if (!key) throw new TRPCError({ code: "NOT_FOUND", message: "License key not found" });
+      await db.deleteLicenseKey(input.id);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "license.delete",
+        resource: "system",
+        details: { licenseId: input.id, clientName: key.clientName },
+      });
+      return { success: true };
+    }),
+
+    /** Public endpoint for license validation (called by client installations) */
+    validate: publicProcedure.input(z.object({
+      licenseKey: z.string(),
+    })).mutation(async ({ input }) => {
+      const key = await db.getLicenseKeyByKey(input.licenseKey);
+      if (!key) return { valid: false, error: "Invalid license key" };
+      if (key.status === "revoked") return { valid: false, error: "License has been revoked" };
+      if (key.status === "suspended") return { valid: false, error: "License is suspended" };
+      if (key.status === "expired" || (key.expiresAt && key.expiresAt < Date.now())) {
+        return { valid: false, error: "License has expired" };
+      }
+      // Update last validated timestamp
+      await db.updateLicenseKey(key.id, { lastValidatedAt: Date.now(), activatedAt: key.activatedAt || Date.now() });
+      return {
+        valid: true,
+        clientName: key.clientName,
+        maxDids: key.maxDids,
+        maxConcurrentCalls: key.maxConcurrentCalls,
+        maxAgents: key.maxAgents,
+        features: key.features,
+        expiresAt: key.expiresAt,
+      };
+    }),
+  }),
+
+  // ─── Operator Panel ────────────────────────────────────────────────────────
+  operatorPanel: router({
+    /** Get real-time status of all PBX agents, active calls, and system metrics */
+    liveStatus: protectedProcedure.query(async () => {
+      const dbInst = await db.getDb();
+      if (!dbInst) return { agents: [], activeCalls: [], metrics: { totalAgents: 0, onlineAgents: 0, totalActiveCalls: 0, callsLastMinute: 0, callsLastHour: 0 } };
+      const { pbxAgents, callQueue } = await import("../drizzle/schema");
+      const { eq, count, gte, and, desc, inArray } = await import("drizzle-orm");
+      const now = Date.now();
+      const HEARTBEAT_THRESHOLD = 60000;
+
+      // Get all agents
+      const agents = await dbInst.select().from(pbxAgents).orderBy(desc(pbxAgents.lastHeartbeat));
+
+      // Get active calls (in_progress, dialing, claimed)
+      const activeCalls = await dbInst.select().from(callQueue)
+        .where(inArray(callQueue.status, ["in_progress", "dialing", "claimed", "pending"]))
+        .orderBy(desc(callQueue.createdAt))
+        .limit(200);
+
+      // Metrics
+      const oneMinAgo = now - 60000;
+      const oneHourAgo = now - 3600000;
+      const [minuteResult, hourResult] = await Promise.all([
+        dbInst.select({ count: count() }).from(callQueue).where(gte(callQueue.createdAt, new Date(oneMinAgo))),
+        dbInst.select({ count: count() }).from(callQueue).where(gte(callQueue.createdAt, new Date(oneHourAgo))),
+      ]);
+
+      const onlineAgents = agents.filter((a: any) => {
+        if (!a.lastHeartbeat) return false;
+        return now - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
+      });
+
+      const agentData = agents.map((a: any) => {
+        const isOnline = a.lastHeartbeat ? (now - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD) : false;
+        const caps = a.capabilities || {};
+        const agentCalls = activeCalls.filter((c: any) => c.claimedBy === a.agentId);
+        return {
+          id: a.id,
+          agentId: a.agentId,
+          name: a.name || a.agentId,
+          status: isOnline ? "online" : "offline",
+          activeCalls: agentCalls.length,
+          maxCalls: a.effectiveMaxCalls ?? a.maxCalls ?? 5,
+          cpsLimit: a.cpsLimit ?? 3,
+          cpsPacingMs: a.cpsPacingMs ?? 1000,
+          ipAddress: a.ipAddress || null,
+          lastHeartbeat: a.lastHeartbeat,
+          voiceAiBridge: caps.voiceAiBridge ?? false,
+          ariConnected: caps.ariConnected ?? false,
+          agentVersion: caps.agentVersion || null,
+          throttled: !!a.effectiveMaxCalls && a.effectiveMaxCalls < (a.maxCalls ?? 5),
+          throttleReason: a.throttleReason || null,
+          calls: agentCalls.map((c: any) => ({
+            id: c.id,
+            phoneNumber: c.phoneNumber,
+            channel: c.channel,
+            status: c.status,
+            callerIdStr: c.callerIdStr,
+            audioName: c.audioName,
+            campaignId: c.campaignId,
+            claimedAt: c.claimedAt,
+            result: c.result,
+          })),
+        };
+      });
+
+      return {
+        agents: agentData,
+        activeCalls: activeCalls.map((c: any) => ({
+          id: c.id,
+          phoneNumber: c.phoneNumber,
+          channel: c.channel,
+          status: c.status,
+          callerIdStr: c.callerIdStr,
+          audioName: c.audioName,
+          campaignId: c.campaignId,
+          claimedBy: c.claimedBy,
+          claimedAt: c.claimedAt,
+          result: c.result,
+          priority: c.priority,
+        })),
+        metrics: {
+          totalAgents: agents.length,
+          onlineAgents: onlineAgents.length,
+          totalActiveCalls: activeCalls.filter((c: any) => ["in_progress", "dialing"].includes(c.status)).length,
+          callsLastMinute: minuteResult[0]?.count ?? 0,
+          callsLastHour: hourResult[0]?.count ?? 0,
+        },
+      };
+    }),
+  }),
+
+  // ─── vTiger CRM Integration ──────────────────────────────────────────────
+  vtiger: router({
+    /** Check if vTiger is configured */
+    status: protectedProcedure.query(async () => {
+      const { isVtigerConfigured } = await import("./services/vtiger");
+      const configured = isVtigerConfigured();
+      return {
+        configured,
+        url: process.env.VTIGER_URL || "",
+      };
+    }),
+
+    /** Lookup a contact/lead/account by phone number */
+    lookupByPhone: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1),
+    })).query(async ({ input }) => {
+      const { lookupByPhone, isVtigerConfigured } = await import("./services/vtiger");
+      if (!isVtigerConfigured()) {
+        return { configured: false, results: [], searchUrl: "" };
+      }
+      try {
+        const results = await lookupByPhone(input.phoneNumber);
+        return { configured: true, results, searchUrl: "" };
+      } catch (err: any) {
+        console.error("[vTiger] Lookup error:", err.message);
+        return { configured: true, results: [], error: err.message, searchUrl: "" };
+      }
+    }),
+
+    /** Get a direct URL to open vTiger search for a phone number (no API needed) */
+    getSearchUrl: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1),
+    })).query(async ({ input }) => {
+      const { buildVtigerSearchUrl } = await import("./services/vtiger");
+      return { url: buildVtigerSearchUrl(input.phoneNumber) };
     }),
   }),
 });

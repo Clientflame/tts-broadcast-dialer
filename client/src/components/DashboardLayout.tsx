@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -32,6 +33,7 @@ import { Badge } from "./ui/badge";
 const adminMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Megaphone, label: "Campaigns", path: "/campaigns" },
+  { icon: Calendar, label: "Campaign Calendar", path: "/campaign-calendar" },
   { icon: Users, label: "Contacts", path: "/contacts" },
   { icon: Volume2, label: "Audio / TTS", path: "/audio" },
   { icon: PhoneCall, label: "Caller IDs", path: "/caller-ids" },
@@ -41,6 +43,7 @@ const adminMenuItems = [
   { icon: Headset, label: "Live Agents", path: "/live-agents" },
   { icon: Gauge, label: "Predictive Dialer", path: "/predictive-dialer" },
   { icon: Monitor, label: "Wallboard", path: "/wallboard" },
+  { icon: Activity, label: "Operator Panel", path: "/operator-panel" },
   { icon: Bot, label: "Voice AI", path: "/voice-ai" },
   { icon: Brain, label: "Agent Assist", path: "/agent-assist" },
   { icon: Mic, label: "Recordings", path: "/recordings" },
@@ -56,6 +59,9 @@ const adminMenuItems = [
   { icon: Settings, label: "Settings", path: "/settings" },
   { icon: Workflow, label: "System Architecture", path: "/system-architecture" },
   { icon: Activity, label: "Deployments", path: "/deployments" },
+  { icon: Activity, label: "System Status", path: "/system-status" },
+  { icon: Database, label: "DB Backups", path: "/backups" },
+  { icon: Key, label: "License Keys", path: "/licenses" },
   { icon: BookOpen, label: "Help & Docs", path: "/help" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
 ];
@@ -135,6 +141,7 @@ function DashboardLayoutContent({
   setSidebarWidth,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -268,6 +275,13 @@ function DashboardLayoutContent({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={() => toggleTheme?.()}
+                  className="cursor-pointer"
+                >
+                  {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                  <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={logout}
                   className="cursor-pointer text-destructive focus:text-destructive"

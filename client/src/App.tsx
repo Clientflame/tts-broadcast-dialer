@@ -37,7 +37,12 @@ import AgentDashboard from "./pages/AgentDashboard";
 import SystemArchitecture from "./pages/SystemArchitecture";
 import CommandPalette from "./components/CommandPalette";
 import DeploymentStatus from "./pages/DeploymentStatus";
+import SystemStatus from "./pages/SystemStatus";
+import DatabaseBackups from "./pages/DatabaseBackups";
+import LicenseKeys from "./pages/LicenseKeys";
+import CampaignCalendar from "./pages/CampaignCalendar";
 import Help from "./pages/Help";
+import OperatorPanel from "./pages/OperatorPanel";
 
 function Router() {
   return (
@@ -72,6 +77,11 @@ function Router() {
       <Route path={"/agent"} component={AgentDashboard} />
       <Route path={"/system-architecture"} component={SystemArchitecture} />
       <Route path={"/deployments"} component={DeploymentStatus} />
+      <Route path={"/system-status"} component={SystemStatus} />
+      <Route path={"/backups"} component={DatabaseBackups} />
+      <Route path={"/licenses"} component={LicenseKeys} />
+      <Route path={"/campaign-calendar"} component={CampaignCalendar} />
+      <Route path={"/operator-panel"} component={OperatorPanel} />
       <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
@@ -90,8 +100,8 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider
-        defaultTheme="light"
-        // switchable
+        defaultTheme="dark"
+        switchable
       >
         <TooltipProvider>
           <Toaster />

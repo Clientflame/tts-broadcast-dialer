@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
 import {
-  Shield, Search, ChevronLeft, ChevronRight, Filter,
+  Shield, Search, ChevronLeft, ChevronRight, Filter, Download,
   Clock, User, Activity, Settings, Phone, FileText,
   Users, Megaphone, AlertTriangle, RefreshCw, X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 50;
 
@@ -147,15 +148,49 @@ export default function AuditLog() {
               System activity timeline — {logsQuery.data?.total || 0} total events
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => logsQuery.refetch()}
-            disabled={logsQuery.isFetching}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${logsQuery.isFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // Export current filtered view to CSV
+                if (!logs.length) { toast.error("No logs to export"); return; }
+                const headers = ["Timestamp", "User", "Action", "Resource", "Resource ID", "Details"];
+                const csvRows = [headers.join(",")];
+                for (const log of logs) {
+                  const row = [
+                    `"${formatTimestamp(log.createdAt)}"`,
+                    `"${(log.userName || "System").replace(/"/g, '""')}"`,
+                    `"${log.action}"`,
+                    `"${log.resource}"`,
+                    `"${log.resourceId || ""}"`,
+                    `"${formatDetails(log.details).replace(/"/g, '""')}"`,
+                  ];
+                  csvRows.push(row.join(","));
+                }
+                const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success(`Exported ${logs.length} audit events to CSV`);
+              }}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logsQuery.refetch()}
+              disabled={logsQuery.isFetching}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${logsQuery.isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}

@@ -302,6 +302,13 @@
       "when": 1774808782145,
       "tag": "0042_uneven_karnak",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1774926262035,
+      "tag": "0043_shocking_slapstick",
+      "breakpoints": true
     }
   ]
 }

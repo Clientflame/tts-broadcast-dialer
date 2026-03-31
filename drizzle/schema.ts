@@ -1015,3 +1015,48 @@ export const didCostTransactions = mysqlTable("did_cost_transactions", {
 
 export type DidCostTransaction = typeof didCostTransactions.$inferSelect;
 export type InsertDidCostTransaction = typeof didCostTransactions.$inferInsert;
+
+// ─── Database Backups ──────────────────────────────────────────────────────
+export const databaseBackups = mysqlTable("database_backups", {
+  id: int("id").autoincrement().primaryKey(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 500 }).notNull(), // S3 key
+  fileUrl: text("fileUrl"), // S3 URL
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+  status: mysqlEnum("status", ["running", "completed", "failed"]).default("running").notNull(),
+  type: mysqlEnum("type", ["manual", "scheduled"]).default("manual").notNull(),
+  tablesIncluded: int("tablesIncluded"),
+  rowCount: int("rowCount"),
+  errorMessage: text("errorMessage"),
+  startedAt: bigint("startedAt", { mode: "number" }).notNull(),
+  completedAt: bigint("completedAt", { mode: "number" }),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DatabaseBackup = typeof databaseBackups.$inferSelect;
+export type InsertDatabaseBackup = typeof databaseBackups.$inferInsert;
+
+// ─── License Keys ──────────────────────────────────────────────────────────
+export const licenseKeys = mysqlTable("license_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  licenseKey: varchar("licenseKey", { length: 64 }).notNull().unique(),
+  clientName: varchar("clientName", { length: 255 }).notNull(),
+  clientEmail: varchar("clientEmail", { length: 320 }),
+  maxDids: int("maxDids").default(10).notNull(),
+  maxConcurrentCalls: int("maxConcurrentCalls").default(5).notNull(),
+  maxAgents: int("maxAgents").default(3).notNull(),
+  features: json("features").$type<string[]>(), // enabled feature flags
+  status: mysqlEnum("status", ["active", "suspended", "expired", "revoked"]).default("active").notNull(),
+  activatedAt: bigint("activatedAt", { mode: "number" }),
+  expiresAt: bigint("expiresAt", { mode: "number" }),
+  lastValidatedAt: bigint("lastValidatedAt", { mode: "number" }),
+  deploymentId: int("deploymentId"), // link to clientDeployments
+  notes: text("notes"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type LicenseKey = typeof licenseKeys.$inferSelect;
+export type InsertLicenseKey = typeof licenseKeys.$inferInsert;

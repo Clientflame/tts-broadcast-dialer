@@ -35,6 +35,8 @@ import {
   campaignSchedules, InsertCampaignSchedule,
   bridgeHealthChecks, InsertBridgeHealthCheck,
   clientDeployments, InsertClientDeployment,
+  databaseBackups, InsertDatabaseBackup,
+  licenseKeys, InsertLicenseKey,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3460,4 +3462,108 @@ export async function updateDeploymentHeartbeat(id: number, data: {
     ...data,
     lastHeartbeat: Date.now(),
   }).where(eq(clientDeployments.id, id));
+}
+
+
+// ─── Database Backups ─────────────────────────────────────────────────────
+
+export async function createDatabaseBackup(data: InsertDatabaseBackup) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(databaseBackups).values(data).$returningId();
+  return result;
+}
+
+export async function updateDatabaseBackup(id: number, data: Partial<InsertDatabaseBackup>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(databaseBackups).set(data).where(eq(databaseBackups.id, id));
+}
+
+export async function getDatabaseBackups(limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(databaseBackups).orderBy(desc(databaseBackups.createdAt)).limit(limit);
+}
+
+export async function getDatabaseBackup(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [backup] = await db.select().from(databaseBackups).where(eq(databaseBackups.id, id));
+  return backup || null;
+}
+
+export async function deleteDatabaseBackup(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(databaseBackups).where(eq(databaseBackups.id, id));
+}
+
+// ─── License Keys ─────────────────────────────────────────────────────────
+
+export async function createLicenseKey(data: InsertLicenseKey) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.insert(licenseKeys).values(data).$returningId();
+  return result;
+}
+
+export async function getLicenseKeys() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(licenseKeys).orderBy(desc(licenseKeys.createdAt));
+}
+
+export async function getLicenseKey(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [key] = await db.select().from(licenseKeys).where(eq(licenseKeys.id, id));
+  return key || null;
+}
+
+export async function getLicenseKeyByKey(key: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const [result] = await db.select().from(licenseKeys).where(eq(licenseKeys.licenseKey, key));
+  return result || null;
+}
+
+export async function updateLicenseKey(id: number, data: Partial<InsertLicenseKey>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(licenseKeys).set(data).where(eq(licenseKeys.id, id));
+}
+
+export async function deleteLicenseKey(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(licenseKeys).where(eq(licenseKeys.id, id));
+}
+
+
+// ─── Campaign Schedule Calendar ───────────────────────────────────────────
+
+export async function getAllCampaignSchedules(startMs?: number, endMs?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (startMs) conditions.push(sql`${campaignSchedules.scheduledAt} >= ${startMs}`);
+  if (endMs) conditions.push(sql`${campaignSchedules.scheduledAt} <= ${endMs}`);
+  
+  const rows = await db.select({
+    id: campaignSchedules.id,
+    campaignId: campaignSchedules.campaignId,
+    scheduledAt: campaignSchedules.scheduledAt,
+    status: campaignSchedules.status,
+    launchedAt: campaignSchedules.launchedAt,
+    errorMessage: campaignSchedules.errorMessage,
+    createdAt: campaignSchedules.createdAt,
+    campaignName: campaigns.name,
+    campaignStatus: campaigns.status,
+  }).from(campaignSchedules)
+    .leftJoin(campaigns, eq(campaignSchedules.campaignId, campaigns.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(campaignSchedules.scheduledAt))
+    .limit(200);
+  return rows;
 }

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
 import { Phone, PhoneOff, PhoneMissed, Clock, CheckCircle2, XCircle, Timer, DollarSign } from "lucide-react";
+import VtigerCrmButton from "@/components/VtigerCrmButton";
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   answered: <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />,
@@ -184,7 +185,12 @@ export default function CallLogs() {
                       <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No call logs yet</TableCell></TableRow>
                     ) : callLogs.data.map(log => (
                       <TableRow key={log.id}>
-                        <TableCell className="font-mono text-sm">{log.phoneNumber}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          <div className="flex items-center gap-1">
+                            {log.phoneNumber}
+                            <VtigerCrmButton phoneNumber={log.phoneNumber} compact />
+                          </div>
+                        </TableCell>
                         <TableCell className="text-sm">{log.contactName || "—"}</TableCell>
                         <TableCell>
                           <Badge variant={STATUS_BADGE[log.status] || "outline"} className="flex items-center gap-1 w-fit">

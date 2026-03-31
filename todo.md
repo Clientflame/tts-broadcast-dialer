@@ -860,3 +860,16 @@
 - [x] Add server uptime display alongside IP on Dashboard (ArrowUp icon + formatted days/hours/mins)
 - [x] Add server hostname display on Dashboard for fleet identification (Server icon + hostname badge)
 - [x] Add last restarted timestamp on Dashboard for troubleshooting (RotateCcw icon + localized datetime)
+
+## v1.9.0 Feature Batch
+
+- [x] System Status Page — consolidated health dashboard showing FreePBX, database, Vitelity API, and bridge status with real-time indicators
+- [x] Audit Log Viewer — searchable UI for all admin actions (DID changes, campaign launches, user modifications) with CSV export
+- [x] Email/SMS Alert System — notify admins when FreePBX goes offline, campaigns fail, or DID sync errors occur (consolidated alerts) [already existed]
+- [x] Automated Database Backups — scheduled MySQL dumps with one-click restore from admin panel
+- [x] Campaign Scheduling Calendar — visual calendar view for planning and scheduling campaigns across days/weeks
+- [x] DNC (Do-Not-Call) List Management — import/manage DNC lists with automatic scrubbing before campaign launch [already existed]
+- [x] Dark Mode Toggle — user-selectable dark/light theme preference stored per account
+- [x] Client License Key System — generate unique license keys per client installation for distribution control
+- [x] FOP2-style Operator Panel — modern real-time extension monitoring panel with color-coded status grid, call controls, park slots, queue status, and search/filter (inspired by fop2.com)
+- [x] vTiger CRM Integration — auto-open vTiger Cloud contact page in new tab when call comes in, matching by phone number (vTiger Cloud at company1233712.od2.vtiger.com)
