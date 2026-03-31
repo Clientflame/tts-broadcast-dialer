@@ -4714,6 +4714,31 @@ Return ONLY the message text, nothing else.`;
       const { getCommandHistory } = await import("./services/call-control");
       return getCommandHistory(50);
     }),
+
+    /** Get SIP extension status from all PBX agents */
+    extensionStatus: protectedProcedure.query(async () => {
+      const { getExtensionStatus: getExtStatus } = await import("./services/pbx-api") as any;
+      const agentData = getExtStatus();
+      // Merge extensions from all agents (in case of multi-agent setups)
+      const extensionMap = new Map<string, any>();
+      for (const agent of agentData) {
+        for (const ext of agent.extensions) {
+          const existing = extensionMap.get(ext.ext);
+          // If extension already seen from another agent, prefer the one with more info
+          if (!existing || (ext.status !== "offline" && existing.status === "offline")) {
+            extensionMap.set(ext.ext, { ...ext, agentId: agent.agentId, updatedAt: agent.updatedAt });
+          }
+        }
+      }
+      return {
+        extensions: Array.from(extensionMap.values()).sort((a: any, b: any) => {
+          const numA = parseInt(a.ext) || 0;
+          const numB = parseInt(b.ext) || 0;
+          return numA - numB;
+        }),
+        lastUpdate: agentData.length > 0 ? Math.max(...agentData.map((a: any) => a.updatedAt)) : null,
+      };
+    }),
   }),
 
   // ─── vTiger CRM Integration ──────────────────────────────────────────────

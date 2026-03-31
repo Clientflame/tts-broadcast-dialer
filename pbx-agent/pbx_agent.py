@@ -24,8 +24,8 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
 # ─── Version ────────────────────────────────────────────────────────────────
-AGENT_VERSION = "1.6.0"  # Bump this on every agent update
-AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control"]
+AGENT_VERSION = "1.7.0"  # Bump this on every agent update
+AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control", "extension_status"]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 CONFIG = {
@@ -58,6 +58,8 @@ log = logging.getLogger("pbx-agent")
 active_calls = {}  # queue_id -> { channel, start_time, phone_number }
 active_calls_lock = threading.Lock()
 global_ami = None  # Set in main() so heartbeat thread can execute call control commands
+cached_extensions = []  # Cached extension status list, refreshed every heartbeat
+cached_extensions_lock = threading.Lock()
 
 
 # ─── HTTP Helpers ────────────────────────────────────────────────────────────
@@ -959,6 +961,212 @@ def monitor_ami_events(ami):
     log.info("AMI event monitor stopped")
 
 
+# ─── Extension Status Collection ────────────────────────────────────────────
+def collect_extension_status():
+    """
+    Query PJSIP endpoints and active channels from AMI to build a list of
+    all SIP extensions with their current status.
+    Returns a list of dicts: [{ext, name, status, callerNum, callerName, duration, channel}]
+    Status values: available, in_use, ringing, on_hold, unavailable, offline
+    """
+    global global_ami
+    if not global_ami or not global_ami.connected:
+        return []
+
+    extensions = []
+    try:
+        # Step 1: Get all PJSIP endpoints
+        resp = global_ami.send_action({"Action": "PJSIPShowEndpoints"})
+        # PJSIPShowEndpoints returns events, not a single response
+        # We need to parse the events that were collected by the reader thread
+        # Instead, use a simpler approach: query SIP peers or use Extension State
+        pass
+    except Exception as e:
+        log.debug(f"PJSIPShowEndpoints failed: {e}")
+
+    # Alternative approach: Use "ExtensionStateList" which works with both SIP and PJSIP
+    try:
+        resp = global_ami.send_action({"Action": "ExtensionStateList"})
+        # This also returns events. Let's use a different approach.
+        pass
+    except Exception:
+        pass
+
+    # Most reliable approach: Query specific extension ranges using DeviceStateList
+    # or iterate known extensions with ExtensionState
+    # For FreePBX, extensions are typically in the 100-999 range
+    # We'll use "Command" action to run 'pjsip show endpoints' CLI
+    try:
+        resp = global_ami.send_action({
+            "Action": "Command",
+            "Command": "pjsip show endpoints"
+        })
+        if resp and resp.get("Response") == "Success":
+            output = resp.get("Output", "") or resp.get("CommandResponse", "")
+            # Handle list output format
+            if isinstance(output, list):
+                output = "\n".join(output)
+            # Parse the PJSIP endpoints output
+            # Format: "Endpoint:  <name>  <state>  ..."
+            # or tabular: "name/aor  ...  Available/Unavailable"
+            for line in output.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("==") or line.startswith("Endpoint") or line.startswith("Objects"):
+                    continue
+                # Try to parse endpoint lines
+                # Typical format: " Endpoint:  1001                                          Not in use    0 of inf"
+                # or: " Endpoint:  1001/1001                                     Unavailable   0 of inf"
+                if "Endpoint:" in line:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        endpoint_name = parts[1].split("/")[0]  # Get just the extension number
+                        # Skip non-numeric endpoints (trunks, etc.)
+                        if not endpoint_name.replace("-", "").isdigit():
+                            continue
+                        # Determine status from the rest of the line
+                        status_str = " ".join(parts[2:]).lower()
+                        if "not in use" in status_str:
+                            status = "available"
+                        elif "in use" in status_str:
+                            status = "in_use"
+                        elif "ringing" in status_str:
+                            status = "ringing"
+                        elif "on hold" in status_str:
+                            status = "on_hold"
+                        elif "unavailable" in status_str:
+                            status = "unavailable"
+                        else:
+                            status = "offline"
+                        extensions.append({
+                            "ext": endpoint_name,
+                            "name": "",
+                            "status": status,
+                            "callerNum": "",
+                            "callerName": "",
+                            "duration": 0,
+                            "channel": "",
+                        })
+    except Exception as e:
+        log.debug(f"PJSIP CLI query failed: {e}")
+
+    # If PJSIP CLI didn't work, try SIP show peers
+    if not extensions:
+        try:
+            resp = global_ami.send_action({
+                "Action": "Command",
+                "Command": "sip show peers"
+            })
+            if resp and resp.get("Response") == "Success":
+                output = resp.get("Output", "") or resp.get("CommandResponse", "")
+                if isinstance(output, list):
+                    output = "\n".join(output)
+                for line in output.split("\n"):
+                    line = line.strip()
+                    if not line or "/" not in line or line.startswith("Name"):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        name_part = parts[0].split("/")[0]
+                        if not name_part.isdigit():
+                            continue
+                        status = "available" if "OK" in line else "offline"
+                        extensions.append({
+                            "ext": name_part,
+                            "name": "",
+                            "status": status,
+                            "callerNum": "",
+                            "callerName": "",
+                            "duration": 0,
+                            "channel": "",
+                        })
+        except Exception as e:
+            log.debug(f"SIP show peers failed: {e}")
+
+    # Step 2: Get active channels to determine who's on a call
+    try:
+        resp = global_ami.send_action({
+            "Action": "Command",
+            "Command": "core show channels verbose"
+        })
+        if resp and resp.get("Response") == "Success":
+            output = resp.get("Output", "") or resp.get("CommandResponse", "")
+            if isinstance(output, list):
+                output = "\n".join(output)
+            # Parse active channels to find which extensions are in use
+            # Format: "PJSIP/1001-00000001  ...  Up  ...  1001  ..."
+            for line in output.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("Channel") or line.startswith("=="):
+                    continue
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                channel = parts[0]
+                # Extract extension from channel name (PJSIP/1001-xxx or SIP/1001-xxx)
+                if "/" in channel and ("-" in channel or "@" in channel):
+                    ext_part = channel.split("/")[1].split("-")[0].split("@")[0]
+                    if not ext_part.isdigit():
+                        continue
+                    # Find this extension in our list and update it
+                    for ext_info in extensions:
+                        if ext_info["ext"] == ext_part:
+                            ext_info["status"] = "in_use"
+                            ext_info["channel"] = channel
+                            # Try to extract caller info from the line
+                            # Look for CallerID info in the channel output
+                            if len(parts) >= 6:
+                                # Try to find the connected number
+                                for p in parts[1:]:
+                                    if p.replace("+", "").replace("-", "").isdigit() and len(p) >= 7:
+                                        ext_info["callerNum"] = p
+                                        break
+                            # Calculate duration from the Duration column if present
+                            for p in parts:
+                                if ":" in p and len(p.split(":")) >= 2:
+                                    try:
+                                        time_parts = p.split(":")
+                                        if len(time_parts) == 3:
+                                            ext_info["duration"] = int(time_parts[0]) * 3600 + int(time_parts[1]) * 60 + int(time_parts[2])
+                                        elif len(time_parts) == 2:
+                                            ext_info["duration"] = int(time_parts[0]) * 60 + int(time_parts[1])
+                                    except (ValueError, IndexError):
+                                        pass
+                            break
+    except Exception as e:
+        log.debug(f"Core show channels failed: {e}")
+
+    # Step 3: Try to get CallerID names from FreePBX database (extension names)
+    # Use 'database show AMPUSER' to get extension names
+    try:
+        resp = global_ami.send_action({
+            "Action": "Command",
+            "Command": "database show AMPUSER"
+        })
+        if resp and resp.get("Response") == "Success":
+            output = resp.get("Output", "") or resp.get("CommandResponse", "")
+            if isinstance(output, list):
+                output = "\n".join(output)
+            # Parse: /AMPUSER/1001/cidname                          : John Smith
+            for line in output.split("\n"):
+                if "/cidname" in line and ":" in line:
+                    try:
+                        key_part, value_part = line.split(":", 1)
+                        ext_num = key_part.strip().split("/")[2]  # /AMPUSER/1001/cidname -> 1001
+                        name = value_part.strip()
+                        for ext_info in extensions:
+                            if ext_info["ext"] == ext_num and name:
+                                ext_info["name"] = name
+                                break
+                    except (IndexError, ValueError):
+                        pass
+    except Exception as e:
+        log.debug(f"Database show AMPUSER failed: {e}")
+
+    # Sort by extension number
+    extensions.sort(key=lambda x: int(x["ext"]) if x["ext"].isdigit() else 0)
+    return extensions
+
+
 # ─── Remote Call Control ─────────────────────────────────────────────────────
 def process_pending_commands(commands):
     """
@@ -1066,11 +1274,23 @@ def heartbeat_loop():
         try:
             with active_calls_lock:
                 current_active = len(active_calls)
-            resp = api_request("heartbeat", method="POST", data={
+            # Collect extension status for the Operator Panel
+            ext_status = []
+            try:
+                ext_status = collect_extension_status()
+                with cached_extensions_lock:
+                    global cached_extensions
+                    cached_extensions = ext_status
+            except Exception as e:
+                log.debug(f"Extension status collection failed: {e}")
+            heartbeat_data = {
                 "activeCalls": current_active,
                 "agentVersion": AGENT_VERSION,
                 "features": AGENT_FEATURES,
-            })
+            }
+            if ext_status:
+                heartbeat_data["extensions"] = ext_status
+            resp = api_request("heartbeat", method="POST", data=heartbeat_data)
             if resp:
                 consecutive_failures = 0
                 # Process any pending call control commands from the server

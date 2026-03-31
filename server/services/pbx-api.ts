@@ -6,6 +6,21 @@ import { notifyOwner } from "../_core/notification";
 import { dispatchNotification } from "./notification-dispatcher";
 import { recordCarrierError, attemptRampUp, isCarrierError, getThrottleStatus } from "./auto-throttle";
 import { drainCommandsForAgent, reportCommandResult } from "./call-control";
+
+// In-memory storage for extension status from PBX agents (refreshed every heartbeat)
+const extensionStatusByAgent = new Map<string, { extensions: any[]; updatedAt: number }>();
+
+export function getExtensionStatus(): { agentId: string; extensions: any[]; updatedAt: number }[] {
+  const result: { agentId: string; extensions: any[]; updatedAt: number }[] = [];
+  const now = Date.now();
+  for (const [agentId, data] of Array.from(extensionStatusByAgent.entries())) {
+    // Only return data that's less than 60 seconds old
+    if (now - data.updatedAt < 60000) {
+      result.push({ agentId, ...data });
+    }
+  }
+  return result;
+}
 import { createIvrPayment } from "./ivr-payment";
 
 const pbxRouter = Router();
@@ -356,6 +371,11 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
       ...(agentFeatures ? { agentFeatures } : {}),
     };
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, Object.keys(updatedCapabilities).length > 0 ? updatedCapabilities : capabilities);
+    // Store extension status if provided by the PBX agent
+    const extensions = req.body.extensions;
+    if (Array.isArray(extensions) && extensions.length > 0) {
+      extensionStatusByAgent.set(agent.agentId, { extensions, updatedAt: Date.now() });
+    }
     // Attempt auto-throttle ramp-up on each heartbeat
     await attemptRampUp(agent.agentId);
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;

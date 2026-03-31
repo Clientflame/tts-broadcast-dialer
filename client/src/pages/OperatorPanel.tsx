@@ -45,9 +45,26 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Monitor,
+  User,
+  Headphones,
+  PhoneMissed,
+  CircleDot,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
+
+interface ExtensionData {
+  ext: string;
+  name: string;
+  status: "available" | "in_use" | "ringing" | "on_hold" | "unavailable" | "offline";
+  callerNum: string;
+  callerName: string;
+  duration: number;
+  channel: string;
+  agentId?: string;
+  updatedAt?: number;
+}
 
 interface AgentCall {
   id: number;
@@ -102,6 +119,62 @@ function getStatusDot(agent: AgentData): string {
   if (agent.throttled) return "bg-amber-500 animate-pulse";
   if (agent.activeCalls > 0) return "bg-emerald-500 animate-pulse";
   return "bg-blue-500";
+}
+
+// Extension status helpers
+function getExtensionStatusColor(status: string): string {
+  switch (status) {
+    case "available": return "bg-emerald-500";
+    case "in_use": return "bg-red-500";
+    case "ringing": return "bg-amber-400 animate-pulse";
+    case "on_hold": return "bg-purple-500 animate-pulse";
+    case "unavailable": return "bg-gray-400";
+    case "offline":
+    default: return "bg-gray-300 dark:bg-gray-600";
+  }
+}
+
+function getExtensionTileColor(status: string): string {
+  switch (status) {
+    case "available": return "border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-700";
+    case "in_use": return "border-red-400 bg-red-50 dark:bg-red-950/30 dark:border-red-700";
+    case "ringing": return "border-amber-400 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 animate-pulse";
+    case "on_hold": return "border-purple-400 bg-purple-50 dark:bg-purple-950/30 dark:border-purple-700";
+    case "unavailable": return "border-gray-300 bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700";
+    case "offline":
+    default: return "border-gray-200 bg-gray-50/50 dark:bg-gray-900/30 dark:border-gray-800 opacity-60";
+  }
+}
+
+function getExtensionStatusLabel(status: string): string {
+  switch (status) {
+    case "available": return "Available";
+    case "in_use": return "In Call";
+    case "ringing": return "Ringing";
+    case "on_hold": return "On Hold";
+    case "unavailable": return "Unavailable";
+    case "offline":
+    default: return "Offline";
+  }
+}
+
+function getExtensionIcon(status: string) {
+  switch (status) {
+    case "available": return Headphones;
+    case "in_use": return PhoneCall;
+    case "ringing": return Phone;
+    case "on_hold": return CircleDot;
+    case "unavailable": return PhoneMissed;
+    case "offline":
+    default: return Monitor;
+  }
+}
+
+function formatExtDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return "";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 function getCallStatusBadge(status: string): { variant: "default" | "secondary" | "destructive" | "outline"; label: string } {
@@ -571,6 +644,232 @@ function ParkDialog({
   );
 }
 
+// ─── Extension Tile Component (FOP2-style) ──────────────────────────────
+
+function ExtensionTile({ ext, onHangup }: { ext: ExtensionData; onHangup?: (ext: ExtensionData) => void }) {
+  const Icon = getExtensionIcon(ext.status);
+  const isActive = ext.status === "in_use" || ext.status === "ringing" || ext.status === "on_hold";
+
+  return (
+    <div
+      className={`relative border-2 rounded-lg p-2.5 transition-all duration-200 hover:shadow-md cursor-default select-none ${getExtensionTileColor(ext.status)}`}
+      title={`Ext ${ext.ext} — ${getExtensionStatusLabel(ext.status)}${ext.callerNum ? ` — ${ext.callerNum}` : ""}`}
+    >
+      {/* Status dot */}
+      <div className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${getExtensionStatusColor(ext.status)}`} />
+
+      {/* Extension number + icon */}
+      <div className="flex items-center gap-1.5 mb-1">
+        <Icon className="h-4 w-4 shrink-0 text-foreground/70" />
+        <span className="font-bold text-sm font-mono">{ext.ext}</span>
+      </div>
+
+      {/* Name */}
+      <div className="text-xs truncate text-foreground/80 font-medium mb-0.5" title={ext.name || `Ext ${ext.ext}`}>
+        {ext.name || `Extension ${ext.ext}`}
+      </div>
+
+      {/* Status label */}
+      <div className="text-[10px] uppercase tracking-wider font-semibold text-foreground/60">
+        {getExtensionStatusLabel(ext.status)}
+      </div>
+
+      {/* Active call info */}
+      {isActive && (
+        <div className="mt-1.5 pt-1.5 border-t border-current/10">
+          {ext.callerNum && (
+            <div className="flex items-center gap-1 text-xs">
+              <Phone className="h-3 w-3 shrink-0" />
+              <span className="font-mono truncate">{ext.callerNum}</span>
+            </div>
+          )}
+          {ext.callerName && (
+            <div className="flex items-center gap-1 text-[10px] text-foreground/60">
+              <User className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{ext.callerName}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between mt-1">
+            {ext.duration > 0 && (
+              <span className="text-[10px] font-mono text-foreground/60">
+                {formatExtDuration(ext.duration)}
+              </span>
+            )}
+            {/* Hangup button for active calls */}
+            {onHangup && ext.channel && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-950/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onHangup(ext);
+                    }}
+                  >
+                    <PhoneOff className="h-3 w-3" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Hangup</TooltipContent>
+              </Tooltip>
+            )}
+            {/* CRM button */}
+            {ext.callerNum && (
+              <VtigerCrmButton phoneNumber={ext.callerNum} compact />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Extension Grid Section ──────────────────────────────────────────────
+
+function ExtensionGrid() {
+  const [extSearch, setExtSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [collapsed, setCollapsed] = useState(false);
+  const utils = trpc.useUtils();
+
+  const extensionStatus = trpc.operatorPanel.extensionStatus.useQuery(undefined, {
+    refetchInterval: 5000,
+    staleTime: 4000,
+  });
+
+  const hangupMutation = trpc.operatorPanel.hangupCall.useMutation({
+    onSuccess: () => {
+      toast.success("Hangup command sent");
+      utils.operatorPanel.extensionStatus.invalidate();
+      utils.operatorPanel.liveStatus.invalidate();
+    },
+    onError: (err: any) => {
+      toast.error(`Hangup failed: ${err.message}`);
+    },
+  });
+
+  const handleExtHangup = (ext: ExtensionData) => {
+    hangupMutation.mutate({
+      queueId: 0, // Extension-level hangup, not queue-level
+      channel: ext.channel,
+      phoneNumber: ext.callerNum || ext.ext,
+      targetAgentId: ext.agentId,
+    });
+  };
+
+  const extensions = extensionStatus.data?.extensions ?? [];
+
+  const filteredExtensions = useMemo(() => {
+    let result = extensions;
+    if (extSearch.trim()) {
+      const q = extSearch.toLowerCase();
+      result = result.filter(
+        (e: any) =>
+          e.ext.includes(q) ||
+          e.name?.toLowerCase().includes(q) ||
+          e.callerNum?.includes(q) ||
+          e.callerName?.toLowerCase().includes(q)
+      );
+    }
+    if (statusFilter !== "all") {
+      result = result.filter((e: any) => e.status === statusFilter);
+    }
+    return result;
+  }, [extensions, extSearch, statusFilter]);
+
+  // Status counts for filter badges
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: extensions.length, available: 0, in_use: 0, ringing: 0, on_hold: 0, unavailable: 0, offline: 0 };
+    for (const ext of extensions) {
+      const s = (ext as any).status;
+      if (counts[s] !== undefined) counts[s]++;
+    }
+    return counts;
+  }, [extensions]);
+
+  return (
+    <div>
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex items-center gap-2 mb-3 text-sm font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wider"
+      >
+        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        <Monitor className="h-4 w-4" />
+        SIP Extensions ({extensions.length})
+        {extensionStatus.data?.lastUpdate && (
+          <span className="text-[10px] font-normal normal-case tracking-normal ml-2">
+            Updated {new Date(extensionStatus.data.lastUpdate).toLocaleTimeString()}
+          </span>
+        )}
+      </button>
+
+      {!collapsed && (
+        <>
+          {extensions.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Monitor className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No SIP extensions detected</p>
+                <p className="text-xs mt-1">Extension status is reported by the PBX agent (v1.7.0+) via heartbeat.</p>
+                <p className="text-xs mt-1">Make sure your PBX agent is updated and online.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Filter bar */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search extensions..."
+                    value={extSearch}
+                    onChange={(e) => setExtSearch(e.target.value)}
+                    className="pl-8 h-8 w-40 text-sm"
+                  />
+                </div>
+                {/* Status filter pills */}
+                {(["all", "available", "in_use", "ringing", "on_hold", "unavailable", "offline"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                      statusFilter === s
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {s !== "all" && <div className={`w-2 h-2 rounded-full ${getExtensionStatusColor(s)}`} />}
+                    {s === "all" ? "All" : getExtensionStatusLabel(s)}
+                    <span className="font-mono text-[10px]">({statusCounts[s] || 0})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Extension grid */}
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10 gap-2">
+                {filteredExtensions.map((ext: any) => (
+                  <ExtensionTile
+                    key={ext.ext}
+                    ext={ext}
+                    onHangup={handleExtHangup}
+                  />
+                ))}
+              </div>
+
+              {filteredExtensions.length === 0 && (
+                <div className="text-center py-6 text-muted-foreground text-sm">
+                  No extensions match the current filter
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Command History Panel ────────────────────────────────────────────────
 
 function CommandHistoryPanel() {
@@ -888,6 +1187,9 @@ export default function OperatorPanel() {
           </>
         )}
       </div>
+
+      {/* ─── SIP Extensions Grid (FOP2-style) ───────────────────────── */}
+      <ExtensionGrid />
 
       {/* ─── Active Calls Section ────────────────────────────────────── */}
       <div>

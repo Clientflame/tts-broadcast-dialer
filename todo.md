@@ -882,3 +882,13 @@
 - [x] Command History panel — collapsible panel showing recent command status (pending/delivered/executed/failed)
 - [x] PBX Agent v1.6.0 — process_pending_commands() handles hangup/transfer/park from heartbeat response
 - [x] Server-side call control service — in-memory command queue with TTL, per-agent delivery, result reporting
+
+## v1.9.2 FOP2-style Extension Grid
+
+- [x] PBX Agent reports SIP/PJSIP extension status on heartbeat (PJSIPShowEndpoints + active channels)
+- [x] Server-side storage for extension status data from PBX agent heartbeat
+- [x] tRPC endpoint to serve extension status to Operator Panel
+- [x] FOP2-style extension grid UI — color-coded tiles (green=available, red=in-call, yellow=ringing, grey=offline)
+- [x] Link active calls to extensions — show caller ID, duration, and call controls per extension tile
+- [x] Extension search and status filter pills
+- [x] Hangup button on active extension tiles with CRM lookup integration
