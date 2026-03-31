@@ -35,7 +35,7 @@ if [ -n "$DATABASE_URL" ]; then
   # Run database migrations using the bundled drizzle-kit
   if [ "${SKIP_MIGRATIONS:-false}" != "true" ]; then
     echo "[startup] Running database migrations..."
-    npx drizzle-kit migrate 2>&1 || echo "[startup] WARNING: Migration failed — check DATABASE_URL"
+    ./node_modules/.bin/drizzle-kit migrate 2>&1 || echo "[startup] WARNING: Migration failed — check DATABASE_URL"
   else
     echo "[startup] Skipping migrations (SKIP_MIGRATIONS=true)"
   fi

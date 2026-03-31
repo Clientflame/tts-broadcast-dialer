@@ -29,6 +29,8 @@ services:
       - "${APP_PORT:-3000}:3000"
     env_file:
       - .env
+    volumes:
+      - dialer-storage:/app/data/storage
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -116,6 +118,8 @@ services:
 
 volumes:
   mysql-data:
+    driver: local
+  dialer-storage:
     driver: local
   caddy-data:
     driver: local

@@ -39,13 +39,46 @@ FREEPBX_SSH_USER=root
 FREEPBX_SSH_PASSWORD=your-ssh-password
 
 # --- TTS API Keys ---
-# At least one is required for TTS functionality
-GOOGLE_TTS_API_KEY=your-google-tts-api-key
-OPENAI_API_KEY=your-openai-api-key
+# Configure these in the admin Settings page after installation,
+# or set them here. At least one is required for TTS functionality.
+GOOGLE_TTS_API_KEY=
+OPENAI_API_KEY=
+# Optional: Custom OpenAI-compatible endpoint (leave blank for default)
+# OPENAI_API_BASE_URL=
+
+# --- SMTP (for password resets & notifications) ---
+# Configure in admin Settings page, or set here.
+# Common providers: smtp.gmail.com:587, smtp.office365.com:587, smtp.sendgrid.net:587
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM_EMAIL=
+SMTP_FROM_NAME=
 
 # --- Authentication ---
 # Generate with: openssl rand -hex 32
 JWT_SECRET=CHANGE_ME_generate_a_random_secret
+
+# --- Domain & SSL ---
+# Set APP_DOMAIN to enable Caddy reverse proxy with auto Let's Encrypt SSL.
+# Leave blank to access via http://IP:PORT instead.
+# APP_DOMAIN=dialer.yourcompany.com
+# APP_PROTOCOL=https
+APP_DOMAIN=
+APP_PROTOCOL=http
+
+# --- Vitelity / Caller ID Provisioning (optional) ---
+# Only needed if using Vitelity for DID/Caller ID management
+# VITELITY_API_LOGIN=
+# VITELITY_API_PASS=
+
+# --- vTiger CRM Integration (optional) ---
+# Configure in admin Settings page, or set here.
+# VTIGER_URL=https://your-vtiger-instance.com
+# VTIGER_USERNAME=
+# VTIGER_ACCESS_KEY=
 
 # --- Manus Platform (leave empty for standalone deployments) ---
 VITE_APP_ID=

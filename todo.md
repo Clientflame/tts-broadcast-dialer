@@ -894,3 +894,21 @@
 - [x] Hangup button on active extension tiles with CRM lookup integration
 - [x] Fix PBX agent 404 errors on heartbeat/poll — fixed API URL, API key, and AMI Output parsing bug (duplicate keys overwritten)
 - [x] Fix AMI _read_message to collect Output lines as list instead of overwriting duplicate keys
+
+## Production Readiness Audit (v1.9.4)
+- [x] Audit Dockerfile and docker-compose for fresh installs
+- [x] Audit database migrations for clean schema creation
+- [x] Audit environment variables and .env.example completeness
+- [x] Audit PBX agent distribution, install script, and systemd service
+- [x] Audit CI/CD pipeline (GitHub Actions) and Docker image build
+- [x] Audit deploy/ directory documentation and USER-GUIDE
+- [x] Fix: Created .dockerignore to exclude node_modules, .git, .env, logs from Docker build
+- [x] Fix: Added missing env vars to env-template.txt (SMTP, Vitelity, vTiger, OPENAI_API_BASE_URL)
+- [x] Fix: entrypoint.sh now uses ./node_modules/.bin/drizzle-kit instead of npx
+- [x] Fix: setup-client.sh step numbering corrected (was 1/5..2/5..3/7, now all /7)
+- [x] Fix: GitHub Actions checkout now uses fetch-depth: 0 for git tag version detection
+- [x] Fix: docker-compose.yml now includes dialer-storage volume for local file persistence
+- [x] Fix: Dockerfile now creates /app/data/storage directory
+- [x] Fix: Added all missing env vars to DEPLOYMENT-GUIDE.md reference table
+- [x] Fix: APP_PROTOCOL in setup-client.sh now correctly evaluates to http/https
+- [x] Verify build and all tests pass (922 tests passing, build succeeds)

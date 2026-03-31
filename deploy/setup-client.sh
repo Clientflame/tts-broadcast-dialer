@@ -151,7 +151,7 @@ fi
 # ============================================================
 # Step 1: Branding
 # ============================================================
-print_header "1/5  Your Brand"
+print_header "1/7  Your Brand"
 
 prompt CLIENT_NAME "Company name" "" ""
 prompt APP_TITLE "App title (shown in browser tab & sidebar)" "AI TTS Broadcast Dialer" ""
@@ -190,7 +190,7 @@ echo -e "  ${GREEN}✓${NC} Brand: ${BOLD}${APP_TITLE}${NC} — ${PRIMARY_COLOR}
 # ============================================================
 # Step 2: FreePBX Connection
 # ============================================================
-print_header "2/5  FreePBX Connection"
+print_header "2/7  FreePBX Connection"
 
 echo -e "  ${DIM}Enter the connection details for your FreePBX/Asterisk server.${NC}"
 echo -e "  ${DIM}You can change these later by editing ${DEPLOY_DIR}/.env${NC}"
@@ -748,7 +748,7 @@ TZ=${APP_TZ}
 # --- Domain & SSL ---
 DOMAIN=${APP_DOMAIN}
 APP_DOMAIN=${APP_DOMAIN:+${APP_DOMAIN}}
-APP_PROTOCOL=${ENABLE_SSL:+https}
+APP_PROTOCOL=$([ "$ENABLE_SSL" = "true" ] && echo "https" || echo "http")
 
 # --- Database (auto-generated, do not change) ---
 MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
@@ -790,6 +790,17 @@ BUILT_IN_FORGE_API_URL=
 BUILT_IN_FORGE_API_KEY=
 VITE_FRONTEND_FORGE_API_KEY=
 VITE_FRONTEND_FORGE_API_URL=
+
+# --- Optional Integrations (configure in admin Settings page) ---
+# Vitelity Caller ID provisioning:
+# VITELITY_API_LOGIN=
+# VITELITY_API_PASS=
+# vTiger CRM:
+# VTIGER_URL=
+# VTIGER_USERNAME=
+# VTIGER_ACCESS_KEY=
+# Custom OpenAI endpoint:
+# OPENAI_API_BASE_URL=
 
 # --- Auto-Update (seconds between checks, default 24h) ---
 UPDATE_CHECK_INTERVAL=86400

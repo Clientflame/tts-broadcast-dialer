@@ -814,3 +814,18 @@ certbot --apache -d dialer.example.com
 | `UPDATE_CHECK_INTERVAL` | No | Watchtower check interval in seconds (default: 86400) |
 | `SKIP_MIGRATIONS` | No | Set to "true" to skip auto-migrations on startup |
 | `DOCKER_IMAGE` | No | Docker image to use (default: ghcr.io/clientflame/tts-broadcast-dialer:latest) |
+| `SMTP_HOST` | No | SMTP server hostname (e.g., smtp.gmail.com) |
+| `SMTP_PORT` | No | SMTP port (default: 587) |
+| `SMTP_SECURE` | No | Use SSL (true for port 465, false for STARTTLS on 587) |
+| `SMTP_USER` | No | SMTP username |
+| `SMTP_PASS` | No | SMTP password |
+| `SMTP_FROM_EMAIL` | No | From email address for notifications |
+| `SMTP_FROM_NAME` | No | From display name for notifications |
+| `APP_DOMAIN` | No | App domain for email links (same as DOMAIN) |
+| `APP_PROTOCOL` | No | http or https (auto-set by setup wizard) |
+| `OPENAI_API_BASE_URL` | No | Custom OpenAI-compatible API endpoint |
+| `VITELITY_API_LOGIN` | No | Vitelity API login for caller ID provisioning |
+| `VITELITY_API_PASS` | No | Vitelity API password |
+| `VTIGER_URL` | No | vTiger CRM instance URL |
+| `VTIGER_USERNAME` | No | vTiger CRM username |
+| `VTIGER_ACCESS_KEY` | No | vTiger CRM access key |

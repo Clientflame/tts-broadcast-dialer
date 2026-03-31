@@ -1,0 +1,55 @@
+# ============================================================
+# TTS Broadcast Dialer — Docker Build Exclusions
+# ============================================================
+
+# Dependencies (reinstalled in Docker)
+node_modules/
+
+# Build output (rebuilt in Docker)
+dist/
+
+# Git history (not needed in image)
+.git/
+.gitignore
+
+# Environment files (NEVER include secrets in image)
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+.manus-logs/
+
+# Test files
+*.test.ts
+*.spec.ts
+__tests__/
+coverage/
+
+# Documentation (not needed in runtime image)
+AUDIT-FINDINGS.md
+todo.md
+README.md
+
+# Deploy directory (Dockerfile is referenced by path, not copied)
+deploy/DEPLOYMENT-GUIDE.md
+deploy/setup-client.sh
+deploy/env-template.txt
+deploy/github-actions/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

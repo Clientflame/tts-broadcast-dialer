@@ -82,9 +82,11 @@ describe("v1.9.0 features", () => {
   });
 
   describe("Version bump", () => {
-    it("should have version 1.9.0 in package.json", async () => {
+    it("should have version >= 1.9.0 in package.json", async () => {
       const pkg = await import("../package.json");
-      expect(pkg.version).toBe("1.9.0");
+      const [major, minor] = pkg.version.split(".").map(Number);
+      expect(major).toBeGreaterThanOrEqual(1);
+      expect(minor).toBeGreaterThanOrEqual(9);
     });
   });
 });

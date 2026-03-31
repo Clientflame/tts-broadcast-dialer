@@ -69,6 +69,9 @@ COPY voice-ai-bridge/ ./voice-ai-bridge/
 COPY deploy/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 
+# Create data directory for local file storage (mounted as volume in production)
+RUN mkdir -p /app/data/storage
+
 # Default environment
 ENV NODE_ENV=production
 ENV TZ=America/New_York
