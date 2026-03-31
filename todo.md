@@ -916,3 +916,14 @@
 - [x] Bug: Final Notice call script segment 3 not reading callback number during voice call (dialer now falls back to script-level callbackNumber)
 - [x] Bug: Campaign shows 28 DIDs but only 14 exist — DID count was doubled because labelCounts.reduce summed the __all__ entry too
 - [x] Bug: Call script callback number cannot be cleared — fixed: Zod schema now accepts nullable, frontend sends null when field is empty
+- [x] Feature: Interactive onboarding tutorial — product tour with illustrated cards on first login
+- [x] Tutorial step: Welcome / Dashboard overview
+- [x] Tutorial step: Campaigns — create and manage broadcast campaigns
+- [x] Tutorial step: Contacts — import and manage contact lists
+- [x] Tutorial step: Call Scripts — build TTS scripts with segments
+- [x] Tutorial step: Caller IDs — manage DIDs and rotation
+- [x] Tutorial step: FreePBX Integration — PBX agent setup
+- [x] Tutorial step: Analytics — real-time reporting
+- [x] Tutorial step: Dashboard — command center overview
+- [x] Tutorial persistence — localStorage-based, shows on first login, replayable from sidebar
+- [x] Sidebar "Product Tour" button to replay the tour anytime

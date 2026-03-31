@@ -21,6 +21,7 @@ import {
   Settings, Volume2, Bot, Download, Globe, Copy, Check, ArrowUp, Server, RotateCcw,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
+import ProductTour, { useProductTour } from "@/components/ProductTour";
 
 function useESTClock() {
   const [time, setTime] = useState("");
@@ -757,6 +758,7 @@ export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const estClock = useESTClock();
+  const { shouldShow: showTour, completeTour } = useProductTour();
 
   // Redirect non-admin users to agent dashboard
   useEffect(() => {
@@ -795,6 +797,9 @@ export default function Home() {
 
   return (
     <DashboardLayout>
+      {showTour && user?.role === "admin" && (
+        <ProductTour onComplete={completeTour} onNavigate={setLocation} />
+      )}
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">

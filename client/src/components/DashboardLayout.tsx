@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun, Sparkles } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -64,6 +64,7 @@ const adminMenuItems = [
   { icon: Key, label: "License Keys", path: "/licenses" },
   { icon: BookOpen, label: "Help & Docs", path: "/help" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
+  { icon: Sparkles, label: "Product Tour", path: "/__product_tour__" },
 ];
 
 // Focused agent menu items — only what phone agents need
@@ -235,7 +236,15 @@ function DashboardLayoutContent({
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      onClick={() => {
+                        if (item.path === "/__product_tour__") {
+                          localStorage.removeItem("product_tour_completed");
+                          window.dispatchEvent(new CustomEvent("replay-product-tour"));
+                          setLocation("/");
+                        } else {
+                          setLocation(item.path);
+                        }
+                      }}
                       tooltip={item.label}
                       className={`h-10 transition-all font-normal`}
                     >
