@@ -20,9 +20,12 @@
 services:
   # --- TTS Dialer Web App ---
   dialer:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
+    image: ghcr.io/clientflame/tts-broadcast-dialer:latest
+    # To build locally instead of pulling from GHCR, comment out 'image:' above
+    # and uncomment the 'build:' block below:
+    # build:
+    #   context: ..
+    #   dockerfile: deploy/Dockerfile
     container_name: tts-dialer
     restart: unless-stopped
     ports:

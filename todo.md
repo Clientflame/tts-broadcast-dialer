@@ -967,3 +967,8 @@
 - [x] Backend endpoint to retrieve grade history for charting
 - [x] Add security grade history trend chart to the Security page (with trend, stats row)
 - [x] Write tests for fix commands and grade history endpoints (16 tests pass)
+
+## Documentation & Diagrams
+- [x] Verify latest checkpoint pushed to GitHub
+- [x] Update User & Admin Manual (PDF) with all features including security tools (v2.0, 35 sections)
+- [x] Create visual deployment architecture diagram (Mermaid + D2 formats)
