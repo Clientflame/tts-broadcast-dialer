@@ -5086,13 +5086,25 @@ Return ONLY the message text, nothing else.`;
             detail: "Host SSH not configured — use the configuration card above to enter your host server's SSH credentials. The app runs inside Docker and needs SSH access to check and fix host-level security.",
           });
         }
-        // SSL check doesn't need SSH
+        // SSL check doesn't need SSH — probe HTTPS if domain is set
         const domain = process.env.DOMAIN || await db.getAppSetting("domain");
         const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
         if (domain && appProtocol === "https") {
           checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
         } else if (domain) {
-          checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open" });
+          // app_protocol not explicitly set — probe the domain to detect Caddy SSL
+          try {
+            const probeRes = await fetch(`https://${domain}/`, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+            if (probeRes.ok || probeRes.status === 301 || probeRes.status === 302) {
+              checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS active for ${domain}`, detail: "Caddy reverse proxy detected with valid SSL certificate" });
+              // Persist so future checks skip the probe
+              await db.upsertAppSetting("app_protocol", "https", "Auto-detected HTTPS via Caddy reverse proxy");
+            } else {
+              checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS returned status ${probeRes.status}`, detail: "Ensure Caddy is running with ports 80/443 open" });
+            }
+          } catch {
+            checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open and DNS points to this server" });
+          }
         } else {
           checks.push({ name: "SSL/HTTPS", status: "unconfigured", message: "No domain configured — using HTTP only", detail: "Add a domain in setup to enable automatic HTTPS" });
         }
@@ -5182,13 +5194,25 @@ Return ONLY the message text, nothing else.`;
         checks.push({ name: "SSH Auth Method", status: "unconfigured", message: "Unable to check SSH configuration" });
       }
 
-      // 4. SSL/HTTPS (no SSH needed — checks app config)
+      // 4. SSL/HTTPS (no SSH needed — probes HTTPS if domain is set)
       const domain = process.env.DOMAIN || await db.getAppSetting("domain");
       const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
       if (domain && appProtocol === "https") {
         checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
       } else if (domain) {
-        checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open" });
+        // app_protocol not explicitly set — probe the domain to detect Caddy SSL
+        try {
+          const probeRes = await fetch(`https://${domain}/`, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+          if (probeRes.ok || probeRes.status === 301 || probeRes.status === 302) {
+            checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS active for ${domain}`, detail: "Caddy reverse proxy detected with valid SSL certificate" });
+            // Persist so future checks skip the probe
+            await db.upsertAppSetting("app_protocol", "https", "Auto-detected HTTPS via Caddy reverse proxy");
+          } else {
+            checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS returned status ${probeRes.status}`, detail: "Ensure Caddy is running with ports 80/443 open" });
+          }
+        } catch {
+          checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open and DNS points to this server" });
+        }
       } else {
         checks.push({ name: "SSL/HTTPS", status: "unconfigured", message: "No domain configured — using HTTP only", detail: "Add a domain in setup to enable automatic HTTPS" });
       }

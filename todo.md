@@ -1002,3 +1002,6 @@
 - [x] Push to main, trigger fresh build, verify new SHA on GHCR (b656d97a vs old c6963f67)
 - [x] Force-pull and restart both servers
 - [x] Verify both servers running v2.0.3 — both confirmed SHA b656d97a
+- [x] Fix Watchtower on app.407hosted.com (update to latest + DOCKER_API_VERSION=1.40)
+- [x] Fix HTTPS/SSL on app.407hosted.com — verified working (Let's Encrypt cert valid until Jun 27 2026)
+- [x] Fix SSL/HTTPS health check on Settings/FreePBX page to detect Caddy-terminated SSL behind reverse proxy
