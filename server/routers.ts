@@ -4782,6 +4782,280 @@ Return ONLY the message text, nothing else.`;
       return { url: buildVtigerSearchUrl(input.phoneNumber) };
     }),
   }),
+
+  // ─── Setup Wizard ─────────────────────────────────────────────────────────
+  setupWizard: router({
+    /** Check if first-run setup is needed (no admin user or setup_complete flag not set) */
+    isSetupNeeded: publicProcedure.query(async () => {
+      const setupComplete = await db.getAppSetting("setup_wizard_complete");
+      if (setupComplete === "true") return { needed: false, reason: "already_complete" };
+      // Check if any admin user exists
+      const dbInst = await db.getDb();
+      if (!dbInst) return { needed: true, reason: "no_db" };
+      const { users } = await import("../drizzle/schema");
+      const { eq, count } = await import("drizzle-orm");
+      const [result] = await dbInst.select({ count: count() }).from(users);
+      if ((result?.count ?? 0) === 0) return { needed: true, reason: "no_users" };
+      return { needed: true, reason: "not_completed" };
+    }),
+
+    /** Get current setup wizard progress */
+    getProgress: protectedProcedure.query(async () => {
+      const [brandingDone, freepbxDone, apiKeysDone, smtpDone, agentDone] = await Promise.all([
+        db.getAppSetting("setup_wizard_branding_done"),
+        db.getAppSetting("setup_wizard_freepbx_done"),
+        db.getAppSetting("setup_wizard_apikeys_done"),
+        db.getAppSetting("setup_wizard_smtp_done"),
+        db.getAppSetting("setup_wizard_agent_done"),
+      ]);
+      return {
+        branding: brandingDone === "true",
+        freepbx: freepbxDone === "true",
+        apiKeys: apiKeysDone === "true",
+        smtp: smtpDone === "true",
+        agent: agentDone === "true",
+      };
+    }),
+
+    /** Save branding settings from wizard */
+    saveBranding: adminProcedure.input(z.object({
+      appName: z.string().min(1).max(100),
+      tagline: z.string().max(200).optional(),
+      primaryColor: z.string().max(20).optional(),
+      accentColor: z.string().max(20).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting("branding_app_name", input.appName, "Application name");
+      if (input.tagline !== undefined) await db.upsertAppSetting("branding_tagline", input.tagline, "Application tagline");
+      if (input.primaryColor) await db.upsertAppSetting("branding_primary_color", input.primaryColor, "Primary brand color");
+      if (input.accentColor) await db.upsertAppSetting("branding_accent_color", input.accentColor, "Accent brand color");
+      await db.upsertAppSetting("setup_wizard_branding_done", "true", "Setup wizard branding step completed");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.branding", resource: "appSettings", details: { appName: input.appName } });
+      return { success: true };
+    }),
+
+    /** Save FreePBX settings from wizard */
+    saveFreepbx: adminProcedure.input(z.object({
+      host: z.string().min(1),
+      amiUser: z.string().min(1),
+      amiPassword: z.string().min(1),
+      amiPort: z.coerce.number().int().min(1).max(65535).default(5038),
+      sshUser: z.string().min(1),
+      sshPassword: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting("freepbx_host", input.host, "FreePBX server IP/hostname");
+      await db.upsertAppSetting("freepbx_ami_user", input.amiUser, "FreePBX AMI username", 1);
+      await db.upsertAppSetting("freepbx_ami_password", input.amiPassword, "FreePBX AMI password", 1);
+      await db.upsertAppSetting("freepbx_ami_port", String(input.amiPort), "FreePBX AMI port");
+      await db.upsertAppSetting("freepbx_ssh_user", input.sshUser, "FreePBX SSH username", 1);
+      await db.upsertAppSetting("freepbx_ssh_password", input.sshPassword, "FreePBX SSH password", 1);
+      await db.upsertAppSetting("setup_wizard_freepbx_done", "true", "Setup wizard FreePBX step completed");
+      // Auto-reconnect AMI
+      try {
+        const { reconnectAMI } = await import("./services/ami");
+        await reconnectAMI();
+      } catch (e) { /* ignore */ }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.freepbx", resource: "freepbx", details: { host: input.host } });
+      return { success: true };
+    }),
+
+    /** Save API keys from wizard */
+    saveApiKeys: adminProcedure.input(z.object({
+      openaiKey: z.string().optional(),
+      googleTtsKey: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      if (input.openaiKey) await db.upsertAppSetting("openai_api_key", input.openaiKey, "OpenAI API Key", 1);
+      if (input.googleTtsKey) await db.upsertAppSetting("google_tts_api_key", input.googleTtsKey, "Google TTS API Key", 1);
+      await db.upsertAppSetting("setup_wizard_apikeys_done", "true", "Setup wizard API keys step completed");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.apiKeys", resource: "appSettings", details: { hasOpenAI: !!input.openaiKey, hasGoogle: !!input.googleTtsKey } });
+      return { success: true };
+    }),
+
+    /** Save SMTP settings from wizard */
+    saveSmtp: adminProcedure.input(z.object({
+      host: z.string().min(1),
+      port: z.coerce.number().int().min(1).max(65535).default(587),
+      secure: z.boolean().default(false),
+      user: z.string().min(1),
+      pass: z.string().min(1),
+      fromEmail: z.string().email(),
+      fromName: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      await db.upsertAppSetting("smtp_host", input.host, "SMTP server host");
+      await db.upsertAppSetting("smtp_port", String(input.port), "SMTP server port");
+      await db.upsertAppSetting("smtp_secure", input.secure ? "true" : "false", "SMTP use TLS");
+      await db.upsertAppSetting("smtp_user", input.user, "SMTP username", 1);
+      await db.upsertAppSetting("smtp_pass", input.pass, "SMTP password", 1);
+      await db.upsertAppSetting("smtp_from_email", input.fromEmail, "SMTP from email");
+      await db.upsertAppSetting("smtp_from_name", input.fromName, "SMTP from name");
+      await db.upsertAppSetting("setup_wizard_smtp_done", "true", "Setup wizard SMTP step completed");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.smtp", resource: "appSettings", details: { host: input.host } });
+      return { success: true };
+    }),
+
+    /** Mark PBX agent step as done */
+    markAgentDone: adminProcedure.mutation(async ({ ctx }) => {
+      await db.upsertAppSetting("setup_wizard_agent_done", "true", "Setup wizard PBX agent step completed");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.agentDone", resource: "appSettings", details: {} });
+      return { success: true };
+    }),
+
+    /** Mark entire wizard as complete */
+    complete: adminProcedure.mutation(async ({ ctx }) => {
+      await db.upsertAppSetting("setup_wizard_complete", "true", "Setup wizard completed");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.complete", resource: "appSettings", details: {} });
+      return { success: true };
+    }),
+
+    /** Skip the entire wizard */
+    skip: adminProcedure.mutation(async ({ ctx }) => {
+      await db.upsertAppSetting("setup_wizard_complete", "true", "Setup wizard skipped");
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.skip", resource: "appSettings", details: {} });
+      return { success: true };
+    }),
+
+    /** Remote install PBX agent via SSH */
+    remoteInstallAgent: adminProcedure.input(z.object({
+      agentId: z.string(),
+      origin: z.string().url(),
+    })).mutation(async ({ ctx, input }) => {
+      const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      const sshUser = await db.getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+      const sshPassword = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
+      if (!host || !sshUser || !sshPassword) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "SSH credentials not configured. Complete the FreePBX step first." });
+      }
+      const agent = await db.getPbxAgentByAgentId(input.agentId);
+      if (!agent) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+
+      const { Client: SSHClient } = await import("ssh2");
+      const installUrl = `${input.origin}/api/pbx/install?key=${encodeURIComponent(agent.apiKey)}`;
+      const installCmd = `curl -sSL "${installUrl}" | bash`;
+
+      return new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+        const conn = new SSHClient();
+        const timeout = setTimeout(() => { conn.end(); resolve({ success: false, output: "", error: "SSH connection timed out after 90 seconds" }); }, 90000);
+
+        conn.on("ready", () => {
+          conn.exec(installCmd, (err, stream) => {
+            if (err) { clearTimeout(timeout); conn.end(); resolve({ success: false, output: "", error: err.message }); return; }
+            let output = "";
+            stream.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.stderr.on("data", (data: Buffer) => { output += data.toString(); });
+            stream.on("close", (code: number) => {
+              clearTimeout(timeout);
+              conn.end();
+              const isSuccess = code === 0 || code === null || output.includes("PBX Agent installed") || output.includes("active (running)");
+              resolve({ success: isSuccess, output: output.trim().slice(0, 5000), error: !isSuccess ? `Install exited with code ${code}` : undefined });
+            });
+          });
+        });
+
+        conn.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          let errorMsg = err.message;
+          if (errorMsg.includes("Authentication")) errorMsg = "SSH authentication failed — check username/password";
+          else if (errorMsg.includes("ECONNREFUSED")) errorMsg = "SSH connection refused — check host and port";
+          else if (errorMsg.includes("ETIMEDOUT")) errorMsg = "SSH connection timed out — check host is reachable";
+          resolve({ success: false, output: "", error: errorMsg });
+        });
+
+        conn.connect({ host, port: 22, username: sshUser, password: sshPassword, readyTimeout: 15000 });
+      }).then(async (result) => {
+        if (result.success) {
+          await db.upsertAppSetting("setup_wizard_agent_done", "true", "Setup wizard PBX agent step completed");
+        }
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "setupWizard.remoteInstallAgent", resource: "pbx-agent", details: { success: result.success, agentId: input.agentId, host, error: result.error } });
+        return result;
+      });
+    }),
+
+    /** Run health check across all services */
+    healthCheck: protectedProcedure.query(async () => {
+      const checks: Array<{ name: string; status: "ok" | "warning" | "error" | "unconfigured"; message: string; fixUrl?: string }> = [];
+
+      // 1. Database
+      try {
+        const dbInst = await db.getDb();
+        if (dbInst) {
+          checks.push({ name: "Database", status: "ok", message: "MySQL connected" });
+        } else {
+          checks.push({ name: "Database", status: "error", message: "Database not connected" });
+        }
+      } catch (e: any) {
+        checks.push({ name: "Database", status: "error", message: e.message });
+      }
+
+      // 2. PBX Agent
+      const agents = await db.getPbxAgents();
+      if (agents.length === 0) {
+        checks.push({ name: "PBX Agent", status: "unconfigured", message: "No PBX agent registered", fixUrl: "/freepbx" });
+      } else {
+        const online = agents.some((a: any) => a.lastHeartbeat && Date.now() - new Date(a.lastHeartbeat).getTime() < 60000);
+        if (online) {
+          checks.push({ name: "PBX Agent", status: "ok", message: `${agents.length} agent(s) registered, online` });
+        } else {
+          checks.push({ name: "PBX Agent", status: "warning", message: `${agents.length} agent(s) registered but offline`, fixUrl: "/freepbx" });
+        }
+      }
+
+      // 3. FreePBX AMI
+      const freepbxHost = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+      if (!freepbxHost) {
+        checks.push({ name: "FreePBX AMI", status: "unconfigured", message: "FreePBX host not configured", fixUrl: "/settings" });
+      } else {
+        try {
+          const { getAMIStatus } = await import("./services/ami");
+          const amiStatus = getAMIStatus();
+          if (amiStatus.connected) {
+            checks.push({ name: "FreePBX AMI", status: "ok", message: `Connected to ${freepbxHost}` });
+          } else {
+            checks.push({ name: "FreePBX AMI", status: "warning", message: `Not connected to ${freepbxHost}`, fixUrl: "/settings" });
+          }
+        } catch {
+          checks.push({ name: "FreePBX AMI", status: "warning", message: "AMI service not available" });
+        }
+      }
+
+      // 4. OpenAI API Key
+      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      if (!openaiKey) {
+        checks.push({ name: "OpenAI API", status: "unconfigured", message: "API key not set", fixUrl: "/settings" });
+      } else {
+        checks.push({ name: "OpenAI API", status: "ok", message: "API key configured" });
+      }
+
+      // 5. Google TTS API Key
+      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+      if (!googleKey) {
+        checks.push({ name: "Google TTS", status: "unconfigured", message: "API key not set (optional)", fixUrl: "/settings" });
+      } else {
+        checks.push({ name: "Google TTS", status: "ok", message: "API key configured" });
+      }
+
+      // 6. SMTP
+      const smtpHost = await db.getAppSetting("smtp_host") || process.env.SMTP_HOST;
+      if (!smtpHost) {
+        checks.push({ name: "Email (SMTP)", status: "unconfigured", message: "Not configured (optional)", fixUrl: "/settings" });
+      } else {
+        checks.push({ name: "Email (SMTP)", status: "ok", message: `SMTP configured: ${smtpHost}` });
+      }
+
+      // 7. Caller IDs
+      const callerIds = await db.getCallerIds();
+      if (callerIds.length === 0) {
+        checks.push({ name: "Caller IDs", status: "unconfigured", message: "No caller IDs imported", fixUrl: "/caller-ids" });
+      } else {
+        const active = callerIds.filter((c: any) => c.isActive).length;
+        checks.push({ name: "Caller IDs", status: active > 0 ? "ok" : "warning", message: `${callerIds.length} DID(s), ${active} active`, fixUrl: "/caller-ids" });
+      }
+
+      const okCount = checks.filter(c => c.status === "ok").length;
+      const errorCount = checks.filter(c => c.status === "error").length;
+      const warningCount = checks.filter(c => c.status === "warning").length;
+
+      return { checks, summary: { ok: okCount, error: errorCount, warning: warningCount, unconfigured: checks.filter(c => c.status === "unconfigured").length, total: checks.length } };
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

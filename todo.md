@@ -928,3 +928,13 @@
 - [x] Tutorial persistence — localStorage-based, shows on first login, replayable from sidebar
 - [x] Sidebar "Product Tour" button to replay the tour anytime
 - [x] Bug: PBX agent installer SyntaxError — fixed: double-escaped backslashes in Python regex inside JS template literal
+
+## Self-Hosted Install Improvements (v2.0)
+- [x] #1 Web-Based First-Run Setup Wizard — browser-based config after Docker starts (like WordPress)
+- [x] #2 Simplify Install to 3 Commands — curl|bash → enter domain → done, move config to web UI
+- [x] #3 Bundle PBX Agent Install Into Web Wizard — auto-install agent via SSH from the app
+- [x] #4 Auto-Detect SSL — default to Let's Encrypt automatically, no question needed
+- [x] #5 Embed GHCR Token in Install Script — package made public, no token needed
+- [x] #6 Auto-Generate Secure Passwords — MySQL, JWT secret auto-generated, shown once at end
+- [x] #7 Health Check Dashboard on First Login — checklist of connections with green/red status and Fix Now buttons
+- [x] #8 One-Click PBX Agent Update — button in FreePBX page that SSHes and re-runs installer
