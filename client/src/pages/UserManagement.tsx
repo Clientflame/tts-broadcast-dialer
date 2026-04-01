@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { useState, useMemo } from "react";
-import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal, Headphones, Link2, Unlink, CheckSquare, Square, MinusSquare } from "lucide-react";
+import { Users, UserPlus, Shield, ShieldCheck, Search, Mail, Key, UserCog, Trash2, RotateCcw, Loader2, MoreHorizontal, Headphones, Link2, Unlink, CheckSquare, Square, MinusSquare, Pencil } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
@@ -50,6 +50,11 @@ export default function UserManagement() {
   const [search, setSearch] = useState("");
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<{ id: number; name: string; description: string; permissions: Record<string, boolean>; isDefault: boolean } | null>(null);
+  const [editGroupName, setEditGroupName] = useState("");
+  const [editGroupDesc, setEditGroupDesc] = useState("");
+  const [editGroupPerms, setEditGroupPerms] = useState<Record<string, boolean>>({});
+  const [editGroupIsDefault, setEditGroupIsDefault] = useState(false);
   const [activeTab, setActiveTab] = useState<"users" | "groups">("users");
 
   // New user form
@@ -749,14 +754,30 @@ export default function UserManagement() {
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-lg">{group.name}</CardTitle>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => { if (confirm("Delete this group?")) deleteGroup.mutate({ id: group.id }); }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              const permsObj = (group.permissions as Record<string, boolean>) || {};
+                              setEditingGroup({ id: group.id, name: group.name, description: group.description || "", permissions: permsObj, isDefault: group.isDefault === 1 });
+                              setEditGroupName(group.name);
+                              setEditGroupDesc(group.description || "");
+                              setEditGroupPerms({ ...permsObj });
+                              setEditGroupIsDefault(group.isDefault === 1);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => { if (confirm("Delete this group?")) deleteGroup.mutate({ id: group.id }); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       {group.description && <CardDescription>{group.description}</CardDescription>}
                     </CardHeader>
@@ -790,6 +811,94 @@ export default function UserManagement() {
                 </div>
               )}
             </div>
+
+            {/* Edit Group Dialog */}
+            <Dialog open={!!editingGroup} onOpenChange={(open) => { if (!open) setEditingGroup(null); }}>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Permission Group</DialogTitle>
+                  <DialogDescription>Update the group name, description, and permissions</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Group Name</Label>
+                      <Input value={editGroupName} onChange={e => setEditGroupName(e.target.value)} placeholder="e.g., Campaign Managers" />
+                    </div>
+                    <div>
+                      <Label>Description</Label>
+                      <Input value={editGroupDesc} onChange={e => setEditGroupDesc(e.target.value)} placeholder="Optional description" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editGroupIsDefault}
+                      onChange={e => setEditGroupIsDefault(e.target.checked)}
+                      className="rounded"
+                      id="edit-group-default"
+                    />
+                    <Label htmlFor="edit-group-default">Default group (auto-assign to new users)</Label>
+                  </div>
+                  <Separator />
+                  <div>
+                    <Label className="text-base font-semibold">Permissions</Label>
+                    <div className="mt-3 space-y-4">
+                      {categories.map(cat => (
+                        <div key={cat}>
+                          <h4 className="text-sm font-medium text-muted-foreground mb-2">{cat}</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {AVAILABLE_PERMISSIONS.filter(p => p.category === cat).map(p => (
+                              <label key={p.key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded p-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={editGroupPerms[p.key] || false}
+                                  onChange={e => setEditGroupPerms(prev => ({ ...prev, [p.key]: e.target.checked }))}
+                                  className="rounded"
+                                />
+                                {p.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        if (!editingGroup) return;
+                        const activePerms: Record<string, boolean> = {};
+                        Object.entries(editGroupPerms).forEach(([k, v]) => { if (v) activePerms[k] = true; });
+                        updateGroup.mutate({
+                          id: editingGroup.id,
+                          name: editGroupName,
+                          description: editGroupDesc || undefined,
+                          permissions: activePerms,
+                          isDefault: editGroupIsDefault,
+                        });
+                        setEditingGroup(null);
+                      }}
+                      disabled={!editGroupName || updateGroup.isPending}
+                      className="flex-1"
+                    >
+                      {updateGroup.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const all: Record<string, boolean> = {};
+                        AVAILABLE_PERMISSIONS.forEach(p => { all[p.key] = true; });
+                        setEditGroupPerms(all);
+                      }}
+                    >
+                      Select All
+                    </Button>
+                    <Button variant="outline" onClick={() => setEditGroupPerms({})}>Clear All</Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
         )}
       </div>

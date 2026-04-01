@@ -13,7 +13,7 @@ import {
   CheckCircle2, Plus, Trash2, Copy, Check, Terminal, Download,
   Activity, Zap, Gauge, AlertTriangle, RotateCcw, ShieldAlert,
   BarChart3, TrendingUp, Phone, PhoneOff, PhoneMissed,
-  Rocket, ChevronDown, ChevronUp, ClipboardCopy, ExternalLink
+  Rocket, ChevronDown, ChevronUp, ClipboardCopy, ExternalLink, Save
 } from "lucide-react";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -122,6 +122,88 @@ function InstallerWizard({ agentId, onDone }: { agentId: string; onDone: () => v
         <Check className="h-3.5 w-3.5 mr-1.5" />Done — I've run the command
       </Button>
     </div>
+  );
+}
+
+// ─── SIP Trunk Configuration ────────────────────────────────────────────────
+function SipTrunkConfig() {
+  const settings = trpc.appSettings.list.useQuery();
+  const updateSetting = trpc.appSettings.update.useMutation({
+    onSuccess: () => {
+      toast.success("SIP trunk name saved");
+      settings.refetch();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const currentTrunk = settings.data?.find((s: any) => s.key === "sip_trunk_name")?.value || "vitel-outbound";
+  const [trunkName, setTrunkName] = useState("");
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (settings.data && !initialized) {
+      const existing = settings.data.find((s: any) => s.key === "sip_trunk_name")?.value;
+      if (existing) setTrunkName(existing);
+      setInitialized(true);
+    }
+  }, [settings.data, initialized]);
+
+  const handleSave = () => {
+    if (!trunkName.trim()) {
+      toast.error("Please enter a trunk name");
+      return;
+    }
+    updateSetting.mutate({ key: "sip_trunk_name", value: trunkName.trim() });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Phone className="h-4 w-4" />SIP Trunk Configuration
+        </CardTitle>
+        <CardDescription>
+          The outbound trunk name used for all calls (campaigns, test calls, Voice AI). Must match the trunk name in your FreePBX admin under Connectivity → Trunks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+            <span className="text-sm text-muted-foreground">Current trunk:</span>
+            <Badge variant="outline" className="font-mono text-sm">{currentTrunk}</Badge>
+          </div>
+          <div className="flex gap-3 items-end">
+            <div className="flex-1 space-y-1">
+              <Label htmlFor="trunkName" className="text-xs">Outbound Trunk Name</Label>
+              <Input
+                id="trunkName"
+                placeholder="e.g., alliancephones_Out, vitel-outbound"
+                value={trunkName}
+                onChange={(e) => setTrunkName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                className="font-mono"
+              />
+            </div>
+            <Button onClick={handleSave} disabled={updateSetting.isPending || !trunkName.trim()}>
+              {updateSetting.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <><Save className="h-4 w-4 mr-1.5" />Save</>  
+              )}
+            </Button>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs text-amber-700 dark:text-amber-300">
+            <p className="font-medium mb-1">How to find your trunk name:</p>
+            <ol className="list-decimal list-inside space-y-0.5">
+              <li>Log into FreePBX admin panel</li>
+              <li>Go to <strong>Connectivity → Trunks</strong></li>
+              <li>Find your outbound trunk — the name in the list is what you enter here</li>
+              <li>Common examples: <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">vitel-outbound</code>, <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">alliancephones_Out</code>, <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">twilio-trunk</code></li>
+            </ol>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -996,6 +1078,9 @@ export default function FreePBX() {
 
         {/* Agent Performance Metrics */}
         <AgentMetricsDashboard />
+
+        {/* SIP Trunk Configuration */}
+        <SipTrunkConfig />
 
         {/* How It Works (collapsed by default) */}
         <Card>

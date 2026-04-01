@@ -1211,7 +1211,7 @@ export const appRouter = router({
       for (const cid of callerIdsToCheck) {
         await db.enqueueCall({
           phoneNumber: HEALTH_CHECK_TEST_NUMBER,
-          channel: `PJSIP/${HEALTH_CHECK_TEST_NUMBER}@vitel-outbound`,
+          channel: await db.buildPjsipChannel(HEALTH_CHECK_TEST_NUMBER),
           context: "health-check",
           callerIdStr: cid.phoneNumber,
           audioUrl: "",
@@ -2496,7 +2496,7 @@ Return ONLY the message text, nothing else.`;
       // Queue-based approach: enqueue the call for the PBX agent to pick up
       // The PBX agent polls /api/pbx/poll, originates via local AMI, and reports back
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
-      const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
+      const channel = await db.buildPjsipChannel(phoneNumber);
       const audioName = `quicktest_${audioFile.id}`;
 
       // Resolve caller ID — use selected DID or pick a random active one

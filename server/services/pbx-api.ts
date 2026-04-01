@@ -391,9 +391,10 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
 // PBX agent fetches this on startup to configure the Asterisk dialplan
 pbxRouter.get("/config", async (req: Request, res: Response) => {
   try {
+    const trunkName = await db.getSipTrunkName();
     res.json({
       dialplanContext: "tts-broadcast",
-      trunkName: "vitel-outbound",
+      trunkName,
       audioDir: "/var/lib/asterisk/sounds/custom/broadcast",
       defaultTimeout: 30000,
     });

@@ -3596,3 +3596,25 @@ export async function getLatestSecurityGrade() {
     .limit(1);
   return rows[0] || null;
 }
+
+// ─── SIP Trunk Configuration ──────────────────────────────────────────────
+
+const DEFAULT_TRUNK_NAME = "vitel-outbound";
+
+/**
+ * Get the configured SIP trunk name from app settings.
+ * Falls back to 'vitel-outbound' if not configured.
+ */
+export async function getSipTrunkName(): Promise<string> {
+  const trunk = await getAppSetting("sip_trunk_name");
+  return trunk || DEFAULT_TRUNK_NAME;
+}
+
+/**
+ * Build a PJSIP channel string for originating a call.
+ * e.g. PJSIP/4074551177@alliancephones_Out
+ */
+export async function buildPjsipChannel(phoneNumber: string): Promise<string> {
+  const trunk = await getSipTrunkName();
+  return `PJSIP/${phoneNumber}@${trunk}`;
+}

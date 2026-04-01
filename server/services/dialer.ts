@@ -384,7 +384,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   });
 
   const phoneNumber = callLog.phoneNumber.replace(/[^0-9+]/g, "");
-  const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
+  const channel = await db.buildPjsipChannel(phoneNumber);
 
   // Determine caller ID — refresh from DB each call to respect disabled/flagged DIDs
   let callerIdStr: string | undefined;

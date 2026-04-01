@@ -559,7 +559,7 @@ QUESTIONS:
         throw new TRPCError({ code: "BAD_REQUEST", message: "No active caller IDs available. Add a caller ID first." });
       }
 
-      const channel = `PJSIP/${phoneNumber}@vitel-outbound`;
+      const channel = await db.buildPjsipChannel(phoneNumber);
       const result = await db.enqueueCall({
         userId: ctx.user.id,
         campaignId: 0, // test call

@@ -978,3 +978,16 @@
 - [x] Fix Security Status checks — all 6 checks now run via SSH to host
 - [x] Add Host SSH Configuration card to Security page when SSH not configured
 - [x] Update Security Monitor scheduler to use SSH for periodic checks
+
+## v2.0.2 Features & Fixes
+- [x] Edit User Groups — ability to edit group name, description, and permissions after creation
+- [x] Fix Voice AI test call failure on apporlando.407hosted.com — SIP trunk name now configurable
+
+## v2.0.2 - Configurable SIP Trunk
+- [x] Make SIP trunk name configurable via app settings instead of hardcoded 'vitel-outbound'
+- [x] Fix Voice AI test call to use configured trunk name
+- [x] Fix campaign dialer to use configured trunk name
+- [x] Fix quick test call to use configured trunk name
+- [x] Fix DID health check to use configured trunk name
+- [x] Add trunk name setting to FreePBX/Settings page UI with instructions
+- [ ] Support multiple trunks per server (primary + fallback)
