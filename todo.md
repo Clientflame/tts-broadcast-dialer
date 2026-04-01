@@ -951,3 +951,10 @@
 - [x] Create backend tRPC endpoint to check server security status (UFW, fail2ban, SSH auth, SSL, auto-updates, .env permissions)
 - [x] Build Security Status widget on the dashboard alongside System Health widget (grade A-F, 6 check tiles, color-coded)
 - [x] Write tests for the security status endpoint (5 tests: structure, check names, admin access, auth, count validation)
+
+## Security Settings Page & Alerts
+- [x] Create Security Settings page with detailed remediation steps for each check
+- [x] Make dashboard security tiles clickable — navigate to Security Settings page
+- [x] Add route for /security in App.tsx and sidebar navigation
+- [x] Email alerts when security grade drops — periodic check with notification to admin
+- [x] Store last known security grade to detect changes

@@ -44,6 +44,7 @@ import CampaignCalendar from "./pages/CampaignCalendar";
 import Help from "./pages/Help";
 import OperatorPanel from "./pages/OperatorPanel";
 import SetupWizard from "./pages/SetupWizard";
+import Security from "./pages/Security";
 
 function Router() {
   return (
@@ -84,6 +85,7 @@ function Router() {
       <Route path={"/campaign-calendar"} component={CampaignCalendar} />
       <Route path={"/operator-panel"} component={OperatorPanel} />
       <Route path={"/setup-wizard"} component={SetupWizard} />
+      <Route path={"/security"} component={Security} />
       <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />

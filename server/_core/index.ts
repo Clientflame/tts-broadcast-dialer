@@ -130,6 +130,14 @@ async function startServer() {
     } catch (err) {
       console.error("[Startup] Bridge health scheduler failed:", err);
     }
+
+    // Start the security grade monitor
+    try {
+      const { startSecurityMonitor } = await import("../services/security-monitor");
+      startSecurityMonitor();
+    } catch (err) {
+      console.error("[Startup] Security monitor failed:", err);
+    }
   });
 }
 

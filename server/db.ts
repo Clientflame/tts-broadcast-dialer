@@ -2440,6 +2440,7 @@ export const NOTIFICATION_TYPES = [
   { key: "notify_auto_throttle", label: "Auto-Throttle", description: "When an agent is auto-throttled due to carrier errors" },
   { key: "notify_bridge_offline", label: "Voice AI Bridge Offline", description: "When the Voice AI bridge service goes offline on a PBX agent" },
   { key: "notify_bridge_online", label: "Voice AI Bridge Online", description: "When the Voice AI bridge service comes online on a PBX agent" },
+  { key: "notify_security_grade_drop", label: "Security Grade Drop", description: "When the server security grade drops (e.g., firewall disabled, fail2ban stopped)" },
 ] as const;
 
 export async function getNotificationPreferences(): Promise<Record<string, boolean>> {

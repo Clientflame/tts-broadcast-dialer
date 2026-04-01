@@ -57,6 +57,7 @@ const adminMenuItems = [
   { icon: UserCog, label: "User Management", path: "/users" },
   { icon: Phone, label: "FreePBX", path: "/freepbx" },
   { icon: Settings, label: "Settings", path: "/settings" },
+  { icon: Shield, label: "Security", path: "/security" },
   { icon: Workflow, label: "System Architecture", path: "/system-architecture" },
   { icon: Activity, label: "Deployments", path: "/deployments" },
   { icon: Activity, label: "System Status", path: "/system-status" },

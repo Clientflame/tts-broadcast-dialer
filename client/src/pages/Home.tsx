@@ -351,6 +351,7 @@ function SystemHealthWidget() {
 
 function SecurityStatusWidget() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
   const security = trpc.setupWizard.securityStatus.useQuery(undefined, {
     enabled: !!user && isAdmin,
@@ -427,10 +428,14 @@ function SecurityStatusWidget() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className={`h-5 w-5 ${summary.error > 0 ? "text-red-500" : summary.warning > 0 ? "text-amber-500" : "text-green-500"}`} />
-            <CardTitle className="text-lg">Server Security</CardTitle>
+            <CardTitle className="text-lg">
+              <button onClick={() => setLocation("/security")} className="hover:underline hover:text-primary transition-colors">
+                Server Security
+              </button>
+            </CardTitle>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className={gradeColor + " font-bold"}>
+            <Badge variant="outline" className={gradeColor + " font-bold cursor-pointer hover:opacity-80"} onClick={() => setLocation("/security")}>
               Grade: {summary.grade}
             </Badge>
             <Badge variant="outline" className={summary.error > 0 ? "text-red-500 border-red-500/30" : summary.warning > 0 ? "text-amber-500 border-amber-500/30" : "text-green-500 border-green-500/30"}>
@@ -445,9 +450,10 @@ function SecurityStatusWidget() {
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {checks.map((check: any) => (
-            <div
+            <button
               key={check.name}
-              className={`rounded-lg border p-3 text-left transition-colors ${statusBg(check.status)}`}
+              onClick={() => setLocation("/security")}
+              className={`rounded-lg border p-3 text-left transition-colors cursor-pointer hover:opacity-80 ${statusBg(check.status)}`}
               title={check.detail || check.message}
             >
               <div className="flex items-center gap-2 mb-1.5">
@@ -464,7 +470,7 @@ function SecurityStatusWidget() {
                   {check.detail}
                 </p>
               )}
-            </div>
+            </button>
           ))}
         </div>
       </CardContent>
