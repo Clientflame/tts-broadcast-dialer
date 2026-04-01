@@ -972,3 +972,9 @@
 - [x] Verify latest checkpoint pushed to GitHub
 - [x] Update User & Admin Manual (PDF) with all features including security tools (v2.0, 35 sections)
 - [x] Create visual deployment architecture diagram (Mermaid + D2 formats)
+
+## Bug Fixes (v2.0.1)
+- [x] Fix Security Run Fix buttons — commands now execute via SSH to host VPS instead of inside Docker container
+- [x] Fix Security Status checks — all 6 checks now run via SSH to host
+- [x] Add Host SSH Configuration card to Security page when SSH not configured
+- [x] Update Security Monitor scheduler to use SSH for periodic checks

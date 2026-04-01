@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,13 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Shield, ShieldCheck, ShieldAlert, ShieldX,
   CheckCircle2, AlertTriangle, XCircle, Settings,
   RefreshCw, Copy, Check, ExternalLink, Terminal,
   Lock, Globe, Server, FileKey, ArrowLeft,
   Play, Loader2, TrendingUp, TrendingDown, Minus,
-  History,
+  History, Wifi, WifiOff, Eye, EyeOff, Save,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -309,6 +311,139 @@ function SecurityCheckCard({ check, onRefresh }: { check: { name: string; status
   );
 }
 
+// ─── Host SSH Configuration Card ────────────────────────────────────────
+
+function HostSSHConfigCard({ onSaved }: { onSaved: () => void }) {
+  const [hostIp, setHostIp] = useState("172.17.0.1");
+  const [hostUser, setHostUser] = useState("root");
+  const [hostPassword, setHostPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Load existing settings
+  const hostIpSetting = trpc.appSettings.get.useQuery({ key: "host_ssh_ip" });
+  const hostUserSetting = trpc.appSettings.get.useQuery({ key: "host_ssh_user" });
+  const hostPassSetting = trpc.appSettings.get.useQuery({ key: "host_ssh_password" });
+  useEffect(() => {
+    if (hostIpSetting.data?.value) setHostIp(hostIpSetting.data.value);
+    if (hostUserSetting.data?.value) setHostUser(hostUserSetting.data.value);
+    if (hostPassSetting.data?.value) setHostPassword(hostPassSetting.data.value);
+  }, [hostIpSetting.data, hostUserSetting.data, hostPassSetting.data]);
+
+  const saveSetting = trpc.appSettings.update.useMutation();
+
+  const handleSave = async () => {
+    try {
+      await saveSetting.mutateAsync({ key: "host_ssh_ip", value: hostIp });
+      await saveSetting.mutateAsync({ key: "host_ssh_user", value: hostUser });
+      await saveSetting.mutateAsync({ key: "host_ssh_password", value: hostPassword });
+      toast.success("Host SSH credentials saved");
+      onSaved();
+    } catch (err: any) {
+      toast.error(`Failed to save: ${err.message}`);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Save first, then test via the security status endpoint
+      await saveSetting.mutateAsync({ key: "host_ssh_ip", value: hostIp });
+      await saveSetting.mutateAsync({ key: "host_ssh_user", value: hostUser });
+      await saveSetting.mutateAsync({ key: "host_ssh_password", value: hostPassword });
+      // Trigger a security status check which will use SSH
+      onSaved();
+      setTestResult({ success: true, message: "Credentials saved. Refresh the page to see security status via SSH." });
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const hasPassword = !!hostPassword;
+
+  return (
+    <Card className="border-amber-500/30 bg-amber-500/5">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Server className="h-4 w-4 text-amber-500" />
+          Host SSH Configuration Required
+        </CardTitle>
+        <CardDescription>
+          The app runs inside Docker and needs SSH access to the host server to check and fix security settings (firewall, fail2ban, etc.).
+          By default, it connects to the Docker bridge gateway (172.17.0.1) as root.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="host-ip">Host IP Address</Label>
+            <Input
+              id="host-ip"
+              value={hostIp}
+              onChange={(e) => setHostIp(e.target.value)}
+              placeholder="172.17.0.1"
+            />
+            <p className="text-xs text-muted-foreground">Docker bridge: 172.17.0.1</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="host-user">SSH Username</Label>
+            <Input
+              id="host-user"
+              value={hostUser}
+              onChange={(e) => setHostUser(e.target.value)}
+              placeholder="root"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="host-pass">SSH Password</Label>
+            <div className="relative">
+              <Input
+                id="host-pass"
+                type={showPassword ? "text" : "password"}
+                value={hostPassword}
+                onChange={(e) => setHostPassword(e.target.value)}
+                placeholder="Enter host root password"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-0 top-0 h-full px-3"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {testResult && (
+          <div className={`rounded-lg p-3 text-sm ${testResult.success ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
+            <div className="flex items-center gap-2">
+              {testResult.success ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+              {testResult.message}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <Button onClick={handleSave} disabled={!hasPassword || saveSetting.isPending} className="gap-1.5">
+            <Save className="h-4 w-4" />
+            {saveSetting.isPending ? "Saving..." : "Save & Apply"}
+          </Button>
+          <Button variant="outline" onClick={handleTest} disabled={!hasPassword || testing} className="gap-1.5">
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+            {testing ? "Testing..." : "Test & Save"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Grade History Chart ──────────────────────────────────────────────────
 
 const GRADE_VALUES: Record<string, number> = { A: 5, B: 4, C: 3, D: 2, F: 1 };
@@ -598,6 +733,11 @@ export default function Security() {
             Refresh
           </Button>
         </div>
+
+        {/* Host SSH Config — shown when checks are unconfigured due to missing SSH */}
+        {security.data && security.data.checks.some((c: any) => c.message === "Host SSH not configured") && (
+          <HostSSHConfigCard onSaved={() => security.refetch()} />
+        )}
 
         {/* Grade Summary Card */}
         {security.data && (

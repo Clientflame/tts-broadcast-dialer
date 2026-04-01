@@ -5056,11 +5056,16 @@ Return ONLY the message text, nothing else.`;
       return { checks, summary: { ok: okCount, error: errorCount, warning: warningCount, unconfigured: checks.filter(c => c.status === "unconfigured").length, total: checks.length } };
     }),
 
+    /** Helper: run a command on the Docker host via SSH */
+    // The app runs inside Docker, so host-level commands (ufw, fail2ban, systemctl)
+    // must be executed via SSH to the host machine.
+    // Uses the HOST_SSH_* settings (falls back to localhost with root).
+
     /** Server security status — checks UFW, fail2ban, SSH auth, SSL, auto-updates */
     securityStatus: adminProcedure.query(async () => {
-      const { exec } = await import("child_process");
-      const { promisify } = await import("util");
-      const execAsync = promisify(exec);
+      const hostIp = await db.getAppSetting("host_ssh_ip") || "172.17.0.1"; // Docker bridge gateway = host
+      const hostUser = await db.getAppSetting("host_ssh_user") || "root";
+      const hostPassword = await db.getAppSetting("host_ssh_password");
 
       const checks: Array<{
         name: string;
@@ -5069,26 +5074,81 @@ Return ONLY the message text, nothing else.`;
         detail?: string;
       }> = [];
 
+      // If no host SSH password is configured, we can't check host-level security
+      if (!hostPassword) {
+        // Return all checks as unconfigured with a helpful message
+        const names = ["Firewall (UFW)", "Fail2Ban (SSH)", "SSH Auth Method", "Auto Security Updates", ".env File Security"];
+        for (const name of names) {
+          checks.push({
+            name,
+            status: "unconfigured",
+            message: "Host SSH not configured",
+            detail: "Host SSH not configured — use the configuration card above to enter your host server's SSH credentials. The app runs inside Docker and needs SSH access to check and fix host-level security.",
+          });
+        }
+        // SSL check doesn't need SSH
+        const domain = process.env.DOMAIN || await db.getAppSetting("domain");
+        const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
+        if (domain && appProtocol === "https") {
+          checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
+        } else if (domain) {
+          checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open" });
+        } else {
+          checks.push({ name: "SSL/HTTPS", status: "unconfigured", message: "No domain configured — using HTTP only", detail: "Add a domain in setup to enable automatic HTTPS" });
+        }
+
+        const okCount = checks.filter(c => c.status === "ok").length;
+        const warningCount = checks.filter(c => c.status === "warning").length;
+        const errorCount = checks.filter(c => c.status === "error").length;
+        const unconfiguredCount = checks.filter(c => c.status === "unconfigured").length;
+        let grade: "A" | "B" | "C" | "D" | "F" = "F";
+        return { checks, summary: { ok: okCount, warning: warningCount, error: errorCount, unconfigured: unconfiguredCount, total: checks.length, grade } };
+      }
+
+      // SSH helper to run a command on the host
+      const { Client: SSHClient } = await import("ssh2");
+      const runOnHost = (cmd: string, timeoutMs = 10000): Promise<{ stdout: string; error?: string }> => {
+        return new Promise((resolve) => {
+          const conn = new SSHClient();
+          const timer = setTimeout(() => { conn.end(); resolve({ stdout: "", error: "SSH timeout" }); }, timeoutMs);
+          conn.on("ready", () => {
+            conn.exec(cmd, (err, stream) => {
+              if (err) { clearTimeout(timer); conn.end(); resolve({ stdout: "", error: err.message }); return; }
+              let stdout = "";
+              let stderr = "";
+              stream.on("data", (d: Buffer) => { stdout += d.toString(); });
+              stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+              stream.on("close", () => { clearTimeout(timer); conn.end(); resolve({ stdout: stdout || stderr }); });
+            });
+          });
+          conn.on("error", (err) => { clearTimeout(timer); resolve({ stdout: "", error: err.message }); });
+          conn.connect({ host: hostIp, port: 22, username: hostUser, password: hostPassword, readyTimeout: 8000 });
+        });
+      };
+
       // 1. UFW Firewall
       try {
-        const { stdout } = await execAsync("sudo ufw status 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
-        if (stdout.includes("not_installed") || stdout.includes("command not found")) {
+        const { stdout, error } = await runOnHost("ufw status 2>/dev/null || echo 'not_installed'");
+        if (error) {
+          checks.push({ name: "Firewall (UFW)", status: "unconfigured", message: `SSH error: ${error}` });
+        } else if (stdout.includes("not_installed") || stdout.includes("command not found")) {
           checks.push({ name: "Firewall (UFW)", status: "error", message: "Not installed", detail: "Run: sudo apt install ufw && sudo ufw enable" });
         } else if (stdout.includes("Status: active")) {
-          // Count rules
           const ruleLines = stdout.split("\n").filter(l => l.match(/^\d|ALLOW|DENY|REJECT/));
           checks.push({ name: "Firewall (UFW)", status: "ok", message: `Active with ${ruleLines.length} rule(s)`, detail: stdout.trim() });
         } else {
           checks.push({ name: "Firewall (UFW)", status: "warning", message: "Installed but inactive", detail: "Run: sudo ufw enable" });
         }
       } catch {
-        checks.push({ name: "Firewall (UFW)", status: "unconfigured", message: "Unable to check — may need sudo privileges" });
+        checks.push({ name: "Firewall (UFW)", status: "unconfigured", message: "Unable to check" });
       }
 
       // 2. Fail2Ban
       try {
-        const { stdout } = await execAsync("sudo fail2ban-client status sshd 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
-        if (stdout.includes("not_installed") || stdout.includes("command not found") || stdout.includes("does not exist")) {
+        const { stdout, error } = await runOnHost("fail2ban-client status sshd 2>/dev/null || echo 'not_installed'");
+        if (error) {
+          checks.push({ name: "Fail2Ban (SSH)", status: "unconfigured", message: `SSH error: ${error}` });
+        } else if (stdout.includes("not_installed") || stdout.includes("command not found") || stdout.includes("does not exist")) {
           checks.push({ name: "Fail2Ban (SSH)", status: "error", message: "Not installed or SSH jail not configured", detail: "Run: sudo apt install fail2ban" });
         } else {
           const bannedMatch = stdout.match(/Currently banned:\s*(\d+)/);
@@ -5103,13 +5163,15 @@ Return ONLY the message text, nothing else.`;
           });
         }
       } catch {
-        checks.push({ name: "Fail2Ban (SSH)", status: "unconfigured", message: "Unable to check — may need sudo privileges" });
+        checks.push({ name: "Fail2Ban (SSH)", status: "unconfigured", message: "Unable to check" });
       }
 
       // 3. SSH Password Authentication
       try {
-        const { stdout } = await execAsync("grep -E '^\\s*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'not_found'", { timeout: 5000 });
-        if (stdout.includes("not_found")) {
+        const { stdout, error } = await runOnHost("grep -E '^\\s*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'not_found'");
+        if (error) {
+          checks.push({ name: "SSH Auth Method", status: "unconfigured", message: `SSH error: ${error}` });
+        } else if (stdout.includes("not_found")) {
           checks.push({ name: "SSH Auth Method", status: "warning", message: "Password auth enabled (default)", detail: "Consider switching to SSH key authentication for better security" });
         } else if (stdout.toLowerCase().includes("no")) {
           checks.push({ name: "SSH Auth Method", status: "ok", message: "Key-based authentication only", detail: "Password login is disabled — most secure configuration" });
@@ -5120,7 +5182,7 @@ Return ONLY the message text, nothing else.`;
         checks.push({ name: "SSH Auth Method", status: "unconfigured", message: "Unable to check SSH configuration" });
       }
 
-      // 4. SSL/HTTPS
+      // 4. SSL/HTTPS (no SSH needed — checks app config)
       const domain = process.env.DOMAIN || await db.getAppSetting("domain");
       const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
       if (domain && appProtocol === "https") {
@@ -5133,8 +5195,10 @@ Return ONLY the message text, nothing else.`;
 
       // 5. Automatic Security Updates
       try {
-        const { stdout } = await execAsync("systemctl is-active unattended-upgrades 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
-        if (stdout.trim() === "active") {
+        const { stdout, error } = await runOnHost("systemctl is-active unattended-upgrades 2>/dev/null || echo 'not_installed'");
+        if (error) {
+          checks.push({ name: "Auto Security Updates", status: "unconfigured", message: `SSH error: ${error}` });
+        } else if (stdout.trim() === "active") {
           checks.push({ name: "Auto Security Updates", status: "ok", message: "Unattended-upgrades is active", detail: "OS security patches are applied automatically" });
         } else if (stdout.includes("not_installed") || stdout.includes("not-found")) {
           checks.push({ name: "Auto Security Updates", status: "error", message: "Not installed", detail: "Run: sudo apt install unattended-upgrades" });
@@ -5142,15 +5206,16 @@ Return ONLY the message text, nothing else.`;
           checks.push({ name: "Auto Security Updates", status: "warning", message: `Service status: ${stdout.trim()}`, detail: "Run: sudo systemctl enable --now unattended-upgrades" });
         }
       } catch {
-        checks.push({ name: "Auto Security Updates", status: "unconfigured", message: "Unable to check — may not be running in Docker" });
+        checks.push({ name: "Auto Security Updates", status: "unconfigured", message: "Unable to check" });
       }
 
       // 6. .env File Permissions
       try {
-        const { stdout } = await execAsync("stat -c '%a' /opt/tts-dialer/.env 2>/dev/null || echo 'not_found'", { timeout: 5000 });
-        if (stdout.includes("not_found")) {
-          // Might be running in dev mode or Docker — check common locations
-          checks.push({ name: ".env File Security", status: "unconfigured", message: "No .env file found at /opt/tts-dialer/.env", detail: "This is normal in Docker or development environments" });
+        const { stdout, error } = await runOnHost("stat -c '%a' /opt/tts-dialer/.env 2>/dev/null || echo 'not_found'");
+        if (error) {
+          checks.push({ name: ".env File Security", status: "unconfigured", message: `SSH error: ${error}` });
+        } else if (stdout.includes("not_found")) {
+          checks.push({ name: ".env File Security", status: "unconfigured", message: "No .env file found at /opt/tts-dialer/.env" });
         } else {
           const perms = stdout.trim();
           if (perms === "600" || perms === "400") {
@@ -5168,9 +5233,8 @@ Return ONLY the message text, nothing else.`;
       const errorCount = checks.filter(c => c.status === "error").length;
       const unconfiguredCount = checks.filter(c => c.status === "unconfigured").length;
 
-      // Overall grade
       let grade: "A" | "B" | "C" | "D" | "F";
-      if (errorCount === 0 && warningCount === 0) grade = "A";
+      if (errorCount === 0 && warningCount === 0 && unconfiguredCount === 0) grade = "A";
       else if (errorCount === 0 && warningCount <= 2) grade = "B";
       else if (errorCount <= 1) grade = "C";
       else if (errorCount <= 2) grade = "D";
@@ -5182,24 +5246,32 @@ Return ONLY the message text, nothing else.`;
       };
     }),
 
-    /** Run a security fix command on the server */
+    /** Run a security fix command on the host server via SSH */
     runSecurityFix: adminProcedure
       .input(z.object({
         checkName: z.string(),
       }))
       .mutation(async ({ input }) => {
-        const { exec } = await import("child_process");
-        const { promisify } = await import("util");
-        const execAsync = promisify(exec);
+        const hostIp = await db.getAppSetting("host_ssh_ip") || "172.17.0.1";
+        const hostUser = await db.getAppSetting("host_ssh_user") || "root";
+        const hostPassword = await db.getAppSetting("host_ssh_password");
 
-        // Map check names to fix commands
+        if (!hostPassword) {
+          return {
+            success: false,
+            output: "Host SSH credentials not configured. Go to Settings > Security and set the Host SSH password so the app can execute commands on the server.",
+            description: "Host SSH access is required to run security fixes. The app runs inside Docker and needs SSH access to the host machine.",
+          };
+        }
+
+        // Map check names to fix commands (no sudo needed — SSH connects as root)
         const fixCommands: Record<string, { cmd: string; description: string }> = {
           "Firewall (UFW)": {
-            cmd: "sudo ufw --force enable && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw allow 3000/tcp && echo 'UFW enabled and configured'",
+            cmd: "ufw --force enable && ufw default deny incoming && ufw default allow outgoing && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 3000/tcp && echo 'UFW enabled and configured'",
             description: "Enable UFW firewall with default deny policy and allow SSH, HTTP, HTTPS, and app ports",
           },
           "Fail2Ban (SSH)": {
-            cmd: "sudo apt-get install -y fail2ban && sudo systemctl enable fail2ban && sudo systemctl start fail2ban && echo 'Fail2Ban installed and started'",
+            cmd: "apt-get install -y fail2ban && systemctl enable fail2ban && systemctl start fail2ban && echo 'Fail2Ban installed and started'",
             description: "Install and start Fail2Ban SSH brute-force protection",
           },
           "SSH Auth Method": {
@@ -5207,15 +5279,15 @@ Return ONLY the message text, nothing else.`;
             description: "Disable SSH password authentication (requires manual SSH key setup first)",
           },
           "SSL/HTTPS": {
-            cmd: "echo 'SSL is managed by Caddy reverse proxy. Ensure your domain DNS points to this server and Caddy will auto-provision a Let\'s Encrypt certificate.'",
+            cmd: "echo 'SSL is managed by Caddy reverse proxy. Ensure your domain DNS points to this server and Caddy will auto-provision a certificate.'",
             description: "SSL is auto-managed by Caddy — ensure DNS is pointed to this server",
           },
           "Auto Security Updates": {
-            cmd: "sudo apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades && sudo systemctl enable unattended-upgrades && sudo systemctl start unattended-upgrades && echo 'Unattended-upgrades installed and enabled'",
+            cmd: "apt-get install -y unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades && systemctl enable unattended-upgrades && systemctl start unattended-upgrades && echo 'Unattended-upgrades installed and enabled'",
             description: "Install and enable automatic security updates",
           },
           ".env File Security": {
-            cmd: "sudo chmod 600 /opt/tts-dialer/.env 2>/dev/null && echo '.env permissions set to 600' || echo '.env file not found at /opt/tts-dialer/.env'",
+            cmd: "chmod 600 /opt/tts-dialer/.env 2>/dev/null && echo '.env permissions set to 600' || echo '.env file not found at /opt/tts-dialer/.env'",
             description: "Restrict .env file permissions to owner-only (600)",
           },
         };
@@ -5225,14 +5297,49 @@ Return ONLY the message text, nothing else.`;
           return { success: false, output: `No fix available for check: ${input.checkName}`, description: "" };
         }
 
-        try {
-          const { stdout, stderr } = await execAsync(fix.cmd, { timeout: 60000 });
-          const output = (stdout + (stderr ? "\n" + stderr : "")).trim();
-          return { success: true, output, description: fix.description };
-        } catch (err: any) {
-          const output = (err.stdout || "") + (err.stderr ? "\n" + err.stderr : "") + (err.message ? "\n" + err.message : "");
-          return { success: false, output: output.trim(), description: fix.description };
-        }
+        // Execute via SSH on the host
+        const { Client: SSHClient } = await import("ssh2");
+        return new Promise<{ success: boolean; output: string; description: string }>((resolve) => {
+          const conn = new SSHClient();
+          const timer = setTimeout(() => {
+            conn.end();
+            resolve({ success: false, output: "SSH connection timed out after 60 seconds", description: fix.description });
+          }, 60000);
+
+          conn.on("ready", () => {
+            conn.exec(fix.cmd, (err, stream) => {
+              if (err) {
+                clearTimeout(timer);
+                conn.end();
+                resolve({ success: false, output: `SSH exec error: ${err.message}`, description: fix.description });
+                return;
+              }
+              let stdout = "";
+              let stderr = "";
+              stream.on("data", (d: Buffer) => { stdout += d.toString(); });
+              stream.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+              stream.on("close", (code: number) => {
+                clearTimeout(timer);
+                conn.end();
+                const output = (stdout + (stderr ? "\n" + stderr : "")).trim();
+                resolve({ success: code === 0 || code === null, output, description: fix.description });
+              });
+            });
+          });
+
+          conn.on("error", (err) => {
+            clearTimeout(timer);
+            resolve({ success: false, output: `SSH connection failed: ${err.message}`, description: fix.description });
+          });
+
+          conn.connect({
+            host: hostIp,
+            port: 22,
+            username: hostUser,
+            password: hostPassword,
+            readyTimeout: 10000,
+          });
+        });
       }),
 
     /** Get security grade history for charting */
