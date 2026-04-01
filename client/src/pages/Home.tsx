@@ -769,21 +769,28 @@ export default function Home() {
 
   const stats = trpc.dashboard.stats.useQuery(undefined, { enabled: !!user && user?.role === "admin", refetchInterval: 10000 });
 
-  // Auto-redirect to onboarding ONLY on initial page load (not when navigating back from sidebar)
+  // Auto-redirect: Setup Wizard on fresh install, then Onboarding for remaining steps
   // Uses sessionStorage so it only triggers once per browser session
+  const setupNeeded = trpc.setupWizard.isSetupNeeded.useQuery(undefined, { enabled: !!user && user?.role === "admin" });
   const onboardingStatus = trpc.onboarding.status.useQuery(undefined, { enabled: !!user && user?.role === "admin" });
   useEffect(() => {
+    if (typeof window === "undefined" || sessionStorage.getItem("onboarding_shown")) return;
+    // Priority 1: If setup wizard hasn't been completed, redirect there first
+    if (setupNeeded.data?.needed) {
+      sessionStorage.setItem("onboarding_shown", "true");
+      setLocation("/setup-wizard");
+      return;
+    }
+    // Priority 2: If onboarding checklist isn't complete, redirect to onboarding
     if (
       onboardingStatus.data &&
       !onboardingStatus.data.isComplete &&
-      typeof window !== "undefined" &&
-      localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "true" &&
-      !sessionStorage.getItem("onboarding_shown")
+      localStorage.getItem(ONBOARDING_DISMISSED_KEY) !== "true"
     ) {
       sessionStorage.setItem("onboarding_shown", "true");
       setLocation("/onboarding");
     }
-  }, [onboardingStatus.data, setLocation]);
+  }, [setupNeeded.data, onboardingStatus.data, setLocation]);
   const amiStatus = trpc.dashboard.amiStatus.useQuery(undefined, { enabled: !!user, refetchInterval: 15000 });
   const serverInfo = trpc.dashboard.serverInfo.useQuery(undefined, { enabled: !!user, staleTime: 300000 });
   const agentAutoUpdate = trpc.agentAutoUpdate.update.useMutation();

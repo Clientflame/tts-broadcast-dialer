@@ -938,3 +938,4 @@
 - [x] #6 Auto-Generate Secure Passwords — MySQL, JWT secret auto-generated, shown once at end
 - [x] #7 Health Check Dashboard on First Login — checklist of connections with green/red status and Fix Now buttons
 - [x] #8 One-Click PBX Agent Update — button in FreePBX page that SSHes and re-runs installer
+- [x] Auto-redirect to /setup-wizard on fresh install instead of /onboarding when setup is not complete
