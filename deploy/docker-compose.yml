@@ -104,10 +104,9 @@ services:
 
   # --- Watchtower (Auto-Update) ---
   # Automatically pulls new Docker images and restarts containers
-  # Pinned to v1.7.1 for Docker API compatibility
   # Remove this service if you prefer manual updates via ./update.sh
   watchtower:
-    image: containrrr/watchtower:1.7.1
+    image: containrrr/watchtower:latest
     container_name: watchtower
     restart: unless-stopped
     environment:
@@ -115,6 +114,7 @@ services:
       - WATCHTOWER_POLL_INTERVAL=${UPDATE_CHECK_INTERVAL:-86400}
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_LABEL_ENABLE=false
+      - DOCKER_API_VERSION=1.40
       - TZ=${TZ:-America/New_York}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

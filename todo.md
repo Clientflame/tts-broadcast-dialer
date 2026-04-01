@@ -996,9 +996,9 @@
 - [x] Diagnose why docker compose pull fails to update on client servers (GHA cache reusing old layers + latest tag conditional)
 - [x] Fix GitHub Actions: trigger on main branch push, disable build cache (no-cache: true), always tag latest
 - [x] Bump version to v2.0.3 in package.json
-- [ ] Fix docker-compose.yml on both servers to properly reference GHCR image
+- [x] Fix docker-compose.yml on both servers to properly reference GHCR image
 - [x] Watchtower already in docker-compose.yml (fix crash-loop on apporlando)
 - [x] update.sh script already exists on both servers
-- [ ] Push to main, trigger fresh build, verify new SHA on GHCR
-- [ ] Force-pull and restart both servers
-- [ ] Verify both servers running v2.0.3
+- [x] Push to main, trigger fresh build, verify new SHA on GHCR (b656d97a vs old c6963f67)
+- [x] Force-pull and restart both servers
+- [x] Verify both servers running v2.0.3 — both confirmed SHA b656d97a
