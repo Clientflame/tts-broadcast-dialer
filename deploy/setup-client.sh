@@ -306,19 +306,33 @@ if [ ! -f "/root/.docker/config.json" ]; then
 fi
 
 # ============================================================
-# Configure Firewall
+# Security Hardening: Firewall + Fail2Ban + Auto-Updates
 # ============================================================
-echo -e "  ${CYAN}▸ Configuring firewall...${NC}"
+echo -e "  ${CYAN}▸ Securing server...${NC}"
+
+# --- Firewall (UFW or firewalld) ---
+FIREWALL_ENABLED=false
 
 if command -v ufw &> /dev/null; then
+  # Set default policies
+  ufw default deny incoming > /dev/null 2>&1
+  ufw default allow outgoing > /dev/null 2>&1
+  # Allow SSH (always)
   ufw allow 22/tcp > /dev/null 2>&1
+  # Allow the dialer app port
   ufw allow $APP_PORT/tcp > /dev/null 2>&1
   if [ "$ENABLE_SSL" = "true" ]; then
     ufw allow 80/tcp > /dev/null 2>&1
     ufw allow 443/tcp > /dev/null 2>&1
   fi
-  progress "Firewall configured"
+  # Enable the firewall (--force skips the confirmation prompt)
+  ufw --force enable > /dev/null 2>&1
+  FIREWALL_ENABLED=true
+  progress "Firewall enabled (UFW) — only SSH, ${APP_PORT}${ENABLE_SSL:+, 80, 443} open"
 elif command -v firewall-cmd &> /dev/null; then
+  # Rocky/CentOS: firewalld
+  systemctl start firewalld > /dev/null 2>&1
+  systemctl enable firewalld > /dev/null 2>&1
   firewall-cmd --permanent --add-port=22/tcp > /dev/null 2>&1
   firewall-cmd --permanent --add-port=$APP_PORT/tcp > /dev/null 2>&1
   if [ "$ENABLE_SSL" = "true" ]; then
@@ -326,9 +340,112 @@ elif command -v firewall-cmd &> /dev/null; then
     firewall-cmd --permanent --add-port=443/tcp > /dev/null 2>&1
   fi
   firewall-cmd --reload > /dev/null 2>&1
-  progress "Firewall configured"
+  FIREWALL_ENABLED=true
+  progress "Firewall enabled (firewalld) — only SSH, ${APP_PORT}${ENABLE_SSL:+, 80, 443} open"
 else
-  echo -e "  ${DIM}No firewall manager detected${NC}"
+  warn "No firewall manager found — installing UFW..."
+  case $OS in
+    ubuntu|debian)
+      apt-get install -y -qq ufw > /dev/null 2>&1
+      ;;
+  esac
+  if command -v ufw &> /dev/null; then
+    ufw default deny incoming > /dev/null 2>&1
+    ufw default allow outgoing > /dev/null 2>&1
+    ufw allow 22/tcp > /dev/null 2>&1
+    ufw allow $APP_PORT/tcp > /dev/null 2>&1
+    if [ "$ENABLE_SSL" = "true" ]; then
+      ufw allow 80/tcp > /dev/null 2>&1
+      ufw allow 443/tcp > /dev/null 2>&1
+    fi
+    ufw --force enable > /dev/null 2>&1
+    FIREWALL_ENABLED=true
+    progress "Firewall installed and enabled (UFW)"
+  else
+    fail "Could not install firewall — please configure manually"
+  fi
+fi
+
+# --- Fail2Ban (SSH brute-force protection) ---
+echo -e "  ${CYAN}▸ Installing fail2ban (SSH protection)...${NC}"
+
+if command -v fail2ban-client &> /dev/null; then
+  progress "Fail2ban already installed"
+else
+  case $OS in
+    ubuntu|debian)
+      apt-get install -y -qq fail2ban > /dev/null 2>&1
+      ;;
+    rocky|almalinux|centos)
+      dnf install -y -q epel-release > /dev/null 2>&1
+      dnf install -y -q fail2ban > /dev/null 2>&1
+      ;;
+  esac
+fi
+
+if command -v fail2ban-client &> /dev/null; then
+  # Configure fail2ban for SSH
+  cat > /etc/fail2ban/jail.local << 'F2B_EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+banaction = %(banaction_allports)s
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = %(sshd_log)s
+maxretry = 5
+bantime = 3600
+findtime = 600
+F2B_EOF
+
+  systemctl enable fail2ban > /dev/null 2>&1
+  systemctl restart fail2ban > /dev/null 2>&1
+  progress "Fail2ban active — bans IP after 5 failed SSH attempts (1 hour ban)"
+else
+  warn "Could not install fail2ban — SSH brute-force protection not active"
+fi
+
+# --- Automatic Security Updates ---
+echo -e "  ${CYAN}▸ Enabling automatic security updates...${NC}"
+
+case $OS in
+  ubuntu|debian)
+    apt-get install -y -qq unattended-upgrades > /dev/null 2>&1
+    # Enable automatic security updates
+    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'AUTOUPDATE_EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+AUTOUPDATE_EOF
+    systemctl enable unattended-upgrades > /dev/null 2>&1
+    progress "Automatic security updates enabled (unattended-upgrades)"
+    ;;
+  rocky|almalinux|centos)
+    dnf install -y -q dnf-automatic > /dev/null 2>&1
+    if [ -f /etc/dnf/automatic.conf ]; then
+      sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf 2>/dev/null
+      systemctl enable --now dnf-automatic.timer > /dev/null 2>&1
+      progress "Automatic security updates enabled (dnf-automatic)"
+    fi
+    ;;
+esac
+
+# --- SSH Hardening Recommendations ---
+# Check if password authentication is enabled and warn
+SSH_PASS_AUTH=$(grep -E "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
+if [ "$SSH_PASS_AUTH" != "no" ]; then
+  echo ""
+  warn "SSH password authentication is enabled."
+  echo -e "  ${DIM}For stronger security, consider switching to SSH key authentication:${NC}"
+  echo -e "  ${DIM}  1. On your local machine: ssh-copy-id root@${SERVER_IP}${NC}"
+  echo -e "  ${DIM}  2. Then disable passwords: edit /etc/ssh/sshd_config${NC}"
+  echo -e "  ${DIM}     Set: PasswordAuthentication no${NC}"
+  echo -e "  ${DIM}  3. Restart SSH: systemctl restart sshd${NC}"
+  echo ""
 fi
 
 # ============================================================
@@ -720,6 +837,24 @@ echo ""
 echo -e "  ${BOLD}Database credentials${NC} ${DIM}(saved in .env)${NC}:"
 echo -e "    Root Password:   ${DB_ROOT_PASSWORD}"
 echo -e "    App Password:    ${DB_PASSWORD}"
+echo ""
+echo -e "  ${BOLD}Security:${NC}"
+if [ "$FIREWALL_ENABLED" = "true" ]; then
+  echo -e "    ${GREEN}✓${NC} Firewall enabled (only required ports open)"
+else
+  echo -e "    ${YELLOW}⚠${NC} Firewall not configured — run: ufw --force enable"
+fi
+if command -v fail2ban-client &> /dev/null; then
+  echo -e "    ${GREEN}✓${NC} Fail2ban active (SSH brute-force protection)"
+else
+  echo -e "    ${YELLOW}⚠${NC} Fail2ban not installed — run: apt install fail2ban"
+fi
+if [ "$SSH_PASS_AUTH" = "no" ]; then
+  echo -e "    ${GREEN}✓${NC} SSH key authentication only"
+else
+  echo -e "    ${YELLOW}⚠${NC} SSH password auth enabled — consider switching to key auth"
+fi
+echo -e "    ${GREEN}✓${NC} Automatic security updates enabled"
 echo ""
 echo -e "  ${DIM}Auto-updates enabled via Watchtower (checks every 24h)${NC}"
 echo -e "  ${DIM}Daily database backups at 3:00 AM${NC}"

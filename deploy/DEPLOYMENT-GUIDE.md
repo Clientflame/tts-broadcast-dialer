@@ -20,8 +20,9 @@ This guide covers everything you need to go from a blank server to a fully worki
 12. [Database Migrations](#database-migrations)
 13. [Backups](#backups)
 14. [Monitoring](#monitoring)
-15. [Troubleshooting](#troubleshooting)
-16. [Environment Variables Reference](#environment-variables-reference)
+15. [Security Hardening](#security-hardening)
+16. [Troubleshooting](#troubleshooting)
+17. [Environment Variables Reference](#environment-variables-reference)
 
 ---
 
@@ -727,6 +728,113 @@ http://client-ip:3000/api/trpc/health
 ```
 
 Uptime Kuma will alert you via email, Slack, or Discord when a client server goes down.
+
+---
+
+## Security Hardening
+
+The install script (`setup-client.sh`) automatically configures server security during deployment. This section documents what is set up and how to verify or customize it.
+
+### What the Install Script Does Automatically
+
+Every new deployment receives the following security baseline without any manual configuration.
+
+| Component | What It Does | Details |
+|---|---|---|
+| **UFW Firewall** | Blocks all incoming traffic except required ports | Allows SSH (22), app port (3000), and optionally HTTP/HTTPS (80/443) |
+| **Fail2Ban** | Bans IPs after failed SSH login attempts | 5 failed attempts within 10 minutes triggers a 1-hour ban |
+| **Unattended Upgrades** | Installs OS security patches automatically | Runs daily, cleans old packages weekly |
+| **Password Hashing** | bcrypt with 12 rounds for all user passwords | Industry-standard, resistant to brute-force |
+| **Rate Limiting** | Limits login attempts to 10 per 15 minutes per IP | Prevents credential stuffing attacks |
+| **Session Cookies** | httpOnly, sameSite, secure (when SSL enabled) | Prevents XSS-based session theft |
+| **Database Isolation** | MySQL bound to localhost only | Not accessible from the internet even without a firewall |
+| **Security Headers** | HSTS, X-Frame-Options, X-Content-Type-Options (with SSL) | Caddy adds these automatically when a domain is configured |
+| **Auto-generated Secrets** | MySQL passwords and JWT secret are randomly generated | 32-character cryptographically random strings |
+| **File Permissions** | `.env` file set to `chmod 600` | Only root can read the credentials file |
+
+### Verifying Security After Installation
+
+After running the install script, verify each component is active.
+
+```bash
+# Check firewall status
+sudo ufw status
+# Expected: Status: active, with rules for 22, 3000, 80, 443
+
+# Check fail2ban status
+sudo fail2ban-client status sshd
+# Expected: Shows jail status with Currently banned IPs (if any)
+
+# Check automatic updates
+systemctl status unattended-upgrades
+# Expected: Active (running)
+
+# Check SSH authentication method
+grep PasswordAuthentication /etc/ssh/sshd_config
+# If "yes" — consider switching to key-based auth (see below)
+```
+
+### Recommended: Switch to SSH Key Authentication
+
+The install script warns if SSH password authentication is enabled. Key-based authentication is significantly more secure because it eliminates the possibility of password brute-force attacks entirely.
+
+```bash
+# Step 1: On your LOCAL machine, generate a key pair (if you don't have one)
+ssh-keygen -t ed25519 -C "admin@company"
+
+# Step 2: Copy your public key to the server
+ssh-copy-id root@YOUR_SERVER_IP
+
+# Step 3: Test that key login works (should not ask for password)
+ssh root@YOUR_SERVER_IP
+
+# Step 4: On the SERVER, disable password authentication
+sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo systemctl restart sshd
+```
+
+After this change, only someone with your private key file can SSH into the server.
+
+### Opening Additional Ports
+
+If you need to open additional ports (for example, for a custom integration), use UFW.
+
+```bash
+# Allow a specific port
+sudo ufw allow 8080/tcp
+
+# Allow a port range
+sudo ufw allow 10000:20000/udp
+
+# Allow from a specific IP only
+sudo ufw allow from 203.0.113.50 to any port 5038
+
+# Check current rules
+sudo ufw status numbered
+
+# Remove a rule by number
+sudo ufw delete 5
+```
+
+### Checking Fail2Ban Bans
+
+To see which IPs have been banned and manage the ban list:
+
+```bash
+# View banned IPs
+sudo fail2ban-client status sshd
+
+# Unban a specific IP (if you accidentally locked yourself out)
+sudo fail2ban-client set sshd unbanip 203.0.113.50
+
+# View the fail2ban log
+sudo tail -50 /var/log/fail2ban.log
+```
+
+### Do You Need a VPN?
+
+For most deployments, a VPN is **not required**. The application has strong built-in authentication (bcrypt passwords, rate limiting, JWT sessions), and the firewall blocks all unnecessary ports. A VPN would only be beneficial if compliance requirements (HIPAA, PCI-DSS) mandate network-level access controls, or if you want to completely hide the admin panel from the public internet.
 
 ---
 

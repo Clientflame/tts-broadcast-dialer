@@ -939,3 +939,10 @@
 - [x] #7 Health Check Dashboard on First Login — checklist of connections with green/red status and Fix Now buttons
 - [x] #8 One-Click PBX Agent Update — button in FreePBX page that SSHes and re-runs installer
 - [x] Auto-redirect to /setup-wizard on fresh install instead of /onboarding when setup is not complete
+
+## Security Hardening (Install Script)
+- [x] Auto-enable UFW firewall in setup-client.sh (deny all, allow 22, 3000, 80, 443)
+- [x] Auto-install and configure fail2ban for SSH brute-force protection
+- [x] Add SSH key auth recommendation and optional password auth disable
+- [x] Add unattended-upgrades for automatic security patches
+- [x] Update DEPLOYMENT-GUIDE.md with security documentation
