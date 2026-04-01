@@ -746,11 +746,11 @@ else:
 # Remove any existing tts-broadcast, tts-broadcast-amd, and voice-ai-handler contexts
 # Each context block runs from [context-name] to the next [context-name] or end of file
 for ctx in ["tts-broadcast-amd", "tts-broadcast", "voice-ai-handler"]:
-    pattern = rf"\n*\[{re.escape(ctx)}\][\s\S]*?(?=\n\[|\Z)"
+    pattern = rf"\\n*\\[{re.escape(ctx)}\\][\\s\\S]*?(?=\\n\\[|\\Z)"
     content = re.sub(pattern, "", content)
 
 # Clean up excessive blank lines
-content = re.sub(r"\n{3,}", "\n\n", content).strip()
+content = re.sub(r"\\n{3,}", "\\n\\n", content).strip()
 
 # Append all three dialplan contexts
 dialplan = '''

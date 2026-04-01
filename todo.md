@@ -927,3 +927,4 @@
 - [x] Tutorial step: Dashboard — command center overview
 - [x] Tutorial persistence — localStorage-based, shows on first login, replayable from sidebar
 - [x] Sidebar "Product Tour" button to replay the tour anytime
+- [x] Bug: PBX agent installer SyntaxError — fixed: double-escaped backslashes in Python regex inside JS template literal
