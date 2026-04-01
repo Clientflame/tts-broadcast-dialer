@@ -349,6 +349,129 @@ function SystemHealthWidget() {
   );
 }
 
+function SecurityStatusWidget() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const security = trpc.setupWizard.securityStatus.useQuery(undefined, {
+    enabled: !!user && isAdmin,
+    refetchInterval: 60000, // refresh every minute
+    retry: false,
+  });
+
+  // Don't show for non-admins
+  if (!isAdmin) return null;
+
+  if (security.isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-lg">Server Security</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} className="h-20 rounded-lg bg-muted/30 animate-pulse" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (security.error || !security.data) return null;
+
+  const { checks, summary } = security.data;
+  const gradeColors: Record<string, string> = {
+    A: "text-green-500 border-green-500/30 bg-green-500/10",
+    B: "text-blue-500 border-blue-500/30 bg-blue-500/10",
+    C: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    D: "text-orange-500 border-orange-500/30 bg-orange-500/10",
+    F: "text-red-500 border-red-500/30 bg-red-500/10",
+  };
+  const gradeColor = gradeColors[summary.grade] || gradeColors.C;
+  const borderColor = summary.error > 0 ? "border-red-500/30" : summary.warning > 0 ? "border-amber-500/30" : "border-green-500/30";
+
+  const statusIcon = (status: string) => {
+    switch (status) {
+      case "ok": return <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />;
+      case "warning": return <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />;
+      case "error": return <XCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />;
+      default: return <Settings className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />;
+    }
+  };
+
+  const statusBg = (status: string) => {
+    switch (status) {
+      case "ok": return "border-green-500/20 bg-green-500/5";
+      case "warning": return "border-amber-500/20 bg-amber-500/5";
+      case "error": return "border-red-500/20 bg-red-500/5";
+      default: return "border-muted bg-muted/5";
+    }
+  };
+
+  const statusText = (status: string) => {
+    switch (status) {
+      case "ok": return "text-green-600";
+      case "warning": return "text-amber-600";
+      case "error": return "text-red-600";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  return (
+    <Card className={borderColor}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className={`h-5 w-5 ${summary.error > 0 ? "text-red-500" : summary.warning > 0 ? "text-amber-500" : "text-green-500"}`} />
+            <CardTitle className="text-lg">Server Security</CardTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={gradeColor + " font-bold"}>
+              Grade: {summary.grade}
+            </Badge>
+            <Badge variant="outline" className={summary.error > 0 ? "text-red-500 border-red-500/30" : summary.warning > 0 ? "text-amber-500 border-amber-500/30" : "text-green-500 border-green-500/30"}>
+              {summary.ok}/{summary.total} passed
+            </Badge>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => security.refetch()}>
+              <RefreshCw className={`h-3.5 w-3.5 ${security.isFetching ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+          {checks.map((check: any) => (
+            <div
+              key={check.name}
+              className={`rounded-lg border p-3 text-left transition-colors ${statusBg(check.status)}`}
+              title={check.detail || check.message}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                {statusIcon(check.status)}
+                <span className="text-xs font-medium truncate">{check.name}</span>
+              </div>
+              <div className={`text-xs ${statusText(check.status)}`}>
+                <span className="flex items-center gap-1">
+                  <span className="truncate">{check.message}</span>
+                </span>
+              </div>
+              {check.detail && check.status !== "ok" && (
+                <p className="text-[10px] text-muted-foreground mt-1 truncate" title={check.detail}>
+                  {check.detail}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function CallActivityFeed() {
   const { user } = useAuth();
   const [autoScroll, setAutoScroll] = useState(true);
@@ -1021,6 +1144,9 @@ export default function Home() {
 
         {/* System Health Widget */}
         <SystemHealthWidget />
+
+        {/* Server Security Status Widget */}
+        <SecurityStatusWidget />
 
         {/* Real-time Call Activity Feed */}
         <CallActivityFeed />

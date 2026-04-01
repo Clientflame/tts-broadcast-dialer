@@ -5055,6 +5055,132 @@ Return ONLY the message text, nothing else.`;
 
       return { checks, summary: { ok: okCount, error: errorCount, warning: warningCount, unconfigured: checks.filter(c => c.status === "unconfigured").length, total: checks.length } };
     }),
+
+    /** Server security status — checks UFW, fail2ban, SSH auth, SSL, auto-updates */
+    securityStatus: adminProcedure.query(async () => {
+      const { exec } = await import("child_process");
+      const { promisify } = await import("util");
+      const execAsync = promisify(exec);
+
+      const checks: Array<{
+        name: string;
+        status: "ok" | "warning" | "error" | "unconfigured";
+        message: string;
+        detail?: string;
+      }> = [];
+
+      // 1. UFW Firewall
+      try {
+        const { stdout } = await execAsync("sudo ufw status 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
+        if (stdout.includes("not_installed") || stdout.includes("command not found")) {
+          checks.push({ name: "Firewall (UFW)", status: "error", message: "Not installed", detail: "Run: sudo apt install ufw && sudo ufw enable" });
+        } else if (stdout.includes("Status: active")) {
+          // Count rules
+          const ruleLines = stdout.split("\n").filter(l => l.match(/^\d|ALLOW|DENY|REJECT/));
+          checks.push({ name: "Firewall (UFW)", status: "ok", message: `Active with ${ruleLines.length} rule(s)`, detail: stdout.trim() });
+        } else {
+          checks.push({ name: "Firewall (UFW)", status: "warning", message: "Installed but inactive", detail: "Run: sudo ufw enable" });
+        }
+      } catch {
+        checks.push({ name: "Firewall (UFW)", status: "unconfigured", message: "Unable to check — may need sudo privileges" });
+      }
+
+      // 2. Fail2Ban
+      try {
+        const { stdout } = await execAsync("sudo fail2ban-client status sshd 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
+        if (stdout.includes("not_installed") || stdout.includes("command not found") || stdout.includes("does not exist")) {
+          checks.push({ name: "Fail2Ban (SSH)", status: "error", message: "Not installed or SSH jail not configured", detail: "Run: sudo apt install fail2ban" });
+        } else {
+          const bannedMatch = stdout.match(/Currently banned:\s*(\d+)/);
+          const totalMatch = stdout.match(/Total banned:\s*(\d+)/);
+          const banned = bannedMatch ? parseInt(bannedMatch[1]) : 0;
+          const totalBanned = totalMatch ? parseInt(totalMatch[1]) : 0;
+          checks.push({
+            name: "Fail2Ban (SSH)",
+            status: "ok",
+            message: `Active — ${banned} currently banned, ${totalBanned} total blocked`,
+            detail: stdout.trim(),
+          });
+        }
+      } catch {
+        checks.push({ name: "Fail2Ban (SSH)", status: "unconfigured", message: "Unable to check — may need sudo privileges" });
+      }
+
+      // 3. SSH Password Authentication
+      try {
+        const { stdout } = await execAsync("grep -E '^\\s*PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo 'not_found'", { timeout: 5000 });
+        if (stdout.includes("not_found")) {
+          checks.push({ name: "SSH Auth Method", status: "warning", message: "Password auth enabled (default)", detail: "Consider switching to SSH key authentication for better security" });
+        } else if (stdout.toLowerCase().includes("no")) {
+          checks.push({ name: "SSH Auth Method", status: "ok", message: "Key-based authentication only", detail: "Password login is disabled — most secure configuration" });
+        } else {
+          checks.push({ name: "SSH Auth Method", status: "warning", message: "Password authentication enabled", detail: "Consider disabling password auth and using SSH keys instead" });
+        }
+      } catch {
+        checks.push({ name: "SSH Auth Method", status: "unconfigured", message: "Unable to check SSH configuration" });
+      }
+
+      // 4. SSL/HTTPS
+      const domain = process.env.DOMAIN || await db.getAppSetting("domain");
+      const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
+      if (domain && appProtocol === "https") {
+        checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
+      } else if (domain) {
+        checks.push({ name: "SSL/HTTPS", status: "warning", message: `Domain ${domain} configured but HTTPS may not be active`, detail: "Ensure Caddy is running with ports 80/443 open" });
+      } else {
+        checks.push({ name: "SSL/HTTPS", status: "unconfigured", message: "No domain configured — using HTTP only", detail: "Add a domain in setup to enable automatic HTTPS" });
+      }
+
+      // 5. Automatic Security Updates
+      try {
+        const { stdout } = await execAsync("systemctl is-active unattended-upgrades 2>/dev/null || echo 'not_installed'", { timeout: 5000 });
+        if (stdout.trim() === "active") {
+          checks.push({ name: "Auto Security Updates", status: "ok", message: "Unattended-upgrades is active", detail: "OS security patches are applied automatically" });
+        } else if (stdout.includes("not_installed") || stdout.includes("not-found")) {
+          checks.push({ name: "Auto Security Updates", status: "error", message: "Not installed", detail: "Run: sudo apt install unattended-upgrades" });
+        } else {
+          checks.push({ name: "Auto Security Updates", status: "warning", message: `Service status: ${stdout.trim()}`, detail: "Run: sudo systemctl enable --now unattended-upgrades" });
+        }
+      } catch {
+        checks.push({ name: "Auto Security Updates", status: "unconfigured", message: "Unable to check — may not be running in Docker" });
+      }
+
+      // 6. .env File Permissions
+      try {
+        const { stdout } = await execAsync("stat -c '%a' /opt/tts-dialer/.env 2>/dev/null || echo 'not_found'", { timeout: 5000 });
+        if (stdout.includes("not_found")) {
+          // Might be running in dev mode or Docker — check common locations
+          checks.push({ name: ".env File Security", status: "unconfigured", message: "No .env file found at /opt/tts-dialer/.env", detail: "This is normal in Docker or development environments" });
+        } else {
+          const perms = stdout.trim();
+          if (perms === "600" || perms === "400") {
+            checks.push({ name: ".env File Security", status: "ok", message: `Permissions: ${perms} (restricted)`, detail: "Only root can read the credentials file" });
+          } else {
+            checks.push({ name: ".env File Security", status: "warning", message: `Permissions: ${perms} (too open)`, detail: "Run: sudo chmod 600 /opt/tts-dialer/.env" });
+          }
+        }
+      } catch {
+        checks.push({ name: ".env File Security", status: "unconfigured", message: "Unable to check .env permissions" });
+      }
+
+      const okCount = checks.filter(c => c.status === "ok").length;
+      const warningCount = checks.filter(c => c.status === "warning").length;
+      const errorCount = checks.filter(c => c.status === "error").length;
+      const unconfiguredCount = checks.filter(c => c.status === "unconfigured").length;
+
+      // Overall grade
+      let grade: "A" | "B" | "C" | "D" | "F";
+      if (errorCount === 0 && warningCount === 0) grade = "A";
+      else if (errorCount === 0 && warningCount <= 2) grade = "B";
+      else if (errorCount <= 1) grade = "C";
+      else if (errorCount <= 2) grade = "D";
+      else grade = "F";
+
+      return {
+        checks,
+        summary: { ok: okCount, warning: warningCount, error: errorCount, unconfigured: unconfiguredCount, total: checks.length, grade },
+      };
+    }),
   }),
 });
 

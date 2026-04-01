@@ -946,3 +946,8 @@
 - [x] Add SSH key auth recommendation and optional password auth disable
 - [x] Add unattended-upgrades for automatic security patches
 - [x] Update DEPLOYMENT-GUIDE.md with security documentation
+
+## Security Status Dashboard Widget
+- [x] Create backend tRPC endpoint to check server security status (UFW, fail2ban, SSH auth, SSL, auto-updates, .env permissions)
+- [x] Build Security Status widget on the dashboard alongside System Health widget (grade A-F, 6 check tiles, color-coded)
+- [x] Write tests for the security status endpoint (5 tests: structure, check names, admin access, auth, count validation)
