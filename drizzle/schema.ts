@@ -1060,3 +1060,20 @@ export const licenseKeys = mysqlTable("license_keys", {
 
 export type LicenseKey = typeof licenseKeys.$inferSelect;
 export type InsertLicenseKey = typeof licenseKeys.$inferInsert;
+
+// ─── Security Grade History ──────────────────────────────────────────────
+export const securityGradeHistory = mysqlTable("security_grade_history", {
+  id: int("id").autoincrement().primaryKey(),
+  grade: varchar("grade", { length: 2 }).notNull(), // A, B, C, D, F
+  okCount: int("okCount").notNull(),
+  warningCount: int("warningCount").notNull(),
+  errorCount: int("errorCount").notNull(),
+  unconfiguredCount: int("unconfiguredCount").notNull(),
+  totalChecks: int("totalChecks").notNull(),
+  details: json("details").$type<Array<{ name: string; status: string; message: string }>>(),
+  checkedAt: bigint("checkedAt", { mode: "number" }).notNull(), // UTC ms
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SecurityGradeHistory = typeof securityGradeHistory.$inferSelect;
+export type InsertSecurityGradeHistory = typeof securityGradeHistory.$inferInsert;

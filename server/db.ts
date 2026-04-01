@@ -3568,3 +3568,31 @@ export async function getAllCampaignSchedules(startMs?: number, endMs?: number) 
     .limit(200);
   return rows;
 }
+
+// ─── Security Grade History ──────────────────────────────────────────────
+
+import { securityGradeHistory, InsertSecurityGradeHistory } from "../drizzle/schema";
+
+export async function createSecurityGradeEntry(data: Omit<InsertSecurityGradeHistory, "id">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(securityGradeHistory).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function getSecurityGradeHistory(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(securityGradeHistory)
+    .orderBy(desc(securityGradeHistory.checkedAt))
+    .limit(limit);
+}
+
+export async function getLatestSecurityGrade() {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(securityGradeHistory)
+    .orderBy(desc(securityGradeHistory.checkedAt))
+    .limit(1);
+  return rows[0] || null;
+}

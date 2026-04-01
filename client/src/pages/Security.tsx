@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -11,6 +11,8 @@ import {
   CheckCircle2, AlertTriangle, XCircle, Settings,
   RefreshCw, Copy, Check, ExternalLink, Terminal,
   Lock, Globe, Server, FileKey, ArrowLeft,
+  Play, Loader2, TrendingUp, TrendingDown, Minus,
+  History,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -19,11 +21,13 @@ const remediationGuides: Record<string, {
   icon: any;
   description: string;
   why: string;
+  fixable: boolean; // whether "Run Fix" can auto-fix this
   steps: Array<{ label: string; command?: string; note?: string }>;
   learnMore?: string;
 }> = {
   "Firewall (UFW)": {
     icon: Shield,
+    fixable: true,
     description: "UFW (Uncomplicated Firewall) blocks unauthorized network access to your server, allowing only the ports your application needs.",
     why: "Without a firewall, every service running on your server is exposed to the internet. Attackers can scan and exploit any open port.",
     steps: [
@@ -40,6 +44,7 @@ const remediationGuides: Record<string, {
   },
   "Fail2Ban (SSH)": {
     icon: Lock,
+    fixable: true,
     description: "Fail2Ban monitors log files for failed login attempts and automatically bans offending IP addresses, protecting against brute-force attacks.",
     why: "SSH is the #1 target for automated attacks. Without Fail2Ban, bots will continuously try username/password combinations against your server.",
     steps: [
@@ -52,6 +57,7 @@ const remediationGuides: Record<string, {
   },
   "SSH Auth Method": {
     icon: FileKey,
+    fixable: false, // requires manual SSH key setup
     description: "SSH key authentication is more secure than password authentication because keys are cryptographically strong and immune to brute-force attacks.",
     why: "Password-based SSH login is vulnerable to brute-force attacks. SSH keys provide a much stronger authentication mechanism.",
     steps: [
@@ -65,6 +71,7 @@ const remediationGuides: Record<string, {
   },
   "SSL/HTTPS": {
     icon: Globe,
+    fixable: false, // requires domain setup
     description: "SSL/HTTPS encrypts all traffic between users and your server, preventing eavesdropping and man-in-the-middle attacks.",
     why: "Without HTTPS, login credentials and sensitive data are transmitted in plain text. Anyone on the network can intercept them.",
     steps: [
@@ -78,6 +85,7 @@ const remediationGuides: Record<string, {
   },
   "Auto Security Updates": {
     icon: Server,
+    fixable: true,
     description: "Unattended-upgrades automatically installs security patches for your operating system, keeping your server protected against known vulnerabilities.",
     why: "New security vulnerabilities are discovered daily. Without automatic updates, your server accumulates unpatched vulnerabilities over time.",
     steps: [
@@ -89,6 +97,7 @@ const remediationGuides: Record<string, {
   },
   ".env File Security": {
     icon: FileKey,
+    fixable: true,
     description: "The .env file contains sensitive credentials (database passwords, API keys, JWT secrets). Restricting file permissions ensures only root can read it.",
     why: "If the .env file is world-readable, any user on the system can access your database password, API keys, and other secrets.",
     steps: [
@@ -117,8 +126,28 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function SecurityCheckCard({ check }: { check: { name: string; status: string; message: string; detail?: string } }) {
+function SecurityCheckCard({ check, onRefresh }: { check: { name: string; status: string; message: string; detail?: string }; onRefresh: () => void }) {
   const guide = remediationGuides[check.name];
+  const [fixOutput, setFixOutput] = useState<string | null>(null);
+  const [showOutput, setShowOutput] = useState(false);
+
+  const runFix = trpc.setupWizard.runSecurityFix.useMutation({
+    onSuccess: (result) => {
+      setFixOutput(result.output);
+      setShowOutput(true);
+      if (result.success) {
+        toast.success(`Fix applied: ${check.name}`);
+        // Refresh security status after a short delay
+        setTimeout(() => onRefresh(), 2000);
+      } else {
+        toast.error(`Fix failed for ${check.name}`);
+      }
+    },
+    onError: (err: any) => {
+      toast.error(`Error: ${err.message}`);
+    },
+  });
+
   if (!guide) return null;
 
   const Icon = guide.icon;
@@ -148,20 +177,57 @@ function SecurityCheckCard({ check }: { check: { name: string; status: string; m
               </div>
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className={
-              isOk ? "text-green-500 border-green-500/30" :
-              isWarning ? "text-amber-500 border-amber-500/30" :
-              isError ? "text-red-500 border-red-500/30" :
-              "text-muted-foreground border-muted"
-            }
-          >
-            {isOk ? "Passed" : isWarning ? "Warning" : isError ? "Failed" : "Unknown"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {/* Run Fix button — only for fixable checks that aren't passing */}
+            {!isOk && guide.fixable && (
+              <Button
+                size="sm"
+                variant={isError ? "destructive" : "default"}
+                onClick={() => runFix.mutate({ checkName: check.name })}
+                disabled={runFix.isPending}
+                className="gap-1.5"
+              >
+                {runFix.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+                {runFix.isPending ? "Fixing..." : "Run Fix"}
+              </Button>
+            )}
+            <Badge
+              variant="outline"
+              className={
+                isOk ? "text-green-500 border-green-500/30" :
+                isWarning ? "text-amber-500 border-amber-500/30" :
+                isError ? "text-red-500 border-red-500/30" :
+                "text-muted-foreground border-muted"
+              }
+            >
+              {isOk ? "Passed" : isWarning ? "Warning" : isError ? "Failed" : "Unknown"}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Fix output */}
+        {showOutput && fixOutput && (
+          <div className="rounded-lg border border-primary/30 bg-zinc-950 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-primary flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5" />
+                Fix Output
+              </p>
+              <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowOutput(false)}>
+                Hide
+              </Button>
+            </div>
+            <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
+              {fixOutput}
+            </pre>
+          </div>
+        )}
+
         {/* Description */}
         <div>
           <p className="text-sm text-muted-foreground">{guide.description}</p>
@@ -175,12 +241,22 @@ function SecurityCheckCard({ check }: { check: { name: string; status: string; m
           </div>
         )}
 
+        {/* Manual steps note for non-fixable checks */}
+        {!isOk && !guide.fixable && (
+          <div className="rounded-lg bg-blue-500/5 border border-blue-500/20 p-3">
+            <p className="text-sm font-medium text-blue-500 mb-1">Manual configuration required</p>
+            <p className="text-sm text-muted-foreground">
+              This check requires manual setup that cannot be automated. Follow the steps below on your server.
+            </p>
+          </div>
+        )}
+
         {/* Remediation steps */}
         {!isOk && (
           <div>
             <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
               <Terminal className="h-4 w-4" />
-              How to fix
+              {guide.fixable ? "Manual steps (alternative to Run Fix)" : "How to fix"}
             </p>
             <div className="space-y-2">
               {guide.steps.map((step, i) => (
@@ -232,6 +308,218 @@ function SecurityCheckCard({ check }: { check: { name: string; status: string; m
     </Card>
   );
 }
+
+// ─── Grade History Chart ──────────────────────────────────────────────────
+
+const GRADE_VALUES: Record<string, number> = { A: 5, B: 4, C: 3, D: 2, F: 1 };
+const GRADE_COLORS: Record<string, string> = {
+  A: "#22c55e", B: "#3b82f6", C: "#f59e0b", D: "#f97316", F: "#ef4444",
+};
+
+function GradeHistoryChart() {
+  const { data: historyData, isLoading } = trpc.setupWizard.gradeHistory.useQuery(
+    { limit: 50 },
+    { refetchInterval: 60000 }
+  );
+
+  const entries = useMemo(() => {
+    if (!historyData?.entries) return [];
+    // Reverse to show oldest first (left to right)
+    return [...historyData.entries].reverse();
+  }, [historyData]);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="h-48 rounded-lg bg-muted/30 animate-pulse" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="h-4 w-4" />
+            Security Grade History
+          </CardTitle>
+          <CardDescription>
+            Grade history will appear here after the security monitor runs its first check (every 6 hours)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center h-32 rounded-lg border border-dashed border-muted">
+            <p className="text-sm text-muted-foreground">No history data yet</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Calculate trend
+  const latestGrade = entries[entries.length - 1]?.grade || "F";
+  const previousGrade = entries.length > 1 ? entries[entries.length - 2]?.grade || latestGrade : latestGrade;
+  const latestVal = GRADE_VALUES[latestGrade] || 1;
+  const prevVal = GRADE_VALUES[previousGrade] || 1;
+  const trend = latestVal > prevVal ? "up" : latestVal < prevVal ? "down" : "stable";
+
+  // Chart dimensions
+  const chartWidth = 100; // percentage
+  const chartHeight = 160;
+  const padding = { top: 20, bottom: 30, left: 0, right: 0 };
+  const plotHeight = chartHeight - padding.top - padding.bottom;
+  const plotWidth = chartWidth;
+
+  // Build SVG path
+  const pointSpacing = entries.length > 1 ? plotWidth / (entries.length - 1) : plotWidth / 2;
+  const points = entries.map((entry, i) => {
+    const x = entries.length === 1 ? plotWidth / 2 : i * pointSpacing;
+    const gradeVal = GRADE_VALUES[entry.grade] || 1;
+    const y = padding.top + plotHeight - ((gradeVal - 1) / 4) * plotHeight;
+    return { x, y, entry };
+  });
+
+  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  const areaD = pathD + ` L ${points[points.length - 1].x} ${chartHeight - padding.bottom} L ${points[0].x} ${chartHeight - padding.bottom} Z`;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Security Grade History
+            </CardTitle>
+            <CardDescription>
+              Grade trend over the last {entries.length} check{entries.length !== 1 ? "s" : ""} (checked every 6 hours)
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={`flex items-center gap-1 text-sm font-medium ${
+              trend === "up" ? "text-green-500" : trend === "down" ? "text-red-500" : "text-muted-foreground"
+            }`}>
+              {trend === "up" ? <TrendingUp className="h-4 w-4" /> : trend === "down" ? <TrendingDown className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
+              {trend === "up" ? "Improving" : trend === "down" ? "Declining" : "Stable"}
+            </div>
+            <Badge variant="outline" className={`text-lg font-bold px-3 py-1 ${
+              latestGrade === "A" ? "text-green-500 border-green-500/30" :
+              latestGrade === "B" ? "text-blue-500 border-blue-500/30" :
+              latestGrade === "C" ? "text-amber-500 border-amber-500/30" :
+              latestGrade === "D" ? "text-orange-500 border-orange-500/30" :
+              "text-red-500 border-red-500/30"
+            }`}>
+              {latestGrade}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="relative" style={{ height: chartHeight }}>
+          {/* Y-axis grade labels */}
+          {["A", "B", "C", "D", "F"].map((grade, i) => {
+            const y = padding.top + (i / 4) * plotHeight;
+            return (
+              <div key={grade} className="absolute flex items-center" style={{ top: y - 8, left: -24 }}>
+                <span className="text-xs font-mono font-medium" style={{ color: GRADE_COLORS[grade] }}>{grade}</span>
+              </div>
+            );
+          })}
+
+          {/* Grid lines */}
+          <svg width="100%" height={chartHeight} className="absolute inset-0" style={{ left: 0 }}>
+            {["A", "B", "C", "D", "F"].map((grade, i) => {
+              const y = padding.top + (i / 4) * plotHeight;
+              return (
+                <line key={grade} x1="0%" x2="100%" y1={y} y2={y}
+                  stroke="currentColor" strokeOpacity={0.08} strokeDasharray="4 4" />
+              );
+            })}
+
+            {/* Area fill */}
+            <path d={areaD} fill="url(#gradeGradient)" opacity={0.15} />
+
+            {/* Line */}
+            <path d={pathD} fill="none" stroke="url(#lineGradient)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+
+            {/* Data points */}
+            {points.map((p, i) => (
+              <g key={i}>
+                <circle cx={`${p.x}%`} cy={p.y} r={4} fill={GRADE_COLORS[p.entry.grade] || "#888"} stroke="var(--background)" strokeWidth={2} />
+                {/* Tooltip area */}
+                <title>{`Grade: ${p.entry.grade} | ${new Date(p.entry.checkedAt).toLocaleString()}\n${p.entry.okCount} passed, ${p.entry.warningCount} warnings, ${p.entry.errorCount} errors`}</title>
+              </g>
+            ))}
+
+            {/* Gradients */}
+            <defs>
+              <linearGradient id="gradeGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="lineGradient" x1="0%" y1="0" x2="100%" y2="0">
+                {points.map((p, i) => (
+                  <stop key={i} offset={`${(i / Math.max(points.length - 1, 1)) * 100}%`} stopColor={GRADE_COLORS[p.entry.grade] || "#888"} />
+                ))}
+              </linearGradient>
+            </defs>
+          </svg>
+
+          {/* X-axis timestamps */}
+          <div className="absolute bottom-0 left-0 right-0 flex justify-between px-0" style={{ height: padding.bottom }}>
+            {entries.length <= 10 ? entries.map((entry, i) => (
+              <span key={i} className="text-[10px] text-muted-foreground font-mono" style={{ position: "absolute", left: `${entries.length === 1 ? 50 : (i / (entries.length - 1)) * 100}%`, transform: "translateX(-50%)", bottom: 0 }}>
+                {new Date(entry.checkedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </span>
+            )) : (
+              <>
+                <span className="text-[10px] text-muted-foreground font-mono absolute left-0 bottom-0">
+                  {new Date(entries[0].checkedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono absolute right-0 bottom-0">
+                  {new Date(entries[entries.length - 1].checkedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Stats row */}
+        {entries.length > 0 && (
+          <div className="flex gap-4 mt-4 pt-4 border-t">
+            <div className="text-center flex-1">
+              <p className="text-xs text-muted-foreground">Total Checks</p>
+              <p className="text-lg font-semibold">{entries.length}</p>
+            </div>
+            <div className="text-center flex-1">
+              <p className="text-xs text-muted-foreground">Best Grade</p>
+              <p className="text-lg font-semibold" style={{ color: GRADE_COLORS[entries.reduce((best, e) => (GRADE_VALUES[e.grade] || 1) > (GRADE_VALUES[best] || 1) ? e.grade : best, "F")] }}>
+                {entries.reduce((best, e) => (GRADE_VALUES[e.grade] || 1) > (GRADE_VALUES[best] || 1) ? e.grade : best, "F")}
+              </p>
+            </div>
+            <div className="text-center flex-1">
+              <p className="text-xs text-muted-foreground">Worst Grade</p>
+              <p className="text-lg font-semibold" style={{ color: GRADE_COLORS[entries.reduce((worst, e) => (GRADE_VALUES[e.grade] || 1) < (GRADE_VALUES[worst] || 1) ? e.grade : worst, "A")] }}>
+                {entries.reduce((worst, e) => (GRADE_VALUES[e.grade] || 1) < (GRADE_VALUES[worst] || 1) ? e.grade : worst, "A")}
+              </p>
+            </div>
+            <div className="text-center flex-1">
+              <p className="text-xs text-muted-foreground">Current</p>
+              <p className="text-lg font-semibold" style={{ color: GRADE_COLORS[latestGrade] }}>
+                {latestGrade}
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main Security Page ──────────────────────────────────────────────────
 
 export default function Security() {
   const { user } = useAuth();
@@ -296,7 +584,7 @@ export default function Security() {
                 Server Security
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Security status and remediation guides for your self-hosted deployment
+                Security status, one-click fixes, and grade history for your self-hosted deployment
               </p>
             </div>
           </div>
@@ -353,6 +641,9 @@ export default function Security() {
           </Card>
         )}
 
+        {/* Grade History Chart */}
+        <GradeHistoryChart />
+
         {/* Loading state */}
         {security.isLoading && (
           <div className="space-y-4">
@@ -369,6 +660,10 @@ export default function Security() {
         {/* Individual check cards */}
         {security.data && (
           <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              Security Checks
+            </h3>
             {/* Failed checks first, then warnings, then passed */}
             {[...security.data.checks]
               .sort((a: any, b: any) => {
@@ -376,7 +671,7 @@ export default function Security() {
                 return (order[a.status] ?? 2) - (order[b.status] ?? 2);
               })
               .map((check: any) => (
-                <SecurityCheckCard key={check.name} check={check} />
+                <SecurityCheckCard key={check.name} check={check} onRefresh={() => security.refetch()} />
               ))}
           </div>
         )}

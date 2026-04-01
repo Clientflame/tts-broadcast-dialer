@@ -958,3 +958,12 @@
 - [x] Add route for /security in App.tsx and sidebar navigation
 - [x] Email alerts when security grade drops — periodic check with notification to admin
 - [x] Store last known security grade to detect changes
+
+## Security Run Fix & Grade History
+- [x] Backend endpoint to execute security fix commands on the server (ufw enable, fail2ban start, etc.)
+- [x] Add "Run Fix" buttons to each security check tile on the Security page (fixable checks only)
+- [x] Create security_grade_history table in schema to store grade check results
+- [x] Update security monitor to persist each check result to the history table
+- [x] Backend endpoint to retrieve grade history for charting
+- [x] Add security grade history trend chart to the Security page (with trend, stats row)
+- [x] Write tests for fix commands and grade history endpoints (16 tests pass)

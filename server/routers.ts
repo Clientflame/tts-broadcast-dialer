@@ -5181,6 +5181,82 @@ Return ONLY the message text, nothing else.`;
         summary: { ok: okCount, warning: warningCount, error: errorCount, unconfigured: unconfiguredCount, total: checks.length, grade },
       };
     }),
+
+    /** Run a security fix command on the server */
+    runSecurityFix: adminProcedure
+      .input(z.object({
+        checkName: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const { exec } = await import("child_process");
+        const { promisify } = await import("util");
+        const execAsync = promisify(exec);
+
+        // Map check names to fix commands
+        const fixCommands: Record<string, { cmd: string; description: string }> = {
+          "Firewall (UFW)": {
+            cmd: "sudo ufw --force enable && sudo ufw default deny incoming && sudo ufw default allow outgoing && sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sudo ufw allow 3000/tcp && echo 'UFW enabled and configured'",
+            description: "Enable UFW firewall with default deny policy and allow SSH, HTTP, HTTPS, and app ports",
+          },
+          "Fail2Ban (SSH)": {
+            cmd: "sudo apt-get install -y fail2ban && sudo systemctl enable fail2ban && sudo systemctl start fail2ban && echo 'Fail2Ban installed and started'",
+            description: "Install and start Fail2Ban SSH brute-force protection",
+          },
+          "SSH Auth Method": {
+            cmd: "echo 'SSH key-only auth must be configured manually. Generate an SSH key pair, add the public key to ~/.ssh/authorized_keys, then set PasswordAuthentication no in /etc/ssh/sshd_config and restart sshd.'",
+            description: "Disable SSH password authentication (requires manual SSH key setup first)",
+          },
+          "SSL/HTTPS": {
+            cmd: "echo 'SSL is managed by Caddy reverse proxy. Ensure your domain DNS points to this server and Caddy will auto-provision a Let\'s Encrypt certificate.'",
+            description: "SSL is auto-managed by Caddy — ensure DNS is pointed to this server",
+          },
+          "Auto Security Updates": {
+            cmd: "sudo apt-get install -y unattended-upgrades && sudo dpkg-reconfigure -plow unattended-upgrades && sudo systemctl enable unattended-upgrades && sudo systemctl start unattended-upgrades && echo 'Unattended-upgrades installed and enabled'",
+            description: "Install and enable automatic security updates",
+          },
+          ".env File Security": {
+            cmd: "sudo chmod 600 /opt/tts-dialer/.env 2>/dev/null && echo '.env permissions set to 600' || echo '.env file not found at /opt/tts-dialer/.env'",
+            description: "Restrict .env file permissions to owner-only (600)",
+          },
+        };
+
+        const fix = fixCommands[input.checkName];
+        if (!fix) {
+          return { success: false, output: `No fix available for check: ${input.checkName}`, description: "" };
+        }
+
+        try {
+          const { stdout, stderr } = await execAsync(fix.cmd, { timeout: 60000 });
+          const output = (stdout + (stderr ? "\n" + stderr : "")).trim();
+          return { success: true, output, description: fix.description };
+        } catch (err: any) {
+          const output = (err.stdout || "") + (err.stderr ? "\n" + err.stderr : "") + (err.message ? "\n" + err.message : "");
+          return { success: false, output: output.trim(), description: fix.description };
+        }
+      }),
+
+    /** Get security grade history for charting */
+    gradeHistory: adminProcedure
+      .input(z.object({
+        limit: z.number().min(1).max(500).default(100),
+      }).optional())
+      .query(async ({ input }) => {
+        const limit = input?.limit ?? 100;
+        const history = await db.getSecurityGradeHistory(limit);
+        return {
+          entries: history.map(h => ({
+            id: h.id,
+            grade: h.grade,
+            okCount: h.okCount,
+            warningCount: h.warningCount,
+            errorCount: h.errorCount,
+            unconfiguredCount: h.unconfiguredCount,
+            totalChecks: h.totalChecks,
+            details: h.details,
+            checkedAt: h.checkedAt,
+          })),
+        };
+      }),
   }),
 });
 

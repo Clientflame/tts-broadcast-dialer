@@ -148,9 +148,29 @@ async function runSecurityCheck() {
       }
     }
 
-    // Persist current grade
+    // Persist current grade and save to history
     lastKnownGrade = grade;
     await db.upsertAppSetting("security_last_grade", grade);
+
+    // Save to grade history table
+    const okCount = checks.filter(c => c.status === "ok").length;
+    const warningCount = checks.filter(c => c.status === "warning").length;
+    const errorCount = checks.filter(c => c.status === "error").length;
+    const unconfiguredCount = checks.filter(c => c.status === "unconfigured").length;
+    try {
+      await db.createSecurityGradeEntry({
+        grade,
+        okCount,
+        warningCount,
+        errorCount,
+        unconfiguredCount,
+        totalChecks: checks.length,
+        details: checks.map(c => ({ name: c.name, status: c.status, message: c.message })),
+        checkedAt: Date.now(),
+      });
+    } catch (histErr: any) {
+      console.warn("[SecurityMonitor] Failed to save grade history:", histErr.message);
+    }
 
   } catch (err: any) {
     console.error("[SecurityMonitor] Error running security check:", err.message);
