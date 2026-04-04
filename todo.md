@@ -1005,3 +1005,21 @@
 - [x] Fix Watchtower on app.407hosted.com (update to latest + DOCKER_API_VERSION=1.40)
 - [x] Fix HTTPS/SSL on app.407hosted.com — verified working (Let's Encrypt cert valid until Jun 27 2026)
 - [x] Fix SSL/HTTPS health check on Settings/FreePBX page to detect Caddy-terminated SSL behind reverse proxy
+- [x] Fix ARI on orlando.407hosted.com: duplicate [general] in ari.conf causing sorcery config rejection, ARI disabled in ari_general_additional.conf, HTTP bound to 127.0.0.1
+- [x] Fix Voice AI Bridge on apporlando: updated ARI_URL from localhost:8088 to orlando.407hosted.com:8088 via systemd override
+- [x] Open firewall on orlando for apporlando IP (187.124.53.98) on port 8088
+- [x] Inbound call filtering system:
+  - [x] DB: inbound_filter_rules table (per-DID filter config)
+  - [x] DB: inbound_filter_messages table (custom rejection TTS messages)
+  - [x] DB: phone_whitelist / phone_blacklist tables
+  - [x] DB: Add isMerchant flag to callerIds table
+  - [x] Server: Vtiger CRM integration (pluggable for future CRM swap)
+  - [x] Server: tRPC endpoints for filter CRUD + bulk assign
+  - [x] Server: Public API endpoint for bridge caller lookup
+  - [x] Bridge: Check filter API before processing inbound calls
+  - [x] Bridge: Play custom TTS rejection message on filtered calls
+  - [x] UI: Inbound Call Filter management page
+  - [x] UI: Per-DID filter rules with enable/disable
+  - [x] UI: Whitelist/blacklist management
+  - [x] UI: Custom rejection message editor
+  - [x] UI: Bulk assign messages to DIDs

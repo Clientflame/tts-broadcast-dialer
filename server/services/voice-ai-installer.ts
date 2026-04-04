@@ -150,6 +150,133 @@ export function createVoiceAiInstallerRouter(): Router {
     }
   });
 
+  // ─── GET /filter-check — Check if inbound call should be filtered ──────────
+  // Called by the Voice AI Bridge before processing an inbound call.
+  // Returns { allowed: true/false, rejectMessage?: string, reason?: string }
+  router.get("/filter-check", async (req: Request, res: Response) => {
+    try {
+      if (!(await validateApiKey(req, res))) return;
+
+      const callerNumber = (req.query.caller as string) || "";
+      const didNumber = (req.query.did as string) || "";
+
+      if (!callerNumber || !didNumber) {
+        // If we can't identify caller or DID, allow by default
+        res.json({ allowed: true, reason: "missing_params" });
+        return;
+      }
+
+      // Use the comprehensive checkInboundCaller function from db.ts
+      const result = await db.checkInboundCaller(didNumber, callerNumber);
+
+      // If the result says "needs CRM check", do it here (requires async API calls)
+      if (result.reason === "not_found_needs_crm_check") {
+        try {
+          const crmResult = await checkExternalCrmLookup(callerNumber);
+          if (crmResult.found) {
+            // Log the allowed call
+            await db.logInboundFilter({ didNumber, callerNumber, action: "allowed", reason: "crm_contact", matchSource: "external_crm", filterRuleId: result.filterRuleId });
+            res.json({ allowed: true, reason: "crm_contact", contactName: crmResult.name });
+            return;
+          }
+        } catch (crmErr) {
+          console.warn("[InboundFilter] CRM check failed:", crmErr);
+          // Fail open on CRM error
+          await db.logInboundFilter({ didNumber, callerNumber, action: "allowed", reason: "crm_error_failopen", filterRuleId: result.filterRuleId });
+          res.json({ allowed: true, reason: "crm_error_failopen" });
+          return;
+        }
+        // CRM didn't find them either — reject
+        const rule = result.filterRuleId ? await db.getInboundFilterRule(result.filterRuleId) : null;
+        let rejectionMsg = { text: "We're sorry, this number is not currently accepting calls. Goodbye.", voice: "en-US-Wavenet-F" };
+        if (rule) {
+          const ruleData = rule as any;
+          if (ruleData.rejectionMessageId) {
+            const msg = await db.getInboundFilterMessage(ruleData.rejectionMessageId);
+            if (msg) rejectionMsg = { text: msg.messageText, voice: msg.voice ?? "en-US-Wavenet-F" };
+          }
+        }
+        await db.logInboundFilter({ didNumber, callerNumber, action: "rejected", reason: "not_in_whitelist_or_crm", matchSource: "none", filterRuleId: result.filterRuleId });
+        res.json({ allowed: false, reason: "not_in_whitelist", rejectMessage: rejectionMsg.text, rejectVoice: rejectionMsg.voice });
+        return;
+      }
+
+      // Log the filter event
+      await db.logInboundFilter({ didNumber, callerNumber, action: result.action, reason: result.reason, matchSource: result.matchSource, filterRuleId: result.filterRuleId });
+
+      if (result.action === "rejected") {
+        res.json({
+          allowed: false,
+          reason: result.reason,
+          rejectMessage: result.rejectionMessage?.text || "We're sorry, this number is not currently accepting calls. Goodbye.",
+          rejectVoice: result.rejectionMessage?.voice || "en-US-Wavenet-F",
+        });
+      } else {
+        res.json({ allowed: true, reason: result.reason });
+      }
+
+    } catch (e: any) {
+      console.error("[InboundFilter] Error checking filter:", e);
+      // Fail open on error — don't block calls due to system errors
+      res.json({ allowed: true, reason: "error_failopen" });
+    }
+  });
+
+  // ─── External CRM Lookup Helper ──────────────────────────────────────────────
+  async function checkExternalCrmLookup(phoneNumber: string): Promise<{ found: boolean; name?: string }> {
+    // Get CRM settings from app_settings
+    const crmType = await db.getAppSetting("crm_type") || "vtiger";
+    const crmUrl = await db.getAppSetting("crm_api_url") || "";
+    const crmToken = await db.getAppSetting("crm_api_token") || "";
+    const crmUsername = await db.getAppSetting("crm_username") || "";
+
+    if (!crmUrl || !crmToken) {
+      console.warn("[InboundFilter] CRM not configured (missing url or token)");
+      return { found: false };
+    }
+
+    if (crmType === "vtiger") {
+      return await vtigerLookup(crmUrl, crmUsername, crmToken, phoneNumber);
+    }
+
+    // Add more CRM integrations here in the future
+    console.warn(`[InboundFilter] Unknown CRM type: ${crmType}`);
+    return { found: false };
+  }
+
+  async function vtigerLookup(baseUrl: string, username: string, accessKey: string, phone: string): Promise<{ found: boolean; name?: string }> {
+    try {
+      // Vtiger Cloud REST API - search contacts by phone
+      const normalizedPhone = phone.replace(/\D/g, "");
+      const query = encodeURIComponent(`SELECT firstname,lastname FROM Contacts WHERE phone='${normalizedPhone}' OR mobile='${normalizedPhone}';`);
+      const url = `${baseUrl}/webservice.php?operation=query&sessionName=${accessKey}&query=${query}`;
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const data = await response.json();
+
+      if (data.success && data.result && data.result.length > 0) {
+        const contact = data.result[0];
+        return { found: true, name: `${contact.firstname || ""} ${contact.lastname || ""}`.trim() };
+      }
+
+      // Also check Leads
+      const leadQuery = encodeURIComponent(`SELECT firstname,lastname FROM Leads WHERE phone='${normalizedPhone}' OR mobile='${normalizedPhone}';`);
+      const leadUrl = `${baseUrl}/webservice.php?operation=query&sessionName=${accessKey}&query=${leadQuery}`;
+      const leadResponse = await fetch(leadUrl, { signal: AbortSignal.timeout(5000) });
+      const leadData = await leadResponse.json();
+
+      if (leadData.success && leadData.result && leadData.result.length > 0) {
+        const lead = leadData.result[0];
+        return { found: true, name: `${lead.firstname || ""} ${lead.lastname || ""}`.trim() };
+      }
+
+      return { found: false };
+    } catch (err) {
+      console.error("[InboundFilter] Vtiger lookup error:", err);
+      throw err;
+    }
+  }
+
   // ─── GET /install — Bash installer script ─────────────────────────────────
   router.get("/install", async (req: Request, res: Response) => {
     const apiKey = req.query.key as string;

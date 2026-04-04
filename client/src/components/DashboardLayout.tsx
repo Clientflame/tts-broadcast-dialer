@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun, Sparkles } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, ShieldCheck, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun, Sparkles, Filter } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -50,6 +50,7 @@ const adminMenuItems = [
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
   { icon: FileText, label: "Call Logs", path: "/call-logs" },
   { icon: Ban, label: "DNC List", path: "/dnc" },
+  { icon: ShieldCheck, label: "Inbound Filter", path: "/inbound-filter" },
   { icon: Wand2, label: "AI Script Writer", path: "/ai-generator" },
   { icon: DollarSign, label: "Cost Estimator", path: "/cost-estimator" },
   { icon: Download, label: "Reports", path: "/reports" },

@@ -21,6 +21,7 @@ import { getNotificationChannelConfig, testEmailChannel, testSmsChannel, CHANNEL
 import { recordingsRouter, wallboardRouter } from "./routers/recordings";
 import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
+import { inboundFilterRouter } from "./routers/inbound-filter";
 import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
@@ -3920,6 +3921,7 @@ Return ONLY the message text, nothing else.`;
   voiceAi: voiceAiRouter,
   supervisor: supervisorRouter,
   agentAssist: agentAssistRouter,
+  inboundFilter: inboundFilterRouter,
 
   // ─── Agent Dashboard (for agent role users) ────────────────────────────
   agentDashboard: router({

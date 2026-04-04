@@ -37,6 +37,12 @@ import {
   clientDeployments, InsertClientDeployment,
   databaseBackups, InsertDatabaseBackup,
   licenseKeys, InsertLicenseKey,
+  inboundFilterMessages, InsertInboundFilterMessage,
+  inboundFilterRules, InsertInboundFilterRule,
+  phoneWhitelist, InsertPhoneWhitelistEntry,
+  phoneBlacklist, InsertPhoneBlacklistEntry,
+  inboundFilterLog, InsertInboundFilterLogEntry,
+  crmIntegrations, InsertCrmIntegration,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3617,4 +3623,514 @@ export async function getSipTrunkName(): Promise<string> {
 export async function buildPjsipChannel(phoneNumber: string): Promise<string> {
   const trunk = await getSipTrunkName();
   return `PJSIP/${phoneNumber}@${trunk}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── Inbound Call Filter Helpers ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Filter Messages ─────────────────────────────────────────────────────────
+
+export async function getInboundFilterMessages(userId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (userId) {
+    return db.select().from(inboundFilterMessages).where(eq(inboundFilterMessages.userId, userId)).orderBy(desc(inboundFilterMessages.createdAt));
+  }
+  return db.select().from(inboundFilterMessages).orderBy(desc(inboundFilterMessages.createdAt));
+}
+
+export async function getInboundFilterMessage(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inboundFilterMessages).where(eq(inboundFilterMessages.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getDefaultFilterMessage(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inboundFilterMessages)
+    .where(and(eq(inboundFilterMessages.userId, userId), eq(inboundFilterMessages.isDefault, 1)))
+    .limit(1);
+  return result[0];
+}
+
+export async function createInboundFilterMessage(data: InsertInboundFilterMessage) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // If this is set as default, unset other defaults
+  if (data.isDefault) {
+    await db.update(inboundFilterMessages).set({ isDefault: 0 }).where(eq(inboundFilterMessages.userId, data.userId));
+  }
+  const result = await db.insert(inboundFilterMessages).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateInboundFilterMessage(id: number, data: Partial<InsertInboundFilterMessage>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // If setting as default, unset others first
+  if (data.isDefault && data.userId) {
+    await db.update(inboundFilterMessages).set({ isDefault: 0 }).where(eq(inboundFilterMessages.userId, data.userId));
+  }
+  await db.update(inboundFilterMessages).set(data).where(eq(inboundFilterMessages.id, id));
+}
+
+export async function deleteInboundFilterMessage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Unlink any filter rules using this message
+  await db.update(inboundFilterRules).set({ rejectionMessageId: null }).where(eq(inboundFilterRules.rejectionMessageId, id));
+  await db.delete(inboundFilterMessages).where(eq(inboundFilterMessages.id, id));
+}
+
+// ─── Filter Rules (per-DID) ─────────────────────────────────────────────────
+
+export async function getInboundFilterRules(userId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (userId) {
+    return db.select().from(inboundFilterRules).where(eq(inboundFilterRules.userId, userId)).orderBy(desc(inboundFilterRules.createdAt));
+  }
+  return db.select().from(inboundFilterRules).orderBy(desc(inboundFilterRules.createdAt));
+}
+
+export async function getInboundFilterRule(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(inboundFilterRules).where(eq(inboundFilterRules.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getFilterRuleByDid(didNumber: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const normalized = didNumber.replace(/\D/g, "");
+  const result = await db.select().from(inboundFilterRules)
+    .where(eq(inboundFilterRules.didNumber, normalized))
+    .limit(1);
+  return result[0];
+}
+
+export async function createInboundFilterRule(data: InsertInboundFilterRule) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(inboundFilterRules).values({
+    ...data,
+    didNumber: data.didNumber.replace(/\D/g, ""),
+  });
+  return { id: result[0].insertId };
+}
+
+export async function updateInboundFilterRule(id: number, data: Partial<InsertInboundFilterRule>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (data.didNumber) data.didNumber = data.didNumber.replace(/\D/g, "");
+  await db.update(inboundFilterRules).set(data).where(eq(inboundFilterRules.id, id));
+}
+
+export async function deleteInboundFilterRule(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(inboundFilterRules).where(eq(inboundFilterRules.id, id));
+}
+
+export async function bulkAssignFilterMessage(ruleIds: number[], messageId: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(inboundFilterRules)
+    .set({ rejectionMessageId: messageId })
+    .where(inArray(inboundFilterRules.id, ruleIds));
+  return { updated: ruleIds.length };
+}
+
+export async function bulkToggleFilterRules(ruleIds: number[], enabled: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(inboundFilterRules)
+    .set({ enabled: enabled ? 1 : 0 })
+    .where(inArray(inboundFilterRules.id, ruleIds));
+  return { updated: ruleIds.length };
+}
+
+export async function bulkCreateFilterRules(rules: InsertInboundFilterRule[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (rules.length === 0) return { created: 0 };
+  const normalized = rules.map(r => ({ ...r, didNumber: r.didNumber.replace(/\D/g, "") }));
+  // Skip DIDs that already have a rule
+  const existingRules = await db.select({ didNumber: inboundFilterRules.didNumber }).from(inboundFilterRules);
+  const existingSet = new Set(existingRules.map(r => r.didNumber));
+  const toInsert = normalized.filter(r => !existingSet.has(r.didNumber));
+  if (toInsert.length === 0) return { created: 0, skipped: normalized.length };
+  const CHUNK = 500;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    await db.insert(inboundFilterRules).values(toInsert.slice(i, i + CHUNK));
+  }
+  return { created: toInsert.length, skipped: normalized.length - toInsert.length };
+}
+
+// ─── Phone Whitelist ─────────────────────────────────────────────────────────
+
+export async function getPhoneWhitelist(userId?: number, search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (userId) conditions.push(eq(phoneWhitelist.userId, userId));
+  if (search) conditions.push(like(phoneWhitelist.phoneNumber, `%${search}%`));
+  if (conditions.length > 0) {
+    return db.select().from(phoneWhitelist).where(and(...conditions)).orderBy(desc(phoneWhitelist.createdAt)).limit(500);
+  }
+  return db.select().from(phoneWhitelist).orderBy(desc(phoneWhitelist.createdAt)).limit(500);
+}
+
+export async function addToWhitelist(data: InsertPhoneWhitelistEntry) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const normalized = data.phoneNumber.replace(/\D/g, "");
+  // Check for duplicate
+  const existing = await db.select({ id: phoneWhitelist.id })
+    .from(phoneWhitelist)
+    .where(eq(phoneWhitelist.phoneNumber, normalized))
+    .limit(1);
+  if (existing.length > 0) return { id: existing[0].id, duplicate: true };
+  const result = await db.insert(phoneWhitelist).values({ ...data, phoneNumber: normalized });
+  return { id: result[0].insertId, duplicate: false };
+}
+
+export async function bulkAddToWhitelist(entries: InsertPhoneWhitelistEntry[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existingRows = await db.select({ phoneNumber: phoneWhitelist.phoneNumber }).from(phoneWhitelist);
+  const existingSet = new Set(existingRows.map(r => r.phoneNumber));
+  const seen = new Set<string>();
+  const toInsert = entries.filter(e => {
+    const n = e.phoneNumber.replace(/\D/g, "");
+    if (existingSet.has(n) || seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  }).map(e => ({ ...e, phoneNumber: e.phoneNumber.replace(/\D/g, "") }));
+  if (toInsert.length === 0) return { added: 0, duplicates: entries.length };
+  const CHUNK = 500;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    await db.insert(phoneWhitelist).values(toInsert.slice(i, i + CHUNK));
+  }
+  return { added: toInsert.length, duplicates: entries.length - toInsert.length };
+}
+
+export async function removeFromWhitelist(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(phoneWhitelist).where(eq(phoneWhitelist.id, id));
+}
+
+export async function isPhoneWhitelisted(phoneNumber: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const normalized = normalizePhone(phoneNumber);
+  const result = await db.select({ id: phoneWhitelist.id })
+    .from(phoneWhitelist)
+    .where(eq(phoneWhitelist.phoneNumber, normalized))
+    .limit(1);
+  return result.length > 0;
+}
+
+// ─── Phone Blacklist ─────────────────────────────────────────────────────────
+
+export async function getPhoneBlacklist(userId?: number, search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (userId) conditions.push(eq(phoneBlacklist.userId, userId));
+  if (search) conditions.push(like(phoneBlacklist.phoneNumber, `%${search}%`));
+  if (conditions.length > 0) {
+    return db.select().from(phoneBlacklist).where(and(...conditions)).orderBy(desc(phoneBlacklist.createdAt)).limit(500);
+  }
+  return db.select().from(phoneBlacklist).orderBy(desc(phoneBlacklist.createdAt)).limit(500);
+}
+
+export async function addToBlacklist(data: InsertPhoneBlacklistEntry) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const normalized = data.phoneNumber.replace(/\D/g, "");
+  const existing = await db.select({ id: phoneBlacklist.id })
+    .from(phoneBlacklist)
+    .where(eq(phoneBlacklist.phoneNumber, normalized))
+    .limit(1);
+  if (existing.length > 0) return { id: existing[0].id, duplicate: true };
+  const result = await db.insert(phoneBlacklist).values({ ...data, phoneNumber: normalized });
+  return { id: result[0].insertId, duplicate: false };
+}
+
+export async function bulkAddToBlacklist(entries: InsertPhoneBlacklistEntry[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existingRows = await db.select({ phoneNumber: phoneBlacklist.phoneNumber }).from(phoneBlacklist);
+  const existingSet = new Set(existingRows.map(r => r.phoneNumber));
+  const seen = new Set<string>();
+  const toInsert = entries.filter(e => {
+    const n = e.phoneNumber.replace(/\D/g, "");
+    if (existingSet.has(n) || seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  }).map(e => ({ ...e, phoneNumber: e.phoneNumber.replace(/\D/g, "") }));
+  if (toInsert.length === 0) return { added: 0, duplicates: entries.length };
+  const CHUNK = 500;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    await db.insert(phoneBlacklist).values(toInsert.slice(i, i + CHUNK));
+  }
+  return { added: toInsert.length, duplicates: entries.length - toInsert.length };
+}
+
+export async function removeFromBlacklist(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(phoneBlacklist).where(eq(phoneBlacklist.id, id));
+}
+
+export async function isPhoneBlacklisted(phoneNumber: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const normalized = normalizePhone(phoneNumber);
+  const result = await db.select({ id: phoneBlacklist.id })
+    .from(phoneBlacklist)
+    .where(eq(phoneBlacklist.phoneNumber, normalized))
+    .limit(1);
+  return result.length > 0;
+}
+
+// ─── Inbound Filter Log ─────────────────────────────────────────────────────
+
+export async function logInboundFilter(data: InsertInboundFilterLogEntry) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(inboundFilterLog).values(data);
+}
+
+export async function getInboundFilterLogs(limit = 100, didNumber?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (didNumber) {
+    return db.select().from(inboundFilterLog)
+      .where(eq(inboundFilterLog.didNumber, didNumber.replace(/\D/g, "")))
+      .orderBy(desc(inboundFilterLog.createdAt))
+      .limit(limit);
+  }
+  return db.select().from(inboundFilterLog).orderBy(desc(inboundFilterLog.createdAt)).limit(limit);
+}
+
+export async function getFilterStats() {
+  const db = await getDb();
+  if (!db) return { totalAllowed: 0, totalRejected: 0, totalBypassed: 0 };
+  const [stats] = await db.select({
+    totalAllowed: sql<number>`SUM(CASE WHEN action = 'allowed' THEN 1 ELSE 0 END)`,
+    totalRejected: sql<number>`SUM(CASE WHEN action = 'rejected' THEN 1 ELSE 0 END)`,
+    totalBypassed: sql<number>`SUM(CASE WHEN action = 'bypassed' THEN 1 ELSE 0 END)`,
+  }).from(inboundFilterLog);
+  return {
+    totalAllowed: Number(stats?.totalAllowed ?? 0),
+    totalRejected: Number(stats?.totalRejected ?? 0),
+    totalBypassed: Number(stats?.totalBypassed ?? 0),
+  };
+}
+
+// ─── Inbound Filter Rule Stats ───────────────────────────────────────────────
+
+export async function incrementFilterStat(ruleId: number, action: "allowed" | "rejected") {
+  const db = await getDb();
+  if (!db) return;
+  if (action === "allowed") {
+    await db.update(inboundFilterRules)
+      .set({ totalAllowed: sql`totalAllowed + 1` })
+      .where(eq(inboundFilterRules.id, ruleId));
+  } else {
+    await db.update(inboundFilterRules)
+      .set({ totalFiltered: sql`totalFiltered + 1`, lastFilteredAt: Date.now() })
+      .where(eq(inboundFilterRules.id, ruleId));
+  }
+}
+
+// ─── CRM Integrations ───────────────────────────────────────────────────────
+
+export async function getCrmIntegrations(userId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (userId) {
+    return db.select().from(crmIntegrations).where(eq(crmIntegrations.userId, userId)).orderBy(desc(crmIntegrations.createdAt));
+  }
+  return db.select().from(crmIntegrations).orderBy(desc(crmIntegrations.createdAt));
+}
+
+export async function getActiveCrmIntegration(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(crmIntegrations)
+    .where(and(eq(crmIntegrations.userId, userId), eq(crmIntegrations.isActive, 1)))
+    .limit(1);
+  return result[0];
+}
+
+export async function createCrmIntegration(data: InsertCrmIntegration) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(crmIntegrations).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateCrmIntegration(id: number, data: Partial<InsertCrmIntegration>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(crmIntegrations).set(data).where(eq(crmIntegrations.id, id));
+}
+
+export async function deleteCrmIntegration(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(crmIntegrations).where(eq(crmIntegrations.id, id));
+}
+
+// ─── Caller Lookup (the core inbound filter check) ──────────────────────────
+
+/**
+ * Check if a caller phone number should be allowed through the inbound filter.
+ * Returns the decision and metadata.
+ */
+export async function checkInboundCaller(didNumber: string, callerNumber: string): Promise<{
+  action: "allowed" | "rejected" | "bypassed";
+  reason: string;
+  matchSource?: string;
+  filterRuleId?: number;
+  rejectionMessage?: { text: string; voice: string };
+}> {
+  const db = await getDb();
+  if (!db) return { action: "bypassed", reason: "database_unavailable" };
+
+  const normalizedDid = didNumber.replace(/\D/g, "");
+  const normalizedCaller = normalizePhone(callerNumber);
+
+  // 1. Check if this DID is a merchant DID (exempt from filtering)
+  const [did] = await db.select({ id: callerIds.id, isMerchant: callerIds.isMerchant })
+    .from(callerIds)
+    .where(eq(callerIds.phoneNumber, normalizedDid))
+    .limit(1);
+  if (did?.isMerchant) {
+    return { action: "bypassed", reason: "merchant_did_exempt" };
+  }
+
+  // 2. Get the filter rule for this DID
+  const [rule] = await db.select().from(inboundFilterRules)
+    .where(eq(inboundFilterRules.didNumber, normalizedDid))
+    .limit(1);
+
+  // No rule = no filtering
+  if (!rule) {
+    return { action: "bypassed", reason: "no_filter_rule" };
+  }
+
+  // Rule disabled = pass through
+  if (!rule.enabled) {
+    return { action: "bypassed", reason: "filter_disabled" };
+  }
+
+  // 3. Check blacklist first (applies in both modes)
+  if (rule.filterMode === "blacklist" || rule.filterMode === "both") {
+    const blacklisted = await isPhoneBlacklisted(callerNumber);
+    if (blacklisted) {
+      const msg = await getFilterRejectionMessage(rule);
+      return {
+        action: "rejected",
+        reason: "blacklisted",
+        matchSource: "blacklist",
+        filterRuleId: rule.id,
+        rejectionMessage: msg,
+      };
+    }
+    // In blacklist-only mode, if not blacklisted, allow
+    if (rule.filterMode === "blacklist") {
+      return { action: "allowed", reason: "not_blacklisted", filterRuleId: rule.id };
+    }
+  }
+
+  // 4. Whitelist mode: check all enabled sources
+  if (rule.filterMode === "whitelist" || rule.filterMode === "both") {
+    // Check manual whitelist
+    if (rule.checkManualWhitelist) {
+      const whitelisted = await isPhoneWhitelisted(callerNumber);
+      if (whitelisted) {
+        return { action: "allowed", reason: "manual_whitelist", matchSource: "manual_whitelist", filterRuleId: rule.id };
+      }
+    }
+
+    // Check internal contacts
+    if (rule.checkInternalContacts) {
+      const [contact] = await db.select({ id: contacts.id })
+        .from(contacts)
+        .where(eq(contacts.phoneNumber, normalizedCaller))
+        .limit(1);
+      if (contact) {
+        return { action: "allowed", reason: "found_in_contacts", matchSource: "internal_contacts", filterRuleId: rule.id };
+      }
+      // Also check with full 11-digit format (1 + 10 digits)
+      if (normalizedCaller.length === 10) {
+        const [contact11] = await db.select({ id: contacts.id })
+          .from(contacts)
+          .where(eq(contacts.phoneNumber, "1" + normalizedCaller))
+          .limit(1);
+        if (contact11) {
+          return { action: "allowed", reason: "found_in_contacts", matchSource: "internal_contacts", filterRuleId: rule.id };
+        }
+      }
+    }
+
+    // Check external CRM (handled at the router level since it needs API calls)
+    // We return a special reason so the router can do the CRM check
+    if (rule.checkExternalCrm) {
+      return {
+        action: "rejected",
+        reason: "not_found_needs_crm_check",
+        filterRuleId: rule.id,
+      };
+    }
+
+    // Not found in any source
+    const msg = await getFilterRejectionMessage(rule);
+    return {
+      action: "rejected",
+      reason: "not_in_whitelist",
+      matchSource: "none",
+      filterRuleId: rule.id,
+      rejectionMessage: msg,
+    };
+  }
+
+  return { action: "bypassed", reason: "unknown_filter_mode" };
+}
+
+async function getFilterRejectionMessage(rule: typeof inboundFilterRules.$inferSelect): Promise<{ text: string; voice: string }> {
+  // Try rule-specific message first
+  if (rule.rejectionMessageId) {
+    const msg = await getInboundFilterMessage(rule.rejectionMessageId);
+    if (msg) return { text: msg.messageText, voice: msg.voice ?? "en-US-Wavenet-F" };
+  }
+  // Fall back to default message for this user
+  const defaultMsg = await getDefaultFilterMessage(rule.userId);
+  if (defaultMsg) return { text: defaultMsg.messageText, voice: defaultMsg.voice ?? "en-US-Wavenet-F" };
+  // Hardcoded fallback
+  return { text: "We're sorry, this number is not currently accepting calls. Goodbye.", voice: "en-US-Wavenet-F" };
+}
+
+// ─── Merchant DID helpers ────────────────────────────────────────────────────
+
+export async function setMerchantDid(callerIdId: number, isMerchant: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callerIds).set({ isMerchant: isMerchant ? 1 : 0 }).where(eq(callerIds.id, callerIdId));
+}
+
+export async function bulkSetMerchantDids(callerIdIds: number[], isMerchant: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(callerIds).set({ isMerchant: isMerchant ? 1 : 0 }).where(inArray(callerIds.id, callerIdIds));
+  return { updated: callerIdIds.length };
 }

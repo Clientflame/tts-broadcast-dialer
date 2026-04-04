@@ -307,6 +307,8 @@ export const callerIds = mysqlTable("caller_ids", {
   // CNAM lookup fields
   cnamName: varchar("cnamName", { length: 255 }),
   cnamLookedUpAt: bigint("cnamLookedUpAt", { mode: "number" }),
+  // Merchant DID flag — merchant DIDs are exempt from inbound call filtering
+  isMerchant: int("isMerchant").default(0).notNull(),
 });
 
 export type CallerId = typeof callerIds.$inferSelect;
@@ -1077,3 +1079,106 @@ export const securityGradeHistory = mysqlTable("security_grade_history", {
 
 export type SecurityGradeHistory = typeof securityGradeHistory.$inferSelect;
 export type InsertSecurityGradeHistory = typeof securityGradeHistory.$inferInsert;
+
+// ─── Inbound Filter Messages (Custom TTS rejection messages) ────────────────
+export const inboundFilterMessages = mysqlTable("inbound_filter_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(), // e.g., "Default Rejection", "After Hours"
+  messageText: text("messageText").notNull(), // TTS text to play before hanging up
+  voice: varchar("voice", { length: 50 }).default("en-US-Wavenet-F"), // Google TTS voice
+  isDefault: int("isDefault").default(0).notNull(), // 1 = default message for new filter rules
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type InboundFilterMessage = typeof inboundFilterMessages.$inferSelect;
+export type InsertInboundFilterMessage = typeof inboundFilterMessages.$inferInsert;
+
+// ─── Inbound Filter Rules (Per-DID filter configuration) ────────────────────
+export const inboundFilterRules = mysqlTable("inbound_filter_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  callerIdId: int("callerIdId").notNull(), // FK to caller_ids (the DID)
+  didNumber: varchar("didNumber", { length: 20 }).notNull(), // denormalized for quick lookup
+  enabled: int("enabled").default(1).notNull(), // 1 = filtering active, 0 = all calls pass through
+  filterMode: mysqlEnum("filterMode", ["whitelist", "blacklist", "both"]).default("whitelist").notNull(),
+  // Data sources to check for whitelist
+  checkInternalContacts: int("checkInternalContacts").default(1).notNull(), // check contacts table
+  checkExternalCrm: int("checkExternalCrm").default(0).notNull(), // check Vtiger/external CRM
+  checkManualWhitelist: int("checkManualWhitelist").default(1).notNull(), // check phone_whitelist table
+  // Rejection message
+  rejectionMessageId: int("rejectionMessageId"), // FK to inbound_filter_messages (null = use default)
+  // Stats
+  totalFiltered: int("totalFiltered").default(0).notNull(),
+  totalAllowed: int("totalAllowed").default(0).notNull(),
+  lastFilteredAt: bigint("lastFilteredAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type InboundFilterRule = typeof inboundFilterRules.$inferSelect;
+export type InsertInboundFilterRule = typeof inboundFilterRules.$inferInsert;
+
+// ─── Phone Whitelist (Manual whitelist entries) ─────────────────────────────
+export const phoneWhitelist = mysqlTable("phone_whitelist", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  name: varchar("name", { length: 255 }), // optional label
+  reason: varchar("reason", { length: 255 }), // why whitelisted
+  addedBy: varchar("addedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PhoneWhitelistEntry = typeof phoneWhitelist.$inferSelect;
+export type InsertPhoneWhitelistEntry = typeof phoneWhitelist.$inferInsert;
+
+// ─── Phone Blacklist (Manual blacklist entries) ─────────────────────────────
+export const phoneBlacklist = mysqlTable("phone_blacklist", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  name: varchar("name", { length: 255 }), // optional label
+  reason: varchar("reason", { length: 255 }), // why blacklisted
+  addedBy: varchar("addedBy", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PhoneBlacklistEntry = typeof phoneBlacklist.$inferSelect;
+export type InsertPhoneBlacklistEntry = typeof phoneBlacklist.$inferInsert;
+
+// ─── Inbound Filter Log (Audit trail of filtered calls) ─────────────────────
+export const inboundFilterLog = mysqlTable("inbound_filter_log", {
+  id: int("id").autoincrement().primaryKey(),
+  didNumber: varchar("didNumber", { length: 20 }).notNull(),
+  callerNumber: varchar("callerNumber", { length: 20 }).notNull(),
+  action: mysqlEnum("action", ["allowed", "rejected", "bypassed"]).notNull(),
+  reason: varchar("reason", { length: 255 }), // e.g., "found in contacts", "blacklisted", "merchant DID"
+  matchSource: varchar("matchSource", { length: 50 }), // "internal_contacts", "crm_vtiger", "manual_whitelist", "blacklist"
+  filterRuleId: int("filterRuleId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InboundFilterLogEntry = typeof inboundFilterLog.$inferSelect;
+export type InsertInboundFilterLogEntry = typeof inboundFilterLog.$inferInsert;
+
+// ─── CRM Integration Config ────────────────────────────────────────────────
+export const crmIntegrations = mysqlTable("crm_integrations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  provider: mysqlEnum("provider", ["vtiger", "salesforce", "hubspot", "zoho", "custom"]).default("vtiger").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  apiUrl: text("apiUrl"), // e.g., https://yourinstance.vtiger.com/restapi/v1/vtiger/default
+  apiUsername: varchar("apiUsername", { length: 255 }),
+  apiKeyField: varchar("apiKeyField", { length: 100 }).default("crm_api_key"), // key name in app_settings
+  isActive: int("isActive").default(1).notNull(),
+  lastSyncAt: bigint("lastSyncAt", { mode: "number" }),
+  lastSyncStatus: varchar("lastSyncStatus", { length: 50 }),
+  lastSyncError: text("lastSyncError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CrmIntegration = typeof crmIntegrations.$inferSelect;
+export type InsertCrmIntegration = typeof crmIntegrations.$inferInsert;
