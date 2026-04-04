@@ -34,6 +34,7 @@ services:
       - .env
     volumes:
       - dialer-storage:/app/data/storage
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - NODE_ENV=production
       - PORT=3000

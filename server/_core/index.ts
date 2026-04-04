@@ -72,6 +72,16 @@ async function startServer() {
   app.get("/api/trpc/health", (_req, res) => {
     res.json({ ok: true });
   });
+  // Version endpoint for external monitoring and health checks
+  app.get("/api/version", (_req, res) => {
+    const pkg = require("../../package.json");
+    res.json({
+      version: pkg.version,
+      name: pkg.name,
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
+  });
   // Rate limiting on auth endpoints (before tRPC middleware)
   app.use("/api/trpc", authRateLimiter);
   // tRPC API
