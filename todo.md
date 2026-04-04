@@ -1023,3 +1023,7 @@
   - [x] UI: Whitelist/blacklist management
   - [x] UI: Custom rejection message editor
   - [x] UI: Bulk assign messages to DIDs
+- [x] Dashboard update button (left of FreePBX Connected icon):
+  - [x] Server: tRPC endpoint to check latest GitHub release version
+  - [x] Server: tRPC endpoint to trigger update (pull latest Docker image, restart via Docker socket/Watchtower)
+  - [x] UI: Update button in dashboard header with version check, release notes modal, and install feedback

@@ -19,6 +19,7 @@ import {
   PhoneOff, PhoneIncoming, PhoneOutgoing, Clock,
   MapPin, Shield, Terminal, Key, Database, AlertTriangle,
   Settings, Volume2, Bot, Download, Globe, Copy, Check, ArrowUp, Server, RotateCcw,
+  ArrowDownCircle, Loader2 as UpdateSpinner, PackageCheck,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
 import ProductTour, { useProductTour } from "@/components/ProductTour";
@@ -48,6 +49,148 @@ function useESTClock() {
     return () => clearInterval(id);
   }, []);
   return time;
+}
+
+// ─── Update Button Component ────────────────────────────────────────────────
+function UpdateButton() {
+  const updateCheck = trpc.updater.checkForUpdate.useQuery(undefined, {
+    refetchInterval: 300000, // Check every 5 minutes
+    staleTime: 60000,
+  });
+  const triggerUpdate = trpc.updater.triggerUpdate.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success(data.message, { duration: 8000 });
+      } else {
+        toast.error(data.message, { duration: 8000 });
+      }
+    },
+    onError: (err) => {
+      toast.error(`Update failed: ${err.message}`);
+    },
+  });
+
+  const [showDetails, setShowDetails] = useState(false);
+
+  if (updateCheck.isLoading) {
+    return (
+      <Badge variant="outline" className="flex items-center gap-1.5 px-3 py-1 text-muted-foreground">
+        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+        Checking...
+      </Badge>
+    );
+  }
+
+  if (!updateCheck.data?.updateAvailable) {
+    return (
+      <Badge
+        variant="outline"
+        className="flex items-center gap-1.5 px-3 py-1 text-green-600 border-green-500/30 cursor-pointer hover:bg-green-500/10 transition-colors"
+        onClick={() => { updateCheck.refetch(); toast.info("Checking for updates..."); }}
+        title="Click to check for updates"
+      >
+        <PackageCheck className="h-3.5 w-3.5" />
+        Up to Date
+      </Badge>
+    );
+  }
+
+  // Update available
+  return (
+    <>
+      <Badge
+        variant="default"
+        className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer animate-pulse transition-colors"
+        onClick={() => setShowDetails(true)}
+        title={`Update available: v${updateCheck.data.latestVersion}`}
+      >
+        <ArrowDownCircle className="h-3.5 w-3.5" />
+        Update v{updateCheck.data.latestVersion}
+      </Badge>
+
+      {showDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowDetails(false)}>
+          <div className="bg-card text-card-foreground border rounded-xl shadow-xl max-w-md w-full mx-4 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <ArrowDownCircle className="h-5 w-5 text-blue-500" />
+                Update Available
+              </h3>
+              <button onClick={() => setShowDetails(false)} className="text-muted-foreground hover:text-foreground">
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Current Version</span>
+                <span className="font-mono">v{updateCheck.data.currentVersion}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Latest Version</span>
+                <span className="font-mono font-semibold text-blue-500">v{updateCheck.data.latestVersion}</span>
+              </div>
+              {updateCheck.data.releaseName && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Release</span>
+                  <span className="truncate ml-4">{updateCheck.data.releaseName}</span>
+                </div>
+              )}
+              {updateCheck.data.publishedAt && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Published</span>
+                  <span>{new Date(updateCheck.data.publishedAt).toLocaleDateString()}</span>
+                </div>
+              )}
+            </div>
+
+            {updateCheck.data.releaseNotes && (
+              <div className="bg-muted/50 rounded-lg p-3 text-sm max-h-40 overflow-y-auto">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Release Notes</p>
+                <p className="whitespace-pre-wrap text-foreground/80">{updateCheck.data.releaseNotes}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowDetails(false)}
+              >
+                Later
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                onClick={() => {
+                  triggerUpdate.mutate({ targetVersion: updateCheck.data!.latestVersion });
+                  setShowDetails(false);
+                }}
+                disabled={triggerUpdate.isPending}
+              >
+                {triggerUpdate.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Updating...</>
+                ) : (
+                  <><ArrowDownCircle className="h-4 w-4 mr-2" />Install Update</>
+                )}
+              </Button>
+            </div>
+
+            {updateCheck.data.releaseUrl && (
+              <a
+                href={updateCheck.data.releaseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 justify-center"
+              >
+                <Globe className="h-3 w-3" />
+                View on GitHub
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 function formatPhone(phone: string) {
@@ -973,6 +1116,7 @@ export default function Home() {
                 Dialer Active
               </Badge>
             )}
+            <UpdateButton />
             <Badge
               variant={amiStatus.data?.connected ? "default" : "destructive"}
               className="flex items-center gap-1.5 px-3 py-1"
