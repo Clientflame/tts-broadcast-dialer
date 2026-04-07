@@ -1039,3 +1039,14 @@
   - [x] UI: Download buttons for MP3 and WAV formats
   - [x] Add route and sidebar navigation entry
   - [x] Vitest tests for voicemail audio creator (15 tests passing)
+- [x] Voicemail Creator - Saved Library:
+  - [x] Database: voicemail_library table (id, userId, name, text, voice, speed, format, s3Url, s3Key, fileSize, provider, createdAt)
+  - [x] Server: CRUD endpoints for saved voicemails (list, save from generation, delete, re-download)
+  - [x] UI: Library tab/section showing saved voicemails with playback, download, delete
+- [x] Voicemail Creator - Batch Multi-Voice Generation:
+  - [x] Server: batch generate endpoint - same text across multiple selected voices
+  - [x] UI: Multi-voice selector, batch generate button, results grid with all voice outputs
+- [x] Voicemail Creator - Direct FreePBX Upload:
+  - [x] Server: endpoint to upload generated audio directly to FreePBX via SSH/SFTP
+  - [x] UI: "Send to PBX" button on generated/saved voicemails
+- [x] Vitest tests for all new voicemail creator features (27 tests passing)

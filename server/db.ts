@@ -43,6 +43,7 @@ import {
   phoneBlacklist, InsertPhoneBlacklistEntry,
   inboundFilterLog, InsertInboundFilterLogEntry,
   crmIntegrations, InsertCrmIntegration,
+  voicemailLibrary, InsertVoicemailLibraryEntry,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4133,4 +4134,38 @@ export async function bulkSetMerchantDids(callerIdIds: number[], isMerchant: boo
   if (!db) throw new Error("DB not available");
   await db.update(callerIds).set({ isMerchant: isMerchant ? 1 : 0 }).where(inArray(callerIds.id, callerIdIds));
   return { updated: callerIdIds.length };
+}
+
+// ─── Voicemail Library ──────────────────────────────────────────────────────
+
+export async function getVoicemailLibrary(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(voicemailLibrary).where(eq(voicemailLibrary.userId, userId)).orderBy(desc(voicemailLibrary.createdAt));
+}
+
+export async function getVoicemailLibraryEntry(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(voicemailLibrary).where(eq(voicemailLibrary.id, id));
+  return rows[0];
+}
+
+export async function createVoicemailLibraryEntry(data: InsertVoicemailLibraryEntry) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(voicemailLibrary).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateVoicemailLibraryEntry(id: number, data: Partial<InsertVoicemailLibraryEntry>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(voicemailLibrary).set(data).where(eq(voicemailLibrary.id, id));
+}
+
+export async function deleteVoicemailLibraryEntry(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(voicemailLibrary).where(eq(voicemailLibrary.id, id));
 }

@@ -1182,3 +1182,25 @@ export const crmIntegrations = mysqlTable("crm_integrations", {
 
 export type CrmIntegration = typeof crmIntegrations.$inferSelect;
 export type InsertCrmIntegration = typeof crmIntegrations.$inferInsert;
+
+// ─── Voicemail Library (saved generated voicemails) ─────────────────────────
+export const voicemailLibrary = mysqlTable("voicemail_library", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  text: text("text").notNull(),
+  voice: varchar("voice", { length: 100 }).notNull(),
+  provider: mysqlEnum("provider", ["openai", "google"]).notNull(),
+  speed: varchar("speed", { length: 10 }).default("1.0").notNull(),
+  format: mysqlEnum("format", ["mp3", "wav"]).notNull(),
+  s3Url: text("s3Url").notNull(),
+  s3Key: varchar("s3Key", { length: 512 }).notNull(),
+  fileSize: int("fileSize").default(0).notNull(),
+  duration: int("duration"), // estimated duration in seconds
+  pbxUploaded: int("pbxUploaded").default(0).notNull(), // 0 = not uploaded, 1 = uploaded
+  pbxPath: varchar("pbxPath", { length: 512 }), // Asterisk playback path if uploaded
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VoicemailLibraryEntry = typeof voicemailLibrary.$inferSelect;
+export type InsertVoicemailLibraryEntry = typeof voicemailLibrary.$inferInsert;
