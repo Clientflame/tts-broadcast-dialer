@@ -1027,6 +1027,15 @@
   - [x] Server: tRPC endpoint to check latest GitHub release version
   - [x] Server: tRPC endpoint to trigger update (pull latest Docker image, restart via Docker socket/Watchtower)
   - [x] UI: Update button in dashboard header with version check, release notes modal, and install feedback
-- [ ] Create GitHub release v2.0.4
-- [ ] Mount Docker socket in docker-compose.yml for direct container updates
-- [ ] Add /api/version REST endpoint for external monitoring
+- [x] Create GitHub release v2.0.4
+- [x] Mount Docker socket in docker-compose.yml for direct container updates
+- [x] Add /api/version REST endpoint for external monitoring
+- [ ] Set up external monitoring for both servers (uptime checks, alerting, status page)
+- [x] AI Voicemail Audio Creator:
+  - [x] Server: TTS generation endpoint with MP3 and WAV output format support
+  - [x] Server: Audio format conversion (Google LINEAR16 to WAV with header, OpenAI native WAV)
+  - [x] UI: Voicemail Creator page with text input, voice selection, format choice
+  - [x] UI: Audio preview/playback before download
+  - [x] UI: Download buttons for MP3 and WAV formats
+  - [x] Add route and sidebar navigation entry
+  - [x] Vitest tests for voicemail audio creator (15 tests passing)

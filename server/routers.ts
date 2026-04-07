@@ -23,6 +23,7 @@ import { voiceAiRouter, supervisorRouter } from "./routers/voice-ai";
 import { agentAssistRouter } from "./routers/agent-assist";
 import { inboundFilterRouter } from "./routers/inbound-filter";
 import { updaterRouter } from "./routers/updater";
+import { voicemailCreatorRouter } from "./routers/voicemail-creator";
 import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
@@ -3924,6 +3925,7 @@ Return ONLY the message text, nothing else.`;
   agentAssist: agentAssistRouter,
   inboundFilter: inboundFilterRouter,
   updater: updaterRouter,
+  voicemailCreator: voicemailCreatorRouter,
 
   // ─── Agent Dashboard (for agent role users) ────────────────────────────
   agentDashboard: router({

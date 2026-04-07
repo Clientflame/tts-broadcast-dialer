@@ -51,6 +51,7 @@ const adminMenuItems = [
   { icon: FileText, label: "Call Logs", path: "/call-logs" },
   { icon: Ban, label: "DNC List", path: "/dnc" },
   { icon: ShieldCheck, label: "Inbound Filter", path: "/inbound-filter" },
+  { icon: Mic, label: "Voicemail Creator", path: "/voicemail-creator" },
   { icon: Wand2, label: "AI Script Writer", path: "/ai-generator" },
   { icon: DollarSign, label: "Cost Estimator", path: "/cost-estimator" },
   { icon: Download, label: "Reports", path: "/reports" },
