@@ -23,7 +23,16 @@ function getAppVersion(): string {
   }
 }
 
+function getCommitSha(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 const APP_VERSION = getAppVersion();
+const APP_COMMIT_SHA = getCommitSha();
 
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
@@ -175,6 +184,7 @@ export default defineConfig({
   plugins,
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __APP_COMMIT_SHA__: JSON.stringify(APP_COMMIT_SHA),
   },
   resolve: {
     alias: {

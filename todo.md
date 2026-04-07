@@ -1050,3 +1050,5 @@
   - [x] Server: endpoint to upload generated audio directly to FreePBX via SSH/SFTP
   - [x] UI: "Send to PBX" button on generated/saved voicemails
 - [x] Vitest tests for all new voicemail creator features (27 tests passing)
+- [x] Bug: Update button at app.407hosted.com not detecting new voicemail creator update — created GitHub release v2.0.5
+- [x] Updater: Detect all updates (commits on main) not just tagged releases — compare local commit SHA with remote HEAD

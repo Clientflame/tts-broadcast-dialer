@@ -22,6 +22,8 @@ import {
   ArrowDownCircle, Loader2 as UpdateSpinner, PackageCheck,
 } from "lucide-react";
 import { APP_VERSION } from "@shared/const";
+declare const __APP_COMMIT_SHA__: string;
+const APP_COMMIT_SHA = typeof __APP_COMMIT_SHA__ !== "undefined" ? __APP_COMMIT_SHA__ : "";
 import ProductTour, { useProductTour } from "@/components/ProductTour";
 
 function useESTClock() {
@@ -87,7 +89,7 @@ function UpdateButton() {
         variant="outline"
         className="flex items-center gap-1.5 px-3 py-1 text-green-600 border-green-500/30 cursor-pointer hover:bg-green-500/10 transition-colors"
         onClick={() => { updateCheck.refetch(); toast.info("Checking for updates..."); }}
-        title="Click to check for updates"
+        title={`Click to check for updates (${updateCheck.data?.currentCommitSha || APP_COMMIT_SHA || "unknown"})`}
       >
         <PackageCheck className="h-3.5 w-3.5" />
         Up to Date
@@ -95,22 +97,28 @@ function UpdateButton() {
     );
   }
 
-  // Update available
+  // Update available — could be release-based or commit-based
+  const d = updateCheck.data;
+  const isCommitOnly = d.hasCommitUpdate && !d.hasReleaseUpdate;
+  const badgeLabel = isCommitOnly
+    ? `${d.commitsAhead > 0 ? d.commitsAhead : ""} Update${d.commitsAhead !== 1 ? "s" : ""} Available`
+    : `Update v${d.latestVersion}`;
+
   return (
     <>
       <Badge
         variant="default"
         className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 cursor-pointer animate-pulse transition-colors"
         onClick={() => setShowDetails(true)}
-        title={`Update available: v${updateCheck.data.latestVersion}`}
+        title={isCommitOnly ? `${d.commitsAhead} new commit(s) on main` : `Update available: v${d.latestVersion}`}
       >
         <ArrowDownCircle className="h-3.5 w-3.5" />
-        Update v{updateCheck.data.latestVersion}
+        {badgeLabel}
       </Badge>
 
       {showDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowDetails(false)}>
-          <div className="bg-card text-card-foreground border rounded-xl shadow-xl max-w-md w-full mx-4 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card text-card-foreground border rounded-xl shadow-xl max-w-lg w-full mx-4 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <ArrowDownCircle className="h-5 w-5 text-blue-500" />
@@ -124,30 +132,57 @@ function UpdateButton() {
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Current Version</span>
-                <span className="font-mono">v{updateCheck.data.currentVersion}</span>
+                <span className="font-mono">v{d.currentVersion}{d.currentCommitSha ? ` (${d.currentCommitSha})` : ""}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Latest Version</span>
-                <span className="font-mono font-semibold text-blue-500">v{updateCheck.data.latestVersion}</span>
-              </div>
-              {updateCheck.data.releaseName && (
+              {d.hasReleaseUpdate && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Release</span>
-                  <span className="truncate ml-4">{updateCheck.data.releaseName}</span>
+                  <span className="text-muted-foreground">Latest Release</span>
+                  <span className="font-mono font-semibold text-blue-500">v{d.latestVersion}</span>
                 </div>
               )}
-              {updateCheck.data.publishedAt && (
+              {d.hasCommitUpdate && d.commitsAhead > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">New Commits</span>
+                  <span className="font-semibold text-amber-500">{d.commitsAhead} commit{d.commitsAhead !== 1 ? "s" : ""} ahead</span>
+                </div>
+              )}
+              {d.latestCommitSha && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Latest Commit</span>
+                  <span className="font-mono text-blue-400">{d.latestCommitSha}</span>
+                </div>
+              )}
+              {d.releaseName && d.hasReleaseUpdate && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Release</span>
+                  <span className="truncate ml-4">{d.releaseName}</span>
+                </div>
+              )}
+              {d.publishedAt && (
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Published</span>
-                  <span>{new Date(updateCheck.data.publishedAt).toLocaleDateString()}</span>
+                  <span>{new Date(d.publishedAt).toLocaleDateString()}</span>
                 </div>
               )}
             </div>
 
-            {updateCheck.data.releaseNotes && (
+            {/* Commit summaries for commit-based updates */}
+            {d.commitSummaries && d.commitSummaries.length > 0 && (
+              <div className="bg-muted/50 rounded-lg p-3 text-sm max-h-48 overflow-y-auto">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Recent Changes</p>
+                <div className="space-y-1 font-mono text-xs text-foreground/80">
+                  {d.commitSummaries.map((s: string, i: number) => (
+                    <p key={i} className="truncate">{s}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Release notes for tagged releases */}
+            {d.releaseNotes && d.hasReleaseUpdate && (
               <div className="bg-muted/50 rounded-lg p-3 text-sm max-h-40 overflow-y-auto">
                 <p className="text-xs font-medium text-muted-foreground mb-1">Release Notes</p>
-                <p className="whitespace-pre-wrap text-foreground/80">{updateCheck.data.releaseNotes}</p>
+                <p className="whitespace-pre-wrap text-foreground/80">{d.releaseNotes}</p>
               </div>
             )}
 
@@ -162,7 +197,7 @@ function UpdateButton() {
               <Button
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
                 onClick={() => {
-                  triggerUpdate.mutate({ targetVersion: updateCheck.data!.latestVersion });
+                  triggerUpdate.mutate({ targetVersion: d.hasReleaseUpdate ? d.latestVersion : undefined });
                   setShowDetails(false);
                 }}
                 disabled={triggerUpdate.isPending}
@@ -175,9 +210,9 @@ function UpdateButton() {
               </Button>
             </div>
 
-            {updateCheck.data.releaseUrl && (
+            {d.releaseUrl && (
               <a
-                href={updateCheck.data.releaseUrl}
+                href={d.releaseUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 justify-center"
