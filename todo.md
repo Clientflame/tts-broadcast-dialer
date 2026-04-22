@@ -1052,3 +1052,4 @@
 - [x] Vitest tests for all new voicemail creator features (27 tests passing)
 - [x] Bug: Update button at app.407hosted.com not detecting new voicemail creator update — created GitHub release v2.0.5
 - [x] Updater: Detect all updates (commits on main) not just tagged releases — compare local commit SHA with remote HEAD
+- [x] Bug: Update button fails with "Failed to run docker compose" — mounted Docker socket in docker-compose.yml and verified API access from inside container

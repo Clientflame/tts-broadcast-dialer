@@ -269,83 +269,82 @@ export const updaterRouter = router({
       try {
         const { execSync } = await import("child_process");
 
-        // Check if we're running inside Docker
-        let insideDocker = false;
+        // ── Strategy 1: Docker Socket (works inside containers with mounted socket) ──
+        // Try this FIRST — it works in Docker containers on both cgroup v1 and v2
+        let hasDockerSocket = false;
         try {
-          const cgroup = await import("fs").then(fs => fs.readFileSync("/proc/1/cgroup", "utf-8"));
-          insideDocker = cgroup.includes("docker") || cgroup.includes("containerd");
+          await import("fs").then(fs => fs.accessSync("/var/run/docker.sock"));
+          hasDockerSocket = true;
         } catch {
+          hasDockerSocket = false;
+        }
+
+        if (hasDockerSocket) {
           try {
-            await import("fs").then(fs => fs.accessSync("/.dockerenv"));
-            insideDocker = true;
+            // Test socket connectivity first
+            const testResult = execSync(
+              `curl -sf --unix-socket /var/run/docker.sock http://localhost/version 2>&1 | head -1`,
+              { encoding: "utf-8", timeout: 5000 }
+            );
+
+            if (testResult.includes('"Version"')) {
+              // Socket works — pull the image
+              const pullResult = execSync(
+                `curl -s --unix-socket /var/run/docker.sock "http://localhost/images/create?fromImage=${encodeURIComponent(GHCR_IMAGE)}&tag=${encodeURIComponent(targetVersion ? `v${targetVersion.replace(/^v/, "")}` : "latest")}" -X POST 2>&1 | tail -5`,
+                { encoding: "utf-8", timeout: 120000 }
+              );
+
+              return {
+                success: true,
+                message: `Image pull initiated for ${imageTag}. The container will restart automatically via Watchtower, or run 'docker compose up -d' on the host to apply immediately.`,
+                details: pullResult.trim(),
+                method: "docker-socket" as const,
+              };
+            }
           } catch {
-            insideDocker = false;
+            // Socket exists but not usable, fall through to other methods
           }
         }
 
-        if (insideDocker) {
-          let hasDockerSocket = false;
-          try {
-            await import("fs").then(fs => fs.accessSync("/var/run/docker.sock"));
-            hasDockerSocket = true;
-          } catch {
-            hasDockerSocket = false;
-          }
+        // ── Strategy 2: Direct docker compose (works on bare-metal host) ──
+        try {
+          // Check if docker compose CLI is available
+          execSync("which docker 2>/dev/null", { encoding: "utf-8", timeout: 3000 });
 
-          if (hasDockerSocket) {
-            const pullResult = execSync(
-              `curl -s --unix-socket /var/run/docker.sock "http://localhost/images/create?fromImage=${encodeURIComponent(GHCR_IMAGE)}&tag=${encodeURIComponent(targetVersion ? `v${targetVersion.replace(/^v/, "")}` : "latest")}" -X POST 2>&1 | tail -5`,
-              { encoding: "utf-8", timeout: 120000 }
-            );
+          const pullOutput = execSync(
+            `cd /opt/tts-dialer && docker compose pull dialer 2>&1`,
+            { encoding: "utf-8", timeout: 120000 }
+          );
+          const upOutput = execSync(
+            `cd /opt/tts-dialer && docker compose up -d dialer 2>&1`,
+            { encoding: "utf-8", timeout: 60000 }
+          );
 
-            return {
-              success: true,
-              message: `Image pull initiated for ${imageTag}. The container will restart automatically via Watchtower, or run 'docker compose up -d' on the host to apply immediately.`,
-              details: pullResult.trim(),
-              method: "docker-socket" as const,
-            };
-          } else {
-            const fs = await import("fs");
-            const updateRequest = {
-              requestedAt: new Date().toISOString(),
-              targetVersion: targetVersion || "latest",
-              imageTag,
-            };
-            fs.writeFileSync("/tmp/update-request.json", JSON.stringify(updateRequest, null, 2));
-
-            return {
-              success: true,
-              message: `Update request created for ${imageTag}. Watchtower will automatically pull the latest image within the configured interval. For immediate update, SSH into the server and run: cd /opt/tts-dialer && docker compose pull && docker compose up -d`,
-              details: "Running inside Docker without socket access. Update will be applied by Watchtower.",
-              method: "watchtower" as const,
-            };
-          }
-        } else {
-          try {
-            const pullOutput = execSync(
-              `cd /opt/tts-dialer && docker compose pull dialer 2>&1`,
-              { encoding: "utf-8", timeout: 120000 }
-            );
-            const upOutput = execSync(
-              `cd /opt/tts-dialer && docker compose up -d dialer 2>&1`,
-              { encoding: "utf-8", timeout: 60000 }
-            );
-
-            return {
-              success: true,
-              message: `Update applied successfully. Pulled and restarted with ${imageTag}.`,
-              details: `${pullOutput}\n${upOutput}`.trim(),
-              method: "direct" as const,
-            };
-          } catch (cmdErr) {
-            return {
-              success: false,
-              message: `Failed to run docker compose. You may need to update manually: cd /opt/tts-dialer && docker compose pull && docker compose up -d`,
-              details: String(cmdErr),
-              method: "failed" as const,
-            };
-          }
+          return {
+            success: true,
+            message: `Update applied successfully. Pulled and restarted with ${imageTag}.`,
+            details: `${pullOutput}\n${upOutput}`.trim(),
+            method: "direct" as const,
+          };
+        } catch {
+          // docker compose not available, fall through
         }
+
+        // ── Strategy 3: Watchtower fallback ──
+        const fs = await import("fs");
+        const updateRequest = {
+          requestedAt: new Date().toISOString(),
+          targetVersion: targetVersion || "latest",
+          imageTag,
+        };
+        fs.writeFileSync("/tmp/update-request.json", JSON.stringify(updateRequest, null, 2));
+
+        return {
+          success: true,
+          message: `Update request created for ${imageTag}. Watchtower will automatically pull the latest image within the configured interval. For immediate update, SSH into the server and run: cd /opt/tts-dialer && docker compose pull && docker compose up -d`,
+          details: "No direct Docker access available. Update will be applied by Watchtower.",
+          method: "watchtower" as const,
+        };
       } catch (err) {
         console.error("[Updater] Error triggering update:", err);
         return {
