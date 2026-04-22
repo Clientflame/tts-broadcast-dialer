@@ -1056,3 +1056,4 @@
 - [x] Bug: Update button pulls image but doesn't restart container — fixed to signal Watchtower or stop container via Docker socket API after pull
 - [x] Add FreePBX credentials to new server (187.124.247.247) .env
 - [x] Configure dial.1big.com domain on new server Caddy with HTTPS
+- [x] Bug: Dashboard shows v2.0.4 — .dockerignore excluded .git so git describe failed, falling back to package.json. Fixed by removing .git from .dockerignore and bumping package.json to 2.0.9

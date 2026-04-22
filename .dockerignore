@@ -8,8 +8,8 @@ node_modules/
 # Build output (rebuilt in Docker)
 dist/
 
-# Git history (not needed in image)
-.git/
+# Git metadata (kept for version detection via git describe)
+# .git/ — NOT excluded, needed for build-time version tagging
 .gitignore
 
 # Environment files (NEVER include secrets in image)
