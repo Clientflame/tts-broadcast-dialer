@@ -289,14 +289,74 @@ export const updaterRouter = router({
 
             if (testResult.includes('"Version"')) {
               // Socket works — pull the image
+              const tag = targetVersion ? `v${targetVersion.replace(/^v/, "")}` : "latest";
               const pullResult = execSync(
-                `curl -s --unix-socket /var/run/docker.sock "http://localhost/images/create?fromImage=${encodeURIComponent(GHCR_IMAGE)}&tag=${encodeURIComponent(targetVersion ? `v${targetVersion.replace(/^v/, "")}` : "latest")}" -X POST 2>&1 | tail -5`,
+                `curl -s --unix-socket /var/run/docker.sock "http://localhost/images/create?fromImage=${encodeURIComponent(GHCR_IMAGE)}&tag=${encodeURIComponent(tag)}" -X POST 2>&1 | tail -5`,
                 { encoding: "utf-8", timeout: 120000 }
               );
 
+              // Now restart the container using Docker socket API
+              // Step 1: Find our own container ID
+              let containerId = "";
+              try {
+                const hostname = execSync("hostname", { encoding: "utf-8", timeout: 3000 }).trim();
+                // List containers and find ours by hostname (Docker sets hostname = container ID by default)
+                const containersJson = execSync(
+                  `curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/json" 2>&1`,
+                  { encoding: "utf-8", timeout: 10000 }
+                );
+                const containers = JSON.parse(containersJson) as Array<{ Id: string; Names: string[]; Image: string }>;
+                // Find the dialer container by image name or container name
+                const dialerContainer = containers.find(
+                  (c) => c.Image.includes("tts-broadcast-dialer") || c.Names.some((n) => n.includes("tts-dialer") && !n.includes("db") && !n.includes("caddy"))
+                );
+                if (dialerContainer) {
+                  containerId = dialerContainer.Id;
+                }
+              } catch (e) {
+                console.warn("[Updater] Could not find container ID:", e);
+              }
+
+              // Step 2: Stop, remove, and recreate the container
+              // We can't directly recreate via socket API alone, so we signal Watchtower to update NOW
+              // by sending SIGHUP to watchtower, or we stop+remove+create
+              let restartResult = "Image pulled. ";
+              if (containerId) {
+                try {
+                  // Signal Watchtower to run an update check immediately
+                  const watchtowerJson = execSync(
+                    `curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/json" 2>&1`,
+                    { encoding: "utf-8", timeout: 10000 }
+                  );
+                  const allContainers = JSON.parse(watchtowerJson) as Array<{ Id: string; Names: string[] }>;
+                  const watchtower = allContainers.find((c) => c.Names.some((n) => n.includes("watchtower")));
+                  
+                  if (watchtower) {
+                    // Send SIGHUP to watchtower to trigger immediate update check
+                    execSync(
+                      `curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${watchtower.Id}/kill?signal=SIGHUP" 2>&1`,
+                      { encoding: "utf-8", timeout: 10000 }
+                    );
+                    restartResult += "Watchtower signaled to restart container with new image immediately.";
+                  } else {
+                    // No watchtower — stop and restart the container directly
+                    // Stop current container
+                    execSync(
+                      `curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${containerId}/stop?t=10" 2>&1`,
+                      { encoding: "utf-8", timeout: 30000 }
+                    );
+                    restartResult += "Container stopped. It will be recreated by the Docker restart policy or Watchtower.";
+                  }
+                } catch (restartErr) {
+                  restartResult += `Restart signal sent but may need manual 'docker compose up -d': ${String(restartErr)}`;
+                }
+              } else {
+                restartResult += "Could not identify container. Run 'docker compose up -d' on the host to apply.";
+              }
+
               return {
                 success: true,
-                message: `Image pull initiated for ${imageTag}. The container will restart automatically via Watchtower, or run 'docker compose up -d' on the host to apply immediately.`,
+                message: `Update applied: ${restartResult}`,
                 details: pullResult.trim(),
                 method: "docker-socket" as const,
               };

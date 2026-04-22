@@ -1053,3 +1053,6 @@
 - [x] Bug: Update button at app.407hosted.com not detecting new voicemail creator update — created GitHub release v2.0.5
 - [x] Updater: Detect all updates (commits on main) not just tagged releases — compare local commit SHA with remote HEAD
 - [x] Bug: Update button fails with "Failed to run docker compose" — mounted Docker socket in docker-compose.yml and verified API access from inside container
+- [x] Bug: Update button pulls image but doesn't restart container — fixed to signal Watchtower or stop container via Docker socket API after pull
+- [x] Add FreePBX credentials to new server (187.124.247.247) .env
+- [x] Configure dial.1big.com domain on new server Caddy with HTTPS
