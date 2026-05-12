@@ -130,4 +130,49 @@ describe("DID Import - Up to 50 DIDs with defaults", () => {
     expect(withDefault.success).toBe(true);
     expect(withDefault.data?.description).toBe("TTS Dialer");
   });
+
+  it("should log import history when bulk creating DIDs", async () => {
+    const phone = `561${Date.now().toString().slice(-7)}`;
+    await caller.callerIds.bulkCreateWithRoutes({
+      entries: [{ phoneNumber: phone, label: "History Test" }],
+    });
+
+    // Query import history
+    const history = await caller.callerIds.getImportHistory({ limit: 10 });
+    expect(history).toBeDefined();
+    expect(Array.isArray(history)).toBe(true);
+    // Should have at least one entry from this test
+    expect(history.length).toBeGreaterThan(0);
+    // Most recent entry should contain our phone number
+    const latest = history[0];
+    expect(latest.source).toBe("manual");
+    expect(latest.importedCount).toBeGreaterThanOrEqual(1);
+    expect(latest.dids).toContain(phone);
+  });
+
+  it("should return empty array when no import history exists for user", async () => {
+    // Create a new user context with a unique ID that has no history
+    const newUid = 99900 + Math.floor(Math.random() * 100);
+    const user: AuthenticatedUser = {
+      id: newUid,
+      openId: `test-nohistory-${newUid}`,
+      email: `nohistory${newUid}@example.com`,
+      name: `No History User ${newUid}`,
+      loginMethod: "manus",
+      role: "user",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastSignedIn: new Date(),
+    };
+    const ctx: TrpcContext = {
+      user,
+      req: { protocol: "https", headers: {} } as TrpcContext["req"],
+      res: { clearCookie: vi.fn() } as unknown as TrpcContext["res"],
+    };
+    const newCaller = appRouter.createCaller(ctx);
+    const history = await newCaller.callerIds.getImportHistory({ limit: 10 });
+    expect(history).toBeDefined();
+    expect(Array.isArray(history)).toBe(true);
+    expect(history.length).toBe(0);
+  });
 });

@@ -1411,10 +1411,42 @@ export const appRouter = router({
         },
       });
 
+      // Log to DID import history
+      try {
+        const firstRoute = routeEntries[0]?.inboundRoute;
+        await db.createDidImportHistoryEntry({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          source: "manual",
+          totalCount: input.entries.length,
+          importedCount: callerIdResult.count,
+          duplicatesSkipped: callerIdResult.duplicatesOmitted,
+          routesCreated: routeResults?.summary?.created || 0,
+          routesFailed: routeResults?.summary?.failed || 0,
+          defaultDescription: firstRoute?.description || null,
+          defaultDestination: firstRoute?.destination || null,
+          cidPrefix: firstRoute?.cidPrefix || null,
+          dids: input.entries.map(e => e.phoneNumber),
+          errors: routeResults?.results?.filter((r: any) => !r.success).map((r: any) => `${r.did}: ${r.error}`) || null,
+        });
+      } catch (e) {
+        console.error("[bulkCreateWithRoutes] Failed to log import history:", e);
+      }
+
       return {
         callerIds: callerIdResult,
         inboundRoutes: routeResults,
       };
+    }),
+
+    /** Get DID import history log */
+    getImportHistory: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+    }).optional()).query(async ({ ctx, input }) => {
+      const limit = input?.limit || 50;
+      // Admins see all history, regular users see only their own
+      const userId = ctx.user.role === "admin" ? undefined : ctx.user.id;
+      return db.getDidImportHistory(userId, limit);
     }),
 
     /** Update an existing inbound route's destination, description, or CID prefix */
@@ -1503,6 +1535,28 @@ export const appRouter = router({
           source: "vitelity",
         },
       });
+
+      // Log to DID import history
+      try {
+        const firstRoute = routeEntries[0]?.inboundRoute;
+        await db.createDidImportHistoryEntry({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          source: "vitelity",
+          totalCount: input.dids.length,
+          importedCount: callerIdResult.count,
+          duplicatesSkipped: callerIdResult.duplicatesOmitted,
+          routesCreated: routeResults?.summary?.created || 0,
+          routesFailed: routeResults?.summary?.failed || 0,
+          defaultDescription: firstRoute?.description || null,
+          defaultDestination: firstRoute?.destination || null,
+          cidPrefix: firstRoute?.cidPrefix || null,
+          dids: input.dids.map(d => d.phoneNumber),
+          errors: routeResults?.results?.filter((r: any) => !r.success).map((r: any) => `${r.did}: ${r.error}`) || null,
+        });
+      } catch (e) {
+        console.error("[importFromVitelity] Failed to log import history:", e);
+      }
 
       return {
         callerIds: callerIdResult,
@@ -1712,6 +1766,29 @@ export const appRouter = router({
             await database.insert(dctTable).values(costEntries);
           }
         } catch {}
+      }
+
+      // Log to DID import history
+      try {
+        const routesCreated = inboundRouteResult?.filter((r: any) => r.success && !r.alreadyExists).length || 0;
+        const routesFailed = inboundRouteResult?.filter((r: any) => !r.success).length || 0;
+        await db.createDidImportHistoryEntry({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          source: "purchase",
+          totalCount: input.dids.length,
+          importedCount: purchasedDids.length,
+          duplicatesSkipped: callerIdResult?.duplicatesOmitted || 0,
+          routesCreated,
+          routesFailed,
+          defaultDescription: input.description || null,
+          defaultDestination: input.destination || null,
+          cidPrefix: null,
+          dids: purchasedDids.map(r => r.did),
+          errors: results.filter(r => !r.purchased).map(r => `${r.did}: ${r.error}`) || null,
+        });
+      } catch (e) {
+        console.error("[bulkPurchaseDIDs] Failed to log import history:", e);
       }
 
       return { results, callerIds: callerIdResult, inboundRoutes: inboundRouteResult };

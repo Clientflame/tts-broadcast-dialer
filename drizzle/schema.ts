@@ -1204,3 +1204,25 @@ export const voicemailLibrary = mysqlTable("voicemail_library", {
 
 export type VoicemailLibraryEntry = typeof voicemailLibrary.$inferSelect;
 export type InsertVoicemailLibraryEntry = typeof voicemailLibrary.$inferInsert;
+
+// ─── DID Import History ────────────────────────────────────────────────────
+export const didImportHistory = mysqlTable("did_import_history", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  userName: varchar("userName", { length: 255 }),
+  source: varchar("source", { length: 50 }).notNull(), // 'manual', 'csv', 'vitelity', 'purchase'
+  totalCount: int("totalCount").notNull().default(0),
+  importedCount: int("importedCount").notNull().default(0),
+  duplicatesSkipped: int("duplicatesSkipped").notNull().default(0),
+  routesCreated: int("routesCreated").notNull().default(0),
+  routesFailed: int("routesFailed").notNull().default(0),
+  defaultDescription: varchar("defaultDescription", { length: 255 }),
+  defaultDestination: varchar("defaultDestination", { length: 255 }),
+  cidPrefix: varchar("cidPrefix", { length: 50 }),
+  dids: json("dids").$type<string[]>(), // list of phone numbers imported
+  errors: json("errors").$type<string[]>(), // any error messages
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DidImportHistory = typeof didImportHistory.$inferSelect;
+export type InsertDidImportHistory = typeof didImportHistory.$inferInsert;

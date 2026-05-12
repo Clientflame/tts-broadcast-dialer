@@ -4169,3 +4169,23 @@ export async function deleteVoicemailLibraryEntry(id: number) {
   if (!db) throw new Error("DB not available");
   await db.delete(voicemailLibrary).where(eq(voicemailLibrary.id, id));
 }
+
+// ─── DID Import History ────────────────────────────────────────────────────
+import { didImportHistory, InsertDidImportHistory } from "../drizzle/schema";
+
+export async function createDidImportHistoryEntry(data: Omit<InsertDidImportHistory, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(didImportHistory).values(data).$returningId();
+  return result;
+}
+
+export async function getDidImportHistory(userId?: number, limit = 50) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const conditions = userId ? eq(didImportHistory.userId, userId) : undefined;
+  return db.select().from(didImportHistory)
+    .where(conditions)
+    .orderBy(desc(didImportHistory.createdAt))
+    .limit(limit);
+}

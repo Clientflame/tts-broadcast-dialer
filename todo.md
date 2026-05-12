@@ -1066,3 +1066,8 @@
 - [x] DID Import: Backend tRPC router
 - [x] DID Import: Frontend UI page
 - [x] DID Import: Vitest tests
+- [x] Per-DID destination override visible by default (not hidden behind toggle)
+- [x] DID import history log - database schema
+- [x] DID import history log - backend tRPC endpoint
+- [x] DID import history log - frontend UI (timestamps, counts, source)
+- [x] DID import history log - vitest tests

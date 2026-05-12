@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download, Settings } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download, Settings, History } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -198,6 +198,115 @@ function DestinationPicker({
   );
 }
 
+// ─── Import History Table ────────────────────────────────────────────────────
+
+function ImportHistoryTable() {
+  const { data: history, isLoading } = trpc.callerIds.getImportHistory.useQuery({ limit: 50 });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!history || history.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <p>No import history yet.</p>
+        <p className="text-xs mt-1">Import history will appear here after you import DIDs.</p>
+      </div>
+    );
+  }
+
+  const sourceLabel = (source: string) => {
+    switch (source) {
+      case "manual": return "Bulk Add";
+      case "csv": return "CSV Upload";
+      case "vitelity": return "Vitelity Import";
+      case "purchase": return "DID Purchase";
+      default: return source;
+    }
+  };
+
+  const sourceBadgeVariant = (source: string): "default" | "secondary" | "outline" => {
+    switch (source) {
+      case "purchase": return "default";
+      case "vitelity": return "secondary";
+      default: return "outline";
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {history.map((entry) => (
+        <div key={entry.id} className="border rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant={sourceBadgeVariant(entry.source)}>{sourceLabel(entry.source)}</Badge>
+              <span className="text-xs text-muted-foreground">
+                {new Date(entry.createdAt).toLocaleString()}
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              by {entry.userName || "Unknown"}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <span className="text-muted-foreground">Total:</span>{" "}
+              <span className="font-medium">{entry.totalCount}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Imported:</span>{" "}
+              <span className="font-medium text-green-500">{entry.importedCount}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Duplicates:</span>{" "}
+              <span className="font-medium text-yellow-500">{entry.duplicatesSkipped}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Routes:</span>{" "}
+              <span className="font-medium">{entry.routesCreated}</span>
+              {entry.routesFailed > 0 && (
+                <span className="text-red-500 ml-1">({entry.routesFailed} failed)</span>
+              )}
+            </div>
+          </div>
+          {(entry.defaultDescription || entry.cidPrefix || entry.defaultDestination) && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {entry.defaultDescription && (
+                <span className="bg-muted px-2 py-0.5 rounded">Desc: {entry.defaultDescription}</span>
+              )}
+              {entry.cidPrefix && (
+                <span className="bg-muted px-2 py-0.5 rounded">CID: {entry.cidPrefix}</span>
+              )}
+              {entry.defaultDestination && (
+                <span className="bg-muted px-2 py-0.5 rounded">Dest: {entry.defaultDestination}</span>
+              )}
+            </div>
+          )}
+          {entry.errors && (entry.errors as string[]).length > 0 && (
+            <div className="text-xs text-red-400 bg-red-500/10 rounded p-2">
+              <span className="font-medium">Errors:</span>
+              <ul className="list-disc list-inside mt-1">
+                {(entry.errors as string[]).slice(0, 5).map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+                {(entry.errors as string[]).length > 5 && (
+                  <li>...and {(entry.errors as string[]).length - 5} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Inbound Route Config Panel ──────────────────────────────────────────────
 
 interface InboundRouteEntry {
@@ -219,7 +328,7 @@ function InboundRouteConfigPanel({
   destinations: any[];
   destinationsLoading: boolean;
 }) {
-  const [showPerNumber, setShowPerNumber] = useState(false);
+  const [showPerNumber, setShowPerNumber] = useState(true);
   const [globalDest, setGlobalDest] = useState("none");
   const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
   const [globalCidPrefix, setGlobalCidPrefix] = useState("Dialer");
@@ -832,6 +941,7 @@ export default function CallerIds() {
   const [singleRouteCidPrefix, setSingleRouteCidPrefix] = useState("Dialer");
   const [singleRouteAutoApplied, setSingleRouteAutoApplied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [showImportHistory, setShowImportHistory] = useState(false);
 
   // Auto-select first queue for single add route when destinations load
   useEffect(() => {
@@ -1147,6 +1257,9 @@ export default function CallerIds() {
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setShowSyncSettings(true); }} title="Auto-Sync Settings">
               <Settings className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setShowImportHistory(true)} title="Import History">
+              <History className="h-4 w-4" />
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
@@ -2867,6 +2980,20 @@ export default function CallerIds() {
               {updateSyncSettingsMut.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</> : "Save Settings"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Import History Dialog */}
+      <Dialog open={showImportHistory} onOpenChange={setShowImportHistory}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" /> DID Import History
+            </DialogTitle>
+            <DialogDescription>
+              Log of all DID imports with timestamps, counts, and source information.
+            </DialogDescription>
+          </DialogHeader>
+          <ImportHistoryTable />
         </DialogContent>
       </Dialog>
     </DashboardLayout>
