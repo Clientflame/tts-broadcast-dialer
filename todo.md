@@ -1057,3 +1057,12 @@
 - [x] Add FreePBX credentials to new server (187.124.247.247) .env
 - [x] Configure dial.1big.com domain on new server Caddy with HTTPS
 - [x] Bug: Dashboard shows v2.0.4 — .dockerignore excluded .git so git describe failed, falling back to package.json. Fixed by removing .git from .dockerignore and bumping package.json to 2.0.9
+- [x] DID Import: Bulk import up to 50 DIDs into FreePBX
+- [x] DID Import: Default Description field
+- [x] DID Import: Default Destination dropdown (FreePBX destinations)
+- [x] DID Import: CID Name Prefix "Dialer" (editable)
+- [x] DID Import: CSV upload support
+- [x] DID Import: Auto-create inbound routes in FreePBX via SSH
+- [x] DID Import: Backend tRPC router
+- [x] DID Import: Frontend UI page
+- [x] DID Import: Vitest tests

@@ -222,7 +222,7 @@ function InboundRouteConfigPanel({
   const [showPerNumber, setShowPerNumber] = useState(false);
   const [globalDest, setGlobalDest] = useState("none");
   const [globalDesc, setGlobalDesc] = useState("TTS Dialer");
-  const [globalCidPrefix, setGlobalCidPrefix] = useState("");
+  const [globalCidPrefix, setGlobalCidPrefix] = useState("Dialer");
   const [autoApplied, setAutoApplied] = useState(false);
 
   // Auto-select the first queue as default destination when destinations load
@@ -235,6 +235,7 @@ function InboundRouteConfigPanel({
           ...e,
           destination: e.destination === "none" ? firstQueue.destination : e.destination,
           description: e.description || "TTS Dialer",
+          cidPrefix: e.cidPrefix || "Dialer",
         })));
         setAutoApplied(true);
       }
@@ -303,7 +304,7 @@ function InboundRouteConfigPanel({
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label className="text-xs">Route Label</Label>
+            <Label className="text-xs">Default Description</Label>
             <Input
               className="mt-1"
               value={globalDesc}
@@ -312,12 +313,12 @@ function InboundRouteConfigPanel({
             />
           </div>
           <div>
-            <Label className="text-xs">CID Name Prefix (optional)</Label>
+            <Label className="text-xs">CID Name Prefix</Label>
             <Input
               className="mt-1"
               value={globalCidPrefix}
               onChange={e => handleGlobalCidPrefixChange(e.target.value)}
-              placeholder="e.g. CB: or TTS:"
+              placeholder="Dialer"
             />
           </div>
         </div>
@@ -455,7 +456,7 @@ export default function CallerIds() {
       } else {
         toast.success("Caller ID added");
       }
-      setShowAdd(false); setPhone(""); setLabel(""); setSingleRouteDest("none"); setSingleRouteDesc("TTS Dialer"); setSingleRouteCidPrefix("");
+      setShowAdd(false); setPhone(""); setLabel(""); setSingleRouteDest("none"); setSingleRouteDesc("TTS Dialer"); setSingleRouteCidPrefix("Dialer");
     },
     onError: (e) => toast.error(e.message),
   });
@@ -828,7 +829,7 @@ export default function CallerIds() {
   const [singleRouteEnabled, setSingleRouteEnabled] = useState(true);
   const [singleRouteDest, setSingleRouteDest] = useState("none");
   const [singleRouteDesc, setSingleRouteDesc] = useState("TTS Dialer");
-  const [singleRouteCidPrefix, setSingleRouteCidPrefix] = useState("");
+  const [singleRouteCidPrefix, setSingleRouteCidPrefix] = useState("Dialer");
   const [singleRouteAutoApplied, setSingleRouteAutoApplied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -853,14 +854,18 @@ export default function CallerIds() {
         label: parts[1] || globalLabel || undefined,
         destination: "none",
         description: "TTS Dialer",
-        cidPrefix: "",
+        cidPrefix: "Dialer",
       };
-    }).filter(e => e.phoneNumber);
+    }).filter(e => e.phoneNumber).slice(0, 50);
   };
 
   const handleBulkTextChange = (text: string) => {
     setBulkText(text);
-    setBulkRouteEntries(parseBulkEntries(text, bulkLabel));
+    const parsed = parseBulkEntries(text, bulkLabel);
+    setBulkRouteEntries(parsed);
+    if (text.split("\n").filter(l => l.trim()).length > 50) {
+      toast.warning("Maximum 50 DIDs allowed per import. Only the first 50 will be used.");
+    }
   };
 
   const handleBulkLabelChange = (newLabel: string) => {
@@ -990,17 +995,21 @@ export default function CallerIds() {
       const text = ev.target?.result as string;
       const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
       const start = lines[0] && /[a-zA-Z]/.test(lines[0].split(",")[0]) ? 1 : 0;
-      const entries = lines.slice(start).map(line => {
+      let entries = lines.slice(start).map(line => {
         const parts = line.split(",").map(p => p.trim());
         return { phoneNumber: parts[0], label: parts[1] || undefined };
       }).filter(e => e.phoneNumber);
       if (entries.length === 0) { toast.error("No valid entries found"); return; }
+      if (entries.length > 50) {
+        entries = entries.slice(0, 50);
+        toast.warning("Maximum 50 DIDs allowed per import. Only the first 50 will be used.");
+      }
       const routeEntries: InboundRouteEntry[] = entries.map(e => ({
         phoneNumber: e.phoneNumber,
         label: e.label,
         destination: "none",
         description: "TTS Dialer",
-        cidPrefix: "",
+        cidPrefix: "Dialer",
       }));
       setBulkText(entries.map(e => e.label ? `${e.phoneNumber}, ${e.label}` : e.phoneNumber).join("\n"));
       setBulkRouteEntries(routeEntries);
@@ -1149,9 +1158,9 @@ export default function CallerIds() {
               </DialogTrigger>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Bulk Add Caller IDs</DialogTitle>
+                  <DialogTitle>Import DIDs (up to 50)</DialogTitle>
                   <DialogDescription>
-                    Enter one caller ID per line. Format: phone_number, label (optional). Duplicates will be automatically skipped.
+                    Enter up to 50 DIDs, one per line. Format: phone_number, label (optional). You can also use the "Import CSV" button above. Duplicates will be automatically skipped.
                   </DialogDescription>
                 </DialogHeader>
                 <Textarea
@@ -1302,7 +1311,7 @@ export default function CallerIds() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <Label className="text-xs">Route Label</Label>
+                          <Label className="text-xs">Default Description</Label>
                           <Input
                             className="mt-1"
                             value={singleRouteDesc}
@@ -1821,7 +1830,7 @@ export default function CallerIds() {
                     )}
                   </div>
                   <div>
-                    <Label className="text-sm">Route Label / Description</Label>
+                    <Label className="text-sm">Description</Label>
                     <Input
                       className="mt-1"
                       value={editDesc}
