@@ -1092,3 +1092,7 @@
 - [x] Backend: campaigns.testCall tRPC procedure (generates TTS audio + enqueues call to user's phone)
 - [x] Frontend: Test Call button + dialog in campaign detail/form view
 - [x] Tests: Vitest for testCall input validation (6 tests passing)
+
+## Version Tagging
+- [ ] Tag all untagged commits since v2.0.9 with proper version tags
+- [ ] Push all tags to GitHub to trigger Docker builds
