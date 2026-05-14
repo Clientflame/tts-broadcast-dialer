@@ -661,7 +661,7 @@ export default function Security() {
   const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
 
-  const security = trpc.setupWizard.securityStatus.useQuery(undefined, {
+  const security = trpc.setupWizard.securityStatus.useQuery({ origin: window.location.origin }, {
     enabled: !!user && isAdmin,
     retry: false,
   });

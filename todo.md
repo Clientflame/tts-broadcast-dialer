@@ -1101,3 +1101,5 @@
 - [x] Fix "Update failed: Unexpected end of JSON input" error on in-app update button (app26.407hosted.com) — safeJsonParse + delayed restart
 - [x] Fix false "Updates Available" when already on latest version (commit SHA shows 'unknown') — injected __APP_COMMIT_SHA__ in build-server.mjs + removed false-positive branch
 - [x] Fix "Failed to execute 'json' on 'Response'" error when clicking update button — delayed restart via spawn+sleep so HTTP response completes first
+- [x] Fix "Unexpected end of JSON input" error when saving OpenAI API key on Settings page — resolved by updating to v2.3.2
+- [x] Fix SSL/HTTPS status detection showing "No domain configured" on app26.407hosted.com — auto-detect domain from frontend origin

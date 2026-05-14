@@ -5362,7 +5362,17 @@ Return ONLY the message text, nothing else.`;
     // Uses the HOST_SSH_* settings (falls back to localhost with root).
 
     /** Server security status — checks UFW, fail2ban, SSH auth, SSL, auto-updates */
-    securityStatus: adminProcedure.query(async () => {
+    securityStatus: adminProcedure.input(z.object({ origin: z.string().optional() }).optional()).query(async ({ input }) => {
+      // Auto-detect domain from frontend origin if not explicitly configured
+      const getEffectiveDomain = async () => {
+        const explicit = process.env.DOMAIN || await db.getAppSetting("domain");
+        if (explicit) return explicit;
+        // Derive from frontend origin (e.g., "https://app26.407hosted.com" → "app26.407hosted.com")
+        if (input?.origin) {
+          try { return new URL(input.origin).hostname; } catch { /* ignore */ }
+        }
+        return null;
+      };
       const hostIp = await db.getAppSetting("host_ssh_ip") || "172.17.0.1"; // Docker bridge gateway = host
       const hostUser = await db.getAppSetting("host_ssh_user") || "root";
       const hostPassword = await db.getAppSetting("host_ssh_password");
@@ -5387,7 +5397,7 @@ Return ONLY the message text, nothing else.`;
           });
         }
         // SSL check doesn't need SSH — probe HTTPS if domain is set
-        const domain = process.env.DOMAIN || await db.getAppSetting("domain");
+        const domain = await getEffectiveDomain();
         const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
         if (domain && appProtocol === "https") {
           checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
@@ -5495,7 +5505,7 @@ Return ONLY the message text, nothing else.`;
       }
 
       // 4. SSL/HTTPS (no SSH needed — probes HTTPS if domain is set)
-      const domain = process.env.DOMAIN || await db.getAppSetting("domain");
+      const domain = await getEffectiveDomain();
       const appProtocol = process.env.APP_PROTOCOL || await db.getAppSetting("app_protocol");
       if (domain && appProtocol === "https") {
         checks.push({ name: "SSL/HTTPS", status: "ok", message: `HTTPS enabled for ${domain}`, detail: "Caddy auto-renews Let's Encrypt certificates" });
