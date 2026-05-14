@@ -1094,5 +1094,8 @@
 - [x] Tests: Vitest for testCall input validation (6 tests passing)
 
 ## Version Tagging
-- [ ] Tag all untagged commits since v2.0.9 with proper version tags
-- [ ] Push all tags to GitHub to trigger Docker builds
+- [x] Tag all untagged commits since v2.0.9 with proper version tags (v2.1.0, v2.1.1, v2.2.0, v2.2.1, v2.3.0)
+- [x] Push all tags to GitHub to trigger Docker builds (v2.3.0 build confirmed)
+
+## Bug Fixes
+- [ ] Fix "Update failed: Unexpected end of JSON input" error on in-app update button (app26.407hosted.com)

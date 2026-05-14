@@ -58,6 +58,27 @@ const GITHUB_HEADERS = {
   "User-Agent": "tts-broadcast-dialer",
 };
 
+/** Safely parse JSON from Docker socket curl output, which may include error text */
+function safeJsonParse<T>(raw: string): T | null {
+  try {
+    // Docker socket curl can sometimes mix stderr into output
+    // Try to find the JSON array/object in the output
+    const trimmed = raw.trim();
+    // If it starts with [ or {, try direct parse
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      return JSON.parse(trimmed) as T;
+    }
+    // Try to extract JSON from mixed output
+    const jsonMatch = trimmed.match(/(\[\s*\{[\s\S]*\]|\{[\s\S]*\})/); 
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[1]) as T;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const updaterRouter = router({
   /**
    * Comprehensive update check:
@@ -305,13 +326,17 @@ export const updaterRouter = router({
                   `curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/json" 2>&1`,
                   { encoding: "utf-8", timeout: 10000 }
                 );
-                const containers = JSON.parse(containersJson) as Array<{ Id: string; Names: string[]; Image: string }>;
-                // Find the dialer container by image name or container name
-                const dialerContainer = containers.find(
-                  (c) => c.Image.includes("tts-broadcast-dialer") || c.Names.some((n) => n.includes("tts-dialer") && !n.includes("db") && !n.includes("caddy"))
-                );
-                if (dialerContainer) {
-                  containerId = dialerContainer.Id;
+                const containers = safeJsonParse<Array<{ Id: string; Names: string[]; Image: string }>>(containersJson);
+                if (containers && Array.isArray(containers)) {
+                  // Find the dialer container by image name or container name
+                  const dialerContainer = containers.find(
+                    (c) => c.Image.includes("tts-broadcast-dialer") || c.Names.some((n) => n.includes("tts-dialer") && !n.includes("db") && !n.includes("caddy"))
+                  );
+                  if (dialerContainer) {
+                    containerId = dialerContainer.Id;
+                  }
+                } else {
+                  console.warn("[Updater] Could not parse container list:", containersJson.slice(0, 200));
                 }
               } catch (e) {
                 console.warn("[Updater] Could not find container ID:", e);
@@ -328,8 +353,8 @@ export const updaterRouter = router({
                     `curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/json" 2>&1`,
                     { encoding: "utf-8", timeout: 10000 }
                   );
-                  const allContainers = JSON.parse(watchtowerJson) as Array<{ Id: string; Names: string[] }>;
-                  const watchtower = allContainers.find((c) => c.Names.some((n) => n.includes("watchtower")));
+                  const allContainers = safeJsonParse<Array<{ Id: string; Names: string[] }>>(watchtowerJson);
+                  const watchtower = allContainers?.find((c) => c.Names.some((n) => n.includes("watchtower")));
                   
                   if (watchtower) {
                     // Send SIGHUP to watchtower to trigger immediate update check
