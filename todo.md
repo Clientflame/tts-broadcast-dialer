@@ -1087,3 +1087,8 @@
 - [x] Day-Part: Use contact's local timezone (from area code) for script selection instead of campaign timezone
 - [x] Day-Part: Preview Day Schedule button on campaign editor
 - [x] Day-Part: Timezone-aware tests (14 tests passing)
+
+## Test Call Feature
+- [x] Backend: campaigns.testCall tRPC procedure (generates TTS audio + enqueues call to user's phone)
+- [x] Frontend: Test Call button + dialog in campaign detail/form view
+- [x] Tests: Vitest for testCall input validation (6 tests passing)

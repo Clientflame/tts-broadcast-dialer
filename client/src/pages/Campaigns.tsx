@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
-  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag,
+  Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -1060,6 +1060,21 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  // Test Call feature
+  const [testCallOpen, setTestCallOpen] = useState(false);
+  const [testCallPhone, setTestCallPhone] = useState("");
+  const [testCallFirstName, setTestCallFirstName] = useState("John");
+  const [testCallLastName, setTestCallLastName] = useState("Smith");
+  const [testCallCompany, setTestCallCompany] = useState("Acme Corp");
+  const [testCallCallbackNumber, setTestCallCallbackNumber] = useState("");
+  const testCallMutation = trpc.campaigns.testCall.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "Test call queued! Your phone should ring shortly.");
+      setTestCallOpen(false);
+    },
+    onError: (e) => toast.error(`Test call failed: ${e.message}`),
+  });
+
   // Campaign scheduling
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
@@ -1490,8 +1505,117 @@ export default function Campaigns() {
             <Button variant="outline" onClick={() => setLocation(`/call-logs?campaign=${c.id}`)}>
               <BarChart3 className="h-4 w-4 mr-2" />View Call Logs
             </Button>
+            <Button
+              variant="outline"
+              className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+              onClick={() => {
+                // Pre-fill callback number from campaign settings
+                setTestCallCallbackNumber((c as any).callbackNumber || "");
+                setTestCallOpen(true);
+              }}
+            >
+              <PhoneCall className="h-4 w-4 mr-2" />Test Call
+            </Button>
           </div>
         </div>
+
+        {/* Test Call Dialog */}
+        <Dialog open={testCallOpen} onOpenChange={setTestCallOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PhoneCall className="h-5 w-5 text-emerald-600" />
+                Test Call
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Dial your own phone to hear exactly what contacts will hear. The call uses the campaign's audio settings with sample merge field values.
+              </p>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">Your Phone Number *</Label>
+                <Input
+                  value={testCallPhone}
+                  onChange={e => setTestCallPhone(e.target.value)}
+                  placeholder="e.g. 4075551234"
+                  className="font-mono mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">10-digit US number (no dashes or spaces)</p>
+              </div>
+
+              <div className="p-3 rounded-lg border bg-muted/30 space-y-3">
+                <Label className="text-sm font-medium">Sample Merge Fields</Label>
+                <p className="text-xs text-muted-foreground">These values replace {"{{ }}"} merge fields in the TTS script so you can hear how personalization sounds.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">First Name</Label>
+                    <Input value={testCallFirstName} onChange={e => setTestCallFirstName(e.target.value)} placeholder="John" className="h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Last Name</Label>
+                    <Input value={testCallLastName} onChange={e => setTestCallLastName(e.target.value)} placeholder="Smith" className="h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Company</Label>
+                    <Input value={testCallCompany} onChange={e => setTestCallCompany(e.target.value)} placeholder="Acme Corp" className="h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Callback Number</Label>
+                    <Input value={testCallCallbackNumber} onChange={e => setTestCallCallbackNumber(e.target.value)} placeholder="4075551234" className="h-8 text-sm font-mono" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20">
+                <div className="flex items-start gap-2">
+                  <Phone className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-medium text-emerald-700 dark:text-emerald-300">What you'll hear</p>
+                    <p className="text-xs text-emerald-600/80 dark:text-emerald-400/80 mt-0.5">
+                      {(c as any).scriptId
+                        ? `Call Script #${(c as any).scriptId} with sample merge fields`
+                        : c.usePersonalizedTTS
+                        ? "Personalized TTS message with sample merge fields"
+                        : "Campaign audio file"}
+                      {" "}&bull; Voice: <span className="capitalize">{c.voice || "alloy"}</span>
+                      {" "}&bull; Caller ID: {c.callerIdNumber || "DID rotation"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setTestCallOpen(false)}>Cancel</Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={!testCallPhone || testCallPhone.replace(/\D/g, "").length < 10 || testCallMutation.isPending}
+                onClick={() => {
+                  testCallMutation.mutate({
+                    phoneNumber: testCallPhone,
+                    scriptId: (c as any).scriptId || undefined,
+                    messageText: c.usePersonalizedTTS ? (c as any).messageText : undefined,
+                    voice: c.voice || undefined,
+                    ttsSpeed: (c as any).ttsSpeed || undefined,
+                    ttsProvider: c.voice?.startsWith("en-US-") ? "google" : "openai",
+                    callbackNumber: (c as any).callbackNumber || undefined,
+                    sampleFirstName: testCallFirstName || undefined,
+                    sampleLastName: testCallLastName || undefined,
+                    sampleCompany: testCallCompany || undefined,
+                    sampleCallbackNumber: testCallCallbackNumber || undefined,
+                    callerIdNumber: c.callerIdNumber || undefined,
+                    callerIdName: c.callerIdName || undefined,
+                  });
+                }}
+              >
+                {testCallMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating & Dialing...</>
+                ) : (
+                  <><PhoneCall className="h-4 w-4 mr-2" />Place Test Call</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit Campaign Dialog */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>

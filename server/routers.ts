@@ -888,6 +888,219 @@ export const appRouter = router({
     })).query(async ({ input }) => {
       return db.getAllCampaignSchedules(input.startMs, input.endMs);
     }),
+
+    /** Test Call — dial the user's own number with sample merge fields to preview what contacts hear */
+    testCall: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(10).max(15),
+      scriptId: z.number().optional(),
+      // For script-based calls
+      callbackNumber: z.string().optional(),
+      // For personalized TTS calls
+      messageText: z.string().optional(),
+      voice: z.string().optional(),
+      ttsSpeed: z.string().optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
+      // Sample merge field values
+      sampleFirstName: z.string().optional(),
+      sampleLastName: z.string().optional(),
+      sampleCompany: z.string().optional(),
+      sampleCallbackNumber: z.string().optional(),
+      // Caller ID to use
+      callerIdNumber: z.string().optional(),
+      callerIdName: z.string().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      // Validate at least one audio source is provided
+      if (!input.scriptId && !input.messageText) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Either a script or message text is required for a test call" });
+      }
+
+      const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
+      if (phoneNumber.length < 10) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid phone number" });
+      }
+
+      const channel = await db.buildPjsipChannel(phoneNumber);
+
+      // Build sample contact data for merge fields
+      const sampleContact: import("./services/script-audio").ContactData = {
+        firstName: input.sampleFirstName || "John",
+        lastName: input.sampleLastName || "Smith",
+        phoneNumber: phoneNumber,
+        company: input.sampleCompany || "Acme Corp",
+        state: "FL",
+      };
+
+      const callbackNumber = input.sampleCallbackNumber || input.callbackNumber || "4075551234";
+      const voice = input.voice || "alloy";
+      const speed = parseFloat(input.ttsSpeed || "1.0");
+      const provider = input.ttsProvider || (voice.startsWith("en-US-") ? "google" : "openai");
+
+      let audioUrl: string | null = null;
+      let audioUrls: string[] | null = null;
+      let audioName: string | null = null;
+
+      // Script-based test call
+      if (input.scriptId) {
+        const script = await db.getCallScriptById(input.scriptId);
+        if (!script || !script.segments || script.segments.length === 0) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Script not found or has no segments" });
+        }
+
+        const { generateScriptAudio } = await import("./services/script-audio");
+        const result = await generateScriptAudio({
+          segments: script.segments,
+          contactData: sampleContact,
+          callbackNumber,
+          campaignId: 0,
+          contactId: 0,
+        });
+
+        if (!result.success || result.audioUrls.length === 0) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Failed to generate test call audio: ${result.errors.join(", ")}` });
+        }
+
+        audioUrls = result.audioUrls;
+        audioUrl = result.combinedUrl || result.audioUrls[0];
+        audioName = `test_call_script_${input.scriptId}_${Date.now()}`;
+      }
+      // Personalized TTS test call
+      else if (input.messageText) {
+        const { renderMessageTemplate } = await import("./services/tts");
+
+        // Build variables for merge field rendering
+        const variables: Record<string, string> = {
+          first_name: sampleContact.firstName || "Valued Customer",
+          last_name: sampleContact.lastName || "",
+          full_name: [sampleContact.firstName, sampleContact.lastName].filter(Boolean).join(" ") || "Valued Customer",
+          phone: sampleContact.phoneNumber,
+          company: sampleContact.company || "",
+          state: sampleContact.state || "",
+          database_name: "",
+          callback_number: "",
+          caller_id: input.callerIdNumber || "4075551234",
+        };
+
+        // Format callback number for TTS (spoken digits)
+        if (callbackNumber) {
+          const digits = callbackNumber.replace(/\D/g, "");
+          if (digits.length >= 10) {
+            const digitWords: Record<string, string> = {
+              "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+              "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine",
+            };
+            const areaCode = digits.slice(-10, -7).split("").map(d => digitWords[d]).join(" ");
+            const prefix = digits.slice(-7, -4).split("").map(d => digitWords[d]).join(" ");
+            const line = digits.slice(-4).split("").map(d => digitWords[d]).join(" ");
+            variables.callback_number = `${areaCode}, ${prefix}, ${line}`;
+          }
+        }
+
+        const renderedText = renderMessageTemplate(input.messageText, variables);
+
+        // Generate TTS
+        const isGoogleVoice = voice.startsWith("en-US-");
+        let ttsBuffer: Buffer;
+
+        if (isGoogleVoice) {
+          const { getGoogleTTSApiKey } = await import("./services/tts");
+          const apiKey = await getGoogleTTSApiKey();
+          const response = await fetch(
+            `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                input: { text: renderedText },
+                voice: { languageCode: "en-US", name: voice },
+                audioConfig: { audioEncoding: "MP3", speakingRate: speed },
+              }),
+            }
+          );
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Google TTS failed: ${errText}` });
+          }
+          const data = await response.json();
+          ttsBuffer = Buffer.from(data.audioContent, "base64");
+        } else {
+          const { getOpenAIApiKey } = await import("./services/tts");
+          const apiKey = await getOpenAIApiKey();
+          const response = await fetch("https://api.openai.com/v1/audio/speech", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "tts-1-hd",
+              input: renderedText,
+              voice: voice,
+              response_format: "mp3",
+              speed,
+            }),
+          });
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `OpenAI TTS failed: ${errText}` });
+          }
+          ttsBuffer = Buffer.from(await response.arrayBuffer());
+        }
+
+        // Upload to S3
+        const { storagePut } = await import("./storage");
+        const s3Key = `test-calls/test_${ctx.user.id}_${Date.now()}.mp3`;
+        const { url } = await storagePut(s3Key, ttsBuffer, "audio/mpeg");
+        audioUrl = url;
+        audioName = `test_call_tts_${Date.now()}`;
+      }
+
+      if (!audioUrl) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to generate audio for test call" });
+      }
+
+      // Build caller ID string
+      let callerIdStr: string | undefined;
+      if (input.callerIdNumber) {
+        callerIdStr = `"${input.callerIdName || "Test Call"}" <${input.callerIdNumber}>`;
+      }
+
+      // Build variables for the PBX agent
+      const variables: Record<string, string> = {
+        CALLID: `testcall-${ctx.user.id}-${Date.now()}`,
+        AUDIO_URL: audioUrl,
+        AUDIO_NAME: audioName || `test_call_${Date.now()}`,
+      };
+
+      // Enqueue into call_queue with highest priority
+      const { id: queueId } = await db.enqueueCall({
+        userId: ctx.user.id,
+        campaignId: null,
+        callLogId: null,
+        phoneNumber,
+        channel,
+        context: "tts-broadcast",
+        callerIdStr: callerIdStr || null,
+        audioUrl,
+        audioUrls: audioUrls,
+        audioName: audioName || null,
+        variables,
+        status: "pending",
+        priority: 1, // Highest priority — test calls go first
+      });
+
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "campaign.testCall",
+        resource: "campaign",
+        resourceId: 0,
+        details: { phoneNumber, scriptId: input.scriptId, queueId },
+      });
+
+      console.log(`[TestCall] Enqueued test call to ${phoneNumber} for user ${ctx.user.id} (queue #${queueId})`);
+
+      return { success: true, queueId, message: `Test call queued to ${phoneNumber}` };
+    }),
   }),
 
   // ─── Campaign Templates ──────────────────────────────────────────────
