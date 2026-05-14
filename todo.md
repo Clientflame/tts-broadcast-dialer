@@ -1103,3 +1103,12 @@
 - [x] Fix "Failed to execute 'json' on 'Response'" error when clicking update button — delayed restart via spawn+sleep so HTTP response completes first
 - [x] Fix "Unexpected end of JSON input" error when saving OpenAI API key on Settings page — resolved by updating to v2.3.2
 - [x] Fix SSL/HTTPS status detection showing "No domain configured" on app26.407hosted.com — auto-detect domain from frontend origin
+
+## Bulk DID Import Enhancement
+- [x] Add inbound route creation toggle to bulk import dialog — already existed but panel was hidden until entries parsed; now shows immediately when toggle is on
+- [x] Add destination type dropdown (e.g., TTS Dialer, extensions, ring groups, IVR, custom) — DestinationPicker with two-step type+item selection
+- [x] Add CID Name Prefix field (changeable, default "Dialer")
+- [x] Add default description field for bulk imports
+- [x] Allow per-number destination override — per-number settings with expand/collapse
+- [x] Auto-apply global settings to new entries as they're typed
+- [x] Ensure fwconsole reload runs after import (already handled in backend)

@@ -336,20 +336,37 @@ function InboundRouteConfigPanel({
 
   // Auto-select the first queue as default destination when destinations load
   useEffect(() => {
-    if (!autoApplied && destinations.length > 0 && globalDest === "none" && entries.length > 0) {
+    if (!autoApplied && destinations.length > 0 && globalDest === "none") {
       const firstQueue = destinations.find(d => d.type === "queue");
       if (firstQueue) {
         setGlobalDest(firstQueue.destination);
-        onEntriesChange(entries.map(e => ({
-          ...e,
-          destination: e.destination === "none" ? firstQueue.destination : e.destination,
-          description: e.description || "TTS Dialer",
-          cidPrefix: e.cidPrefix || "Dialer",
-        })));
+        if (entries.length > 0) {
+          onEntriesChange(entries.map(e => ({
+            ...e,
+            destination: e.destination === "none" ? firstQueue.destination : e.destination,
+            description: e.description || "TTS Dialer",
+            cidPrefix: e.cidPrefix || "Dialer",
+          })));
+        }
         setAutoApplied(true);
       }
     }
   }, [destinations, entries.length, autoApplied]);
+
+  // When entries are added/changed, apply current global settings to new entries with defaults
+  useEffect(() => {
+    if (entries.length > 0 && globalDest !== "none") {
+      const needsUpdate = entries.some(e => e.destination === "none");
+      if (needsUpdate) {
+        onEntriesChange(entries.map(e => ({
+          ...e,
+          destination: e.destination === "none" ? globalDest : e.destination,
+          description: e.description || globalDesc,
+          cidPrefix: e.cidPrefix || globalCidPrefix,
+        })));
+      }
+    }
+  }, [entries.length]);
 
   const applyToAll = (dest: string, desc: string, prefix: string) => {
     onEntriesChange(entries.map(e => ({
@@ -433,6 +450,10 @@ function InboundRouteConfigPanel({
         </div>
         <p className="text-xs text-muted-foreground">CID prefix is prepended to caller name on inbound calls (e.g. "CB: John Smith")</p>
       </div>
+
+      {entries.length === 0 && (
+        <p className="text-xs text-muted-foreground italic">Enter phone numbers above — these settings will be applied to all imported DIDs.</p>
+      )}
 
       {/* Per-number toggle */}
       {entries.length > 1 && (
@@ -1315,7 +1336,7 @@ export default function CallerIds() {
                   </Label>
                 </div>
 
-                {showRouteConfig && bulkRouteEntries.length > 0 && (
+                {showRouteConfig && (
                   <InboundRouteConfigPanel
                     entries={bulkRouteEntries}
                     onEntriesChange={setBulkRouteEntries}
