@@ -1,5 +1,5 @@
 import { generatePersonalizedTTS, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./tts";
-import { generateScriptAudio } from "./script-audio";
+import { generateScriptAudio, preGenerateStaticSegments } from "./script-audio";
 import { notifyOwner } from "../_core/notification";
 import { dispatchNotification } from "./notification-dispatcher";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
@@ -37,6 +37,8 @@ interface ActiveCampaign {
   scriptSegments: ScriptSegment[] | null;
   callbackNumber: string | null;
   useDidCallbackNumber: boolean;
+  // Day-Part Script Rotation
+  dayPartScripts: Array<{ startTime: string; endTime: string; scriptId: number; label?: string }> | null;
   // Hopper: remaining contacts not yet converted to call_logs
   remainingContacts: Array<{ id: number; phoneNumber: string; firstName?: string | null; lastName?: string | null; company?: string | null; state?: string | null; databaseName?: string | null }>;
   totalEligible: number;
@@ -234,12 +236,33 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     scriptSegments,
     callbackNumber,
     useDidCallbackNumber: !!(campaign as any).useDidCallbackNumber,
+    dayPartScripts: (campaign as any).dayPartScripts || null,
     remainingContacts,
     totalEligible: contactsList.length,
     dedupSkipped,
   };
 
   activeCampaigns.set(campaignId, active);
+
+  // Pre-generate static segments (Phase 1: segments without merge fields are cached globally)
+  if (scriptSegments && scriptSegments.length > 0) {
+    preGenerateStaticSegments({ segments: scriptSegments }).then(result => {
+      console.log(`[Dialer] Pre-generated ${result.generated} static segments, ${result.cached} already cached`);
+    }).catch(err => {
+      console.warn(`[Dialer] Pre-generation failed (non-fatal):`, err.message);
+    });
+  }
+
+  // Also pre-generate for day-part scripts if configured
+  if (active.dayPartScripts && active.dayPartScripts.length > 0) {
+    for (const slot of active.dayPartScripts) {
+      db.getCallScriptById(slot.scriptId).then(script => {
+        if (script?.segments) {
+          preGenerateStaticSegments({ segments: script.segments }).catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  }
 
   // Start the enqueue loop - enqueues calls into call_queue for PBX agent
   active.intervalId = setInterval(() => {
@@ -437,14 +460,42 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
   // Track multi-segment audio URLs for script-based campaigns
   let audioUrls: string[] | null = null;
 
+  // ─── Day-Part Script Rotation ─────────────────────────────────────────────
+  // If the campaign has dayPartScripts configured, resolve which script to use
+  // based on the current time in the campaign's timezone
+  let effectiveSegments = active.scriptSegments;
+  if (active.dayPartScripts && active.dayPartScripts.length > 0) {
+    const tz = active.campaign.timezone || "America/New_York";
+    const now = new Date();
+    const localTime = now.toLocaleTimeString("en-US", { timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit" });
+    // localTime is "HH:MM" format
+    const matchedSlot = active.dayPartScripts.find(slot => {
+      return localTime >= slot.startTime && localTime < slot.endTime;
+    });
+    if (matchedSlot) {
+      // Load the day-part specific script
+      try {
+        const dayPartScript = await db.getCallScriptById(matchedSlot.scriptId);
+        if (dayPartScript && dayPartScript.segments) {
+          effectiveSegments = dayPartScript.segments;
+          console.log(`[Dialer] Day-Part: Using script "${dayPartScript.name}" for time ${localTime} (slot: ${matchedSlot.startTime}-${matchedSlot.endTime})`);
+        }
+      } catch (err) {
+        console.warn(`[Dialer] Day-Part: Failed to load script ${matchedSlot.scriptId}, using default`);
+      }
+    } else {
+      console.log(`[Dialer] Day-Part: No matching slot for ${localTime}, using default script`);
+    }
+  }
+
   // Priority 1: Script-based campaigns (mixed TTS + recorded segments)
-  if (active.scriptSegments && active.scriptSegments.length > 0) {
+  if (effectiveSegments && effectiveSegments.length > 0) {
     try {
       const contact = await db.getContact(callLog.contactId);
-      console.log(`[Dialer] Generating script audio for contact ${callLog.contactId} (${active.scriptSegments.length} segments)`);
+      console.log(`[Dialer] Generating script audio for contact ${callLog.contactId} (${effectiveSegments.length} segments)`);
 
       const scriptResult = await generateScriptAudio({
-        segments: active.scriptSegments,
+        segments: effectiveSegments,
         contactData: {
           firstName: contact?.firstName,
           lastName: contact?.lastName,
@@ -831,6 +882,7 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     scriptSegments,
     callbackNumber,
     useDidCallbackNumber: !!(campaign as any).useDidCallbackNumber,
+    dayPartScripts: (campaign as any).dayPartScripts || [],
     // No remaining contacts — they were already loaded into call_logs before the restart
     remainingContacts: [],
     totalEligible: campaign.totalContacts || 0,

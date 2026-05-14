@@ -653,6 +653,8 @@ export const appRouter = router({
       // Routing mode & Voice AI
       routingMode: z.enum(["broadcast", "live_agent", "hybrid", "voice_ai"]).optional(),
       voiceAiPromptId: z.number().optional(),
+      // Day-Part Script Rotation
+      dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
       const result = await db.createCampaign({ ...input, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
@@ -713,6 +715,8 @@ export const appRouter = router({
       // Routing mode & Voice AI
       routingMode: z.enum(["broadcast", "live_agent", "hybrid", "voice_ai"]).optional(),
       voiceAiPromptId: z.number().optional(),
+      // Day-Part Script Rotation
+      dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const campaign = await db.getCampaign(id);

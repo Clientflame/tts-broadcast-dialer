@@ -1071,3 +1071,16 @@
 - [x] DID import history log - backend tRPC endpoint
 - [x] DID import history log - frontend UI (timestamps, counts, source)
 - [x] DID import history log - vitest tests
+- [x] Phase 1: Static/Dynamic segment splitting - auto-detect merge fields in segments
+- [x] Phase 1: Pre-generate static TTS segments at campaign start (store S3 URL)
+- [x] Phase 1: Only generate TTS for dynamic parts per-call (segments with merge fields)
+- [x] Phase 1: Smart cache key for static segments (text+voice+speed hash, no contactId)
+- [x] Phase 2: Add dayPartScripts JSON field to campaigns schema
+- [x] Phase 2: Campaign editor Day-Part Message Rotation UI with time windows + script assignment
+- [x] Phase 2: Dialer checks current time and selects appropriate script
+- [x] Phase 3: Smart cache key based on rendered text + voice (not contact ID)
+- [x] Phase 3: tts_audio_cache database table for persistent cache lookups
+- [x] Phase 3: Reuse cached audio for identical names/numbers across contacts
+- [x] Phase 3: Vitest tests (13 tests passing)
+- [x] Frontend: Campaign day-part rotation UI
+- [x] Tests: Vitest for segment splitting, day-part selection, smart caching (13 tests)

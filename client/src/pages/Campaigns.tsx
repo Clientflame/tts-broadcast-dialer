@@ -104,6 +104,8 @@ type FormState = {
   // Routing mode & Voice AI
   routingMode: "broadcast" | "live_agent" | "hybrid" | "voice_ai";
   voiceAiPromptId: number;
+  // Day-Part Script Rotation
+  dayPartScripts: Array<{ startTime: string; endTime: string; scriptId: number; label: string }>;
 };
 
 const DEFAULT_FORM: FormState = {
@@ -121,6 +123,7 @@ const DEFAULT_FORM: FormState = {
   ivrPaymentEnabled: false, ivrPaymentDigit: "1", ivrPaymentAmount: 0,
   tzEnforcementEnabled: true, tcpaStartHour: 8, tcpaEndHour: 21,
   routingMode: "broadcast", voiceAiPromptId: 0,
+  dayPartScripts: [],
 };
 
 function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
@@ -384,6 +387,50 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   </>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Day-Part Script Rotation */}
+          {form.scriptId > 0 && !form.usePersonalizedTTS && (
+            <div className="space-y-3 p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-sm font-medium">Day-Part Message Rotation</Label>
+                  <p className="text-xs text-muted-foreground">Use different scripts at different times of day</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => setForm(p => ({
+                  ...p, dayPartScripts: [...p.dayPartScripts, { startTime: "09:00", endTime: "12:00", scriptId: 0, label: "" }]
+                }))}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Time Slot
+                </Button>
+              </div>
+              {form.dayPartScripts.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">No day-part rotation configured. The default script above will be used for all calls.</p>
+              )}
+              {form.dayPartScripts.map((slot, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-background">
+                  <Input type="time" value={slot.startTime} className="w-28 text-sm"
+                    onChange={e => { const updated = [...form.dayPartScripts]; updated[idx] = { ...slot, startTime: e.target.value }; setForm(p => ({ ...p, dayPartScripts: updated })); }} />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input type="time" value={slot.endTime} className="w-28 text-sm"
+                    onChange={e => { const updated = [...form.dayPartScripts]; updated[idx] = { ...slot, endTime: e.target.value }; setForm(p => ({ ...p, dayPartScripts: updated })); }} />
+                  <Select value={slot.scriptId > 0 ? String(slot.scriptId) : ""} onValueChange={v => { const updated = [...form.dayPartScripts]; updated[idx] = { ...slot, scriptId: parseInt(v) }; setForm(p => ({ ...p, dayPartScripts: updated })); }}>
+                    <SelectTrigger className="flex-1 text-sm"><SelectValue placeholder="Select script" /></SelectTrigger>
+                    <SelectContent>
+                      {(scripts || []).filter((s: any) => s.status === 'active').map((s: any) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive"
+                    onClick={() => setForm(p => ({ ...p, dayPartScripts: p.dayPartScripts.filter((_, i) => i !== idx) }))}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              {form.dayPartScripts.length > 0 && (
+                <p className="text-xs text-muted-foreground">Calls outside these time slots will use the default script selected above. Times are in the campaign timezone ({form.timezone}).</p>
+              )}
             </div>
           )}
 
@@ -1094,6 +1141,7 @@ export default function Campaigns() {
       tcpaEndHour: (c as any).tcpaEndHour ?? 21,
       routingMode: (c as any).routingMode || "broadcast",
       voiceAiPromptId: (c as any).voiceAiPromptId || 0,
+      dayPartScripts: (c as any).dayPartScripts ? (typeof (c as any).dayPartScripts === "string" ? JSON.parse((c as any).dayPartScripts) : (c as any).dayPartScripts) : [],
     });
     setEditOpen(true);
   };
@@ -1152,6 +1200,8 @@ export default function Campaigns() {
       // Routing mode & Voice AI
       routingMode: editForm.routingMode,
       voiceAiPromptId: editForm.routingMode === "voice_ai" ? editForm.voiceAiPromptId || undefined : undefined,
+      // Day-Part Script Rotation
+      dayPartScripts: editForm.dayPartScripts.length > 0 ? editForm.dayPartScripts.filter(s => s.scriptId > 0) : undefined,
     });
   };
   const submitCreate = () => {
@@ -1206,6 +1256,8 @@ export default function Campaigns() {
       // Routing mode & Voice AI
       routingMode: form.routingMode,
       voiceAiPromptId: form.routingMode === "voice_ai" ? form.voiceAiPromptId || undefined : undefined,
+      // Day-Part Script Rotation
+      dayPartScripts: form.dayPartScripts.length > 0 ? form.dayPartScripts.filter(s => s.scriptId > 0) : undefined,
     });
   };
 

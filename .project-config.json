@@ -1,0 +1,51 @@
+{
+  "build_command": "pnpm run build",
+  "capabilities": [
+    "db",
+    "server",
+    "user"
+  ],
+  "dev_command": "pnpm run dev",
+  "env_vars": {
+    "DATABASE_URL": "mysql://3tmNk4KiQphQsi9.6a10ffd04b61:eWWPt0rlwm0I38J6U5tf@gateway03.us-east-1.prod.aws.tidbcloud.com:4000/QaP68Z2AATogwpccsoDAFH?ssl={\"rejectUnauthorized\":true}"
+  },
+  "experiments": null,
+  "git_remote": {
+    "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663328121958/QaP68Z2AATogwpccsoDAFH",
+    "access_key_id": "ASIAZV3A2ECZKK2XJRY5",
+    "secret_access_key": "jZDLWctkgz2nmTeidnhHRR48HMKlvrzG9MfANB+O",
+    "session_token": "IQoJb3JpZ2luX2VjEJn//////////wEaCXVzLWVhc3QtMSJGMEQCIAPDQ4TOIZ76ef6YCca6ZMKBfdN+N+qDr0DOE64EBaDsAiB7KBlxeOJ1VAn86+AA8ifTT3cDOAG35mNV5w2Jd7laHyr2AwhiEAQaDDY2NTM4NjA5ODg2NiIMwycWL9wuqmj/bNj4KtMD6e/5uAMfcaxjiwr3YW29QoWWgY1Mgl92IiUamrGGSLMhOHciLGLLrBxOvnj+CZJ0tWo+yISGgLBkF969gJEdU4e6WGXVoodSIS/Y9NBTVB7S5Vu12YKjaInGRd4i03N/TvRs3e3N0cidtxsYYjU46oZqtW9pk/Bes/30a4Sswc4W38TuxtheZAS6vAHBZC7rrhq321JVHXcMCofBDqYtQ7aa3FY6jf461iNu9l6vCMsD1thz/AsxI+7KkPgowzImBYHIVqpMODnIyBMVCVtE2n8JDXgGPryad7w7ivVXnKlSOW3hnZhkdP1Mjc1fnTVk8Oup8ZQnyRLgkPFBtvHqCdt2/l7ZJm+yWzU1opmcGtqmRG9dfxDJvo3xzHv29a4Wf3ijgkMQKUR8utQCZa7n0VVPyWbIe6yOeKvvTSOc7ZfVH6YSxrVOkvgX9MVcxAsIxkjOQoTB7cLyEcPa3Q20B2m3MhtdtY9z889brfpypp3Jw8TaUPFh0rhPxmZcXDeH9PItazG7hxWTuszARTdljtPF+BkMxBt2sSw2r2+zRh2dj3MXIp70p/Ib1Ct6xiJi0m5Z3UE/uC7nuRDmA4X0O+hnUO//UFXSwbS+08YL1EHuyv8wlfuX0AY6ngEkBRwb9LqcXkPoLmCaJwpUnGLXK/HyG8HL1/DD8MoMAAn9C+o7Oq/S33f9XWAUT2zw5UDUythYu1fzLaakbGcrRSS449a2wxLFuOF2RRN6mBmWkUaFY3o+jlXECI8PSz4KpeUR8JXNpw/GaqPfvRmHbRcCNS7dFvREh+/A7gVgjoLt5eTtMVpsSO+w+Y4DsQTuYFNJoFXK9dV6vmdtjA==",
+    "expiration": "2026-05-15T04:51:33.000Z"
+  },
+  "name": "tts-broadcast-dialer",
+  "path": "/home/ubuntu/tts-broadcast-dialer",
+  "port": 3000,
+  "secrets": {
+    "BUILT_IN_FORGE_API_KEY": "6NuCJYWBHA38LanPp3qhYb",
+    "BUILT_IN_FORGE_API_URL": "https://forge.manus.ai",
+    "FREEPBX_AMI_PASSWORD": "D1al3r@2026!Secure",
+    "FREEPBX_AMI_PORT": "5038",
+    "FREEPBX_AMI_USER": "dialer",
+    "FREEPBX_HOST": "187.124.153.234",
+    "FREEPBX_SSH_PASSWORD": "Rasheen32832@",
+    "FREEPBX_SSH_USER": "root",
+    "GOOGLE_TTS_API_KEY": "AIzaSyD3gdaMBy9xP4uLjbVkeJRX_IGqIpkla_U",
+    "JWT_SECRET": "P8ySpWcbacrSGo8ZrXhEeK",
+    "OAUTH_SERVER_URL": "https://api.manus.im",
+    "OPENAI_API_KEY": "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",
+    "OWNER_NAME": "Jamar Christian",
+    "OWNER_OPEN_ID": "NK2jqiGrJVWfHZ2S5DZe5F",
+    "VITELITY_API_LOGIN": "tech_manus",
+    "VITELITY_API_PASS": "trE!9erI@",
+    "VITE_ANALYTICS_ENDPOINT": "https://manus-analytics.com",
+    "VITE_ANALYTICS_WEBSITE_ID": "68e05f1e-cea9-4689-add1-718b420591d3",
+    "VITE_APP_ID": "QaP68Z2AATogwpccsoDAFH",
+    "VITE_APP_LOGO": "https://files.manuscdn.com/user_upload_by_module/web_dev_logo/310519663328121958/kDqGnGNtXcOLegmN.png",
+    "VITE_APP_TITLE": "AI TTS Broadcast Dialer",
+    "VITE_FRONTEND_FORGE_API_KEY": "W4ZcMrTn43EGcFUQBKBvTo",
+    "VITE_FRONTEND_FORGE_API_URL": "https://forge.manus.ai",
+    "VITE_OAUTH_PORTAL_URL": "https://manus.im"
+  },
+  "template_id": "web-db-user",
+  "test_command": "pnpm test"
+}

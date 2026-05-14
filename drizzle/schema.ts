@@ -172,6 +172,8 @@ export const campaigns = mysqlTable("campaigns", {
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),
   useDidCallbackNumber: int("useDidCallbackNumber").default(0).notNull(),
+  // Day-Part Script Rotation: array of { startTime, endTime, scriptId } for time-based message switching
+  dayPartScripts: json("dayPartScripts").$type<Array<{ startTime: string; endTime: string; scriptId: number; label?: string }>>(),
   // Predictive dialer
   predictiveAgentCount: int("predictiveAgentCount").default(1).notNull(),
   predictiveTargetWaitTime: int("predictiveTargetWaitTime").default(5).notNull(), // seconds
@@ -1226,3 +1228,22 @@ export const didImportHistory = mysqlTable("did_import_history", {
 
 export type DidImportHistory = typeof didImportHistory.$inferSelect;
 export type InsertDidImportHistory = typeof didImportHistory.$inferInsert;
+
+// ─── TTS Audio Cache ────────────────────────────────────────────────────────
+// Stores generated TTS audio keyed by rendered text hash for reuse across contacts
+export const ttsAudioCache = mysqlTable("tts_audio_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  textHash: varchar("textHash", { length: 64 }).notNull(), // MD5 of rendered text + voice + speed + provider
+  renderedText: text("renderedText").notNull(), // The actual rendered text (for debugging)
+  voice: varchar("voice", { length: 100 }).notNull(),
+  provider: varchar("provider", { length: 20 }).notNull(), // "openai" | "google"
+  speed: varchar("speed", { length: 10 }).notNull().default("1.0"),
+  s3Key: varchar("s3Key", { length: 512 }).notNull(),
+  s3Url: varchar("s3Url", { length: 1024 }).notNull(),
+  durationMs: int("durationMs"), // estimated duration
+  hitCount: int("hitCount").default(0).notNull(), // how many times this cache entry was reused
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastUsedAt: timestamp("lastUsedAt").defaultNow().notNull(),
+});
+export type TtsAudioCache = typeof ttsAudioCache.$inferSelect;
+export type InsertTtsAudioCache = typeof ttsAudioCache.$inferInsert;
