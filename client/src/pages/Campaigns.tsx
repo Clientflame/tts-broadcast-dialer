@@ -176,7 +176,7 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
-function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels, labelCounts }: {
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels, labelCounts, onPreviewDayPart }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   messageRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -186,6 +186,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
   scripts: any;
   didLabels: string[];
   labelCounts: { label: string | null; count: number }[];
+  onPreviewDayPart?: () => void;
 }) {
   const insertMergeField = (fieldKey: string) => {
     const textarea = messageRef.current;
@@ -429,7 +430,12 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                 </div>
               ))}
               {form.dayPartScripts.length > 0 && (
-                <p className="text-xs text-muted-foreground">Calls outside these time slots will use the default script selected above. Times are in the campaign timezone ({form.timezone}).</p>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Scripts are selected based on the <strong>contact's local timezone</strong> (detected from area code). A CA contact at 9am PT gets the morning script, while a NY contact at 12pm ET gets the afternoon script — even in the same campaign.</p>
+                  <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => onPreviewDayPart?.()}>
+                    <Clock className="h-3.5 w-3.5 mr-1" /> Preview Day Schedule
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -1075,6 +1081,7 @@ export default function Campaigns() {
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDesc, setSaveTemplateDesc] = useState("");
   const [saveTemplateCampaignId, setSaveTemplateCampaignId] = useState<number | null>(null);
+  const [showDayPartPreview, setShowDayPartPreview] = useState(false);
   const campaignTemplatesList = trpc.campaignTemplates.list.useQuery();
   const saveFromCampaign = trpc.campaignTemplates.saveFromCampaign.useMutation({
     onSuccess: () => { utils.campaignTemplates.list.invalidate(); setTemplateDialogOpen(false); setSaveTemplateName(""); setSaveTemplateDesc(""); toast.success("Campaign saved as template"); },
@@ -1500,6 +1507,7 @@ export default function Campaigns() {
               scripts={callScripts.data}
               didLabels={didLabels || []}
               labelCounts={labelCounts}
+              onPreviewDayPart={() => setShowDayPartPreview(true)}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -1548,6 +1556,7 @@ export default function Campaigns() {
                 scripts={callScripts.data}
                 didLabels={didLabels || []}
                 labelCounts={labelCounts}
+                onPreviewDayPart={() => setShowDayPartPreview(true)}
               />
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setCreateOpen(false); setForm({ ...DEFAULT_FORM }); }}>Cancel</Button>
@@ -1666,6 +1675,53 @@ export default function Campaigns() {
               {saveFromCampaign.isPending ? "Saving..." : "Save Template"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Preview Day Schedule Dialog */}
+      <Dialog open={showDayPartPreview} onOpenChange={setShowDayPartPreview}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Day Schedule Preview</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">This shows which script will play at each hour based on the <strong>contact's local timezone</strong>. Each contact's timezone is auto-detected from their phone area code.</p>
+            <div className="grid grid-cols-1 gap-3">
+              {/* US Timezone columns */}
+              {["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles"].map(tz => {
+                const tzLabel = tz === "America/New_York" ? "Eastern" : tz === "America/Chicago" ? "Central" : tz === "America/Denver" ? "Mountain" : "Pacific";
+                return (
+                  <div key={tz} className="border rounded-lg p-3">
+                    <h4 className="font-medium text-sm mb-2">{tzLabel} Time</h4>
+                    <div className="grid grid-cols-6 gap-1">
+                      {Array.from({ length: 24 }, (_, h) => {
+                        const hour = String(h).padStart(2, "0") + ":00";
+                        const activeForm = createOpen ? form : editForm;
+                        const matchedSlot = activeForm.dayPartScripts.find(slot => hour >= slot.startTime && hour < slot.endTime);
+                        const script = matchedSlot ? (callScripts.data || []).find((s: any) => s.id === matchedSlot.scriptId) : null;
+                        const defaultScript = (callScripts.data || []).find((s: any) => s.id === activeForm.scriptId);
+                        const displayScript = script || defaultScript;
+                        const isMatched = !!matchedSlot;
+                        const label = h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h - 12}p`;
+                        return (
+                          <div key={h} className={`text-center rounded p-1 text-xs ${
+                            isMatched ? "bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700" : "bg-muted/50 border border-border"
+                          }`} title={`${hour} ${tzLabel}: ${displayScript?.name || "Default script"}`}>
+                            <div className="font-mono text-[10px] text-muted-foreground">{label}</div>
+                            <div className="truncate text-[9px] mt-0.5 font-medium">{displayScript?.name ? displayScript.name.slice(0, 8) : "Default"}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700" /> Day-Part Script</div>
+              <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-muted/50 border border-border" /> Default Script</div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 

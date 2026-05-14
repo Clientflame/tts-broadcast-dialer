@@ -1084,3 +1084,6 @@
 - [x] Phase 3: Vitest tests (13 tests passing)
 - [x] Frontend: Campaign day-part rotation UI
 - [x] Tests: Vitest for segment splitting, day-part selection, smart caching (13 tests)
+- [x] Day-Part: Use contact's local timezone (from area code) for script selection instead of campaign timezone
+- [x] Day-Part: Preview Day Schedule button on campaign editor
+- [x] Day-Part: Timezone-aware tests (14 tests passing)

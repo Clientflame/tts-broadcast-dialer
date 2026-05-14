@@ -462,12 +462,13 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 
   // ─── Day-Part Script Rotation ─────────────────────────────────────────────
   // If the campaign has dayPartScripts configured, resolve which script to use
-  // based on the current time in the campaign's timezone
+  // based on the current time in the CONTACT's timezone (from area code)
+  // This ensures a CA contact at 9am local gets the "morning" script even if campaign is set to ET
   let effectiveSegments = active.scriptSegments;
   if (active.dayPartScripts && active.dayPartScripts.length > 0) {
-    const tz = active.campaign.timezone || "America/New_York";
+    const contactTz = getTimezoneForPhone(callLog.phoneNumber);
     const now = new Date();
-    const localTime = now.toLocaleTimeString("en-US", { timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit" });
+    const localTime = now.toLocaleTimeString("en-US", { timeZone: contactTz, hour12: false, hour: "2-digit", minute: "2-digit" });
     // localTime is "HH:MM" format
     const matchedSlot = active.dayPartScripts.find(slot => {
       return localTime >= slot.startTime && localTime < slot.endTime;
@@ -478,7 +479,7 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
         const dayPartScript = await db.getCallScriptById(matchedSlot.scriptId);
         if (dayPartScript && dayPartScript.segments) {
           effectiveSegments = dayPartScript.segments;
-          console.log(`[Dialer] Day-Part: Using script "${dayPartScript.name}" for time ${localTime} (slot: ${matchedSlot.startTime}-${matchedSlot.endTime})`);
+          console.log(`[Dialer] Day-Part: Using script "${dayPartScript.name}" for contact ${callLog.phoneNumber} at ${localTime} ${contactTz} (slot: ${matchedSlot.startTime}-${matchedSlot.endTime})`);
         }
       } catch (err) {
         console.warn(`[Dialer] Day-Part: Failed to load script ${matchedSlot.scriptId}, using default`);
