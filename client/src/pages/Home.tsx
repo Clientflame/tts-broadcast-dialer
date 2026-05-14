@@ -59,16 +59,80 @@ function UpdateButton() {
     refetchInterval: 300000, // Check every 5 minutes
     staleTime: 60000,
   });
+  const [isRestarting, setIsRestarting] = useState(false);
+  const [restartCountdown, setRestartCountdown] = useState(0);
+
   const triggerUpdate = trpc.updater.triggerUpdate.useMutation({
     onSuccess: (data) => {
       if (data.success) {
-        toast.success(data.message, { duration: 8000 });
+        toast.success(data.message, { duration: 5000 });
+        // Show restarting overlay and start polling for server to come back
+        setIsRestarting(true);
+        setRestartCountdown(15);
+        const countdownId = setInterval(() => {
+          setRestartCountdown(prev => {
+            if (prev <= 1) { clearInterval(countdownId); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+        // Poll the server every 3 seconds until it's back
+        const pollId = setInterval(async () => {
+          try {
+            const res = await fetch('/api/trpc/updater.checkForUpdate', { method: 'GET', signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+              clearInterval(pollId);
+              clearInterval(countdownId);
+              setIsRestarting(false);
+              toast.success('Update complete! Reloading...', { duration: 3000 });
+              setTimeout(() => window.location.reload(), 1500);
+            }
+          } catch {
+            // Server still restarting, keep polling
+          }
+        }, 3000);
+        // Safety timeout: stop polling after 2 minutes
+        setTimeout(() => {
+          clearInterval(pollId);
+          clearInterval(countdownId);
+          if (isRestarting) {
+            setIsRestarting(false);
+            toast.info('Server may still be restarting. Please refresh the page manually.', { duration: 10000 });
+          }
+        }, 120000);
       } else {
         toast.error(data.message, { duration: 8000 });
       }
     },
     onError: (err) => {
-      toast.error(`Update failed: ${err.message}`);
+      // If the error is due to connection loss (server restarted mid-request), treat as success
+      if (err.message.includes('Unexpected end of JSON input') || err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        toast.info('Update triggered — server is restarting...', { duration: 5000 });
+        setIsRestarting(true);
+        setRestartCountdown(15);
+        const countdownId = setInterval(() => {
+          setRestartCountdown(prev => {
+            if (prev <= 1) { clearInterval(countdownId); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+        const pollId = setInterval(async () => {
+          try {
+            const res = await fetch('/api/trpc/updater.checkForUpdate', { method: 'GET', signal: AbortSignal.timeout(3000) });
+            if (res.ok) {
+              clearInterval(pollId);
+              clearInterval(countdownId);
+              setIsRestarting(false);
+              toast.success('Update complete! Reloading...', { duration: 3000 });
+              setTimeout(() => window.location.reload(), 1500);
+            }
+          } catch {
+            // Still restarting
+          }
+        }, 3000);
+        setTimeout(() => { clearInterval(pollId); clearInterval(countdownId); setIsRestarting(false); }, 120000);
+      } else {
+        toast.error(`Update failed: ${err.message}`);
+      }
     },
   });
 
@@ -103,6 +167,58 @@ function UpdateButton() {
   const badgeLabel = isCommitOnly
     ? `${d.commitsAhead > 0 ? d.commitsAhead : ""} Update${d.commitsAhead !== 1 ? "s" : ""} Available`
     : `Update v${d.latestVersion}`;
+
+  // Show restarting overlay if update was triggered
+  if (isRestarting) {
+    return (
+      <>
+        <Badge
+          variant="default"
+          className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 cursor-default"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Restarting...
+        </Badge>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-card text-card-foreground border rounded-xl shadow-2xl max-w-md w-full mx-4 p-8 space-y-6 text-center">
+            <div className="flex justify-center">
+              <div className="relative">
+                <RefreshCw className="h-12 w-12 text-blue-500 animate-spin" />
+              </div>
+            </div>
+            <div>
+              <h3 className="text-xl font-semibold mb-2">Updating & Restarting</h3>
+              <p className="text-muted-foreground text-sm">
+                The server is pulling the latest version and restarting.
+                This page will automatically reload when the server is back online.
+              </p>
+            </div>
+            {restartCountdown > 0 && (
+              <div className="text-sm text-muted-foreground">
+                Estimated time: <span className="font-mono font-semibold text-foreground">{restartCountdown}s</span>
+              </div>
+            )}
+            {restartCountdown === 0 && (
+              <div className="text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin inline mr-1" />
+                Waiting for server to come back online...
+              </div>
+            )}
+            <div className="pt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground"
+                onClick={() => window.location.reload()}
+              >
+                Refresh manually
+              </Button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

@@ -1112,3 +1112,4 @@
 - [x] Allow per-number destination override — per-number settings with expand/collapse
 - [x] Auto-apply global settings to new entries as they're typed
 - [x] Ensure fwconsole reload runs after import (already handled in backend)
+- [x] Fix update button UX: show "Restarting..." overlay with countdown, auto-poll server, and auto-reload when back online
