@@ -1098,4 +1098,6 @@
 - [x] Push all tags to GitHub to trigger Docker builds (v2.3.0 build confirmed)
 
 ## Bug Fixes
-- [ ] Fix "Update failed: Unexpected end of JSON input" error on in-app update button (app26.407hosted.com)
+- [x] Fix "Update failed: Unexpected end of JSON input" error on in-app update button (app26.407hosted.com) — safeJsonParse + delayed restart
+- [x] Fix false "Updates Available" when already on latest version (commit SHA shows 'unknown') — injected __APP_COMMIT_SHA__ in build-server.mjs + removed false-positive branch
+- [x] Fix "Failed to execute 'json' on 'Response'" error when clicking update button — delayed restart via spawn+sleep so HTTP response completes first

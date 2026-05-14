@@ -23,8 +23,17 @@ function getVersion() {
   }
 }
 
+function getCommitSha() {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
 const version = getVersion();
-console.log(`[build-server] Injecting APP_VERSION: ${version}`);
+const commitSha = getCommitSha();
+console.log(`[build-server] Injecting APP_VERSION: ${version}, COMMIT_SHA: ${commitSha}`);
 
 await build({
   entryPoints: ["server/_core/index.ts"],
@@ -35,6 +44,7 @@ await build({
   outdir: "dist",
   define: {
     __APP_VERSION__: JSON.stringify(version),
+    __APP_COMMIT_SHA__: JSON.stringify(commitSha),
   },
 });
 

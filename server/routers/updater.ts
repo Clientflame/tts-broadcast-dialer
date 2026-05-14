@@ -186,23 +186,11 @@ export const updaterRouter = router({
             }
           }
         } else {
-          // No commit SHA available — check latest commit on main
-          const headRes = await fetch(
-            `https://api.github.com/repos/${GITHUB_REPO}/commits/main`,
-            { headers: GITHUB_HEADERS, signal: AbortSignal.timeout(10000) }
-          );
-          if (headRes.ok) {
-            const head = (await headRes.json()) as GitHubCommit;
-            commitUpdate = {
-              available: true, // Can't compare, assume update might be available
-              latestSha: head.sha.slice(0, 7),
-              latestMessage: head.commit.message.split("\n")[0],
-              latestDate: head.commit.author.date,
-              aheadBy: -1,
-              commitSummaries: [`• ${head.sha.slice(0, 7)} — ${head.commit.message.split("\n")[0]}`],
-              url: `https://github.com/${GITHUB_REPO}/commits/main`,
-            };
-          }
+          // No commit SHA available — rely solely on release version comparison.
+          // Do NOT assume an update is available just because we can't compare commits.
+          // The release check (CHECK 1) already handles version comparison.
+          // Only flag a commit update if we can definitively prove there are new commits.
+          console.log("[Updater] No commit SHA available — skipping commit comparison, relying on release check only.");
         }
       } catch (e) {
         console.warn("[Updater] Commit check failed:", e);
@@ -342,46 +330,53 @@ export const updaterRouter = router({
                 console.warn("[Updater] Could not find container ID:", e);
               }
 
-              // Step 2: Stop, remove, and recreate the container
-              // We can't directly recreate via socket API alone, so we signal Watchtower to update NOW
-              // by sending SIGHUP to watchtower, or we stop+remove+create
-              let restartResult = "Image pulled. ";
+              // Step 2: Schedule container restart AFTER the HTTP response is sent.
+              // We use a delayed spawn so the tRPC response completes before the container dies.
+              let restartMethod = "";
               if (containerId) {
                 try {
-                  // Signal Watchtower to run an update check immediately
                   const watchtowerJson = execSync(
                     `curl -s --unix-socket /var/run/docker.sock "http://localhost/containers/json" 2>&1`,
                     { encoding: "utf-8", timeout: 10000 }
                   );
                   const allContainers = safeJsonParse<Array<{ Id: string; Names: string[] }>>(watchtowerJson);
                   const watchtower = allContainers?.find((c) => c.Names.some((n) => n.includes("watchtower")));
-                  
+
                   if (watchtower) {
-                    // Send SIGHUP to watchtower to trigger immediate update check
-                    execSync(
-                      `curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${watchtower.Id}/kill?signal=SIGHUP" 2>&1`,
-                      { encoding: "utf-8", timeout: 10000 }
-                    );
-                    restartResult += "Watchtower signaled to restart container with new image immediately.";
+                    restartMethod = "watchtower";
+                    // Schedule Watchtower signal after a 3-second delay so the response can be sent first
+                    const { spawn } = await import("child_process");
+                    spawn("sh", ["-c", `sleep 3 && curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${watchtower.Id}/kill?signal=SIGHUP"`], {
+                      detached: true,
+                      stdio: "ignore",
+                    }).unref();
                   } else {
-                    // No watchtower — stop and restart the container directly
-                    // Stop current container
-                    execSync(
-                      `curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${containerId}/stop?t=10" 2>&1`,
-                      { encoding: "utf-8", timeout: 30000 }
-                    );
-                    restartResult += "Container stopped. It will be recreated by the Docker restart policy or Watchtower.";
+                    restartMethod = "direct-stop";
+                    // Schedule container stop after a 3-second delay
+                    const { spawn } = await import("child_process");
+                    spawn("sh", ["-c", `sleep 3 && curl -s --unix-socket /var/run/docker.sock -X POST "http://localhost/containers/${containerId}/stop?t=10"`], {
+                      detached: true,
+                      stdio: "ignore",
+                    }).unref();
                   }
                 } catch (restartErr) {
-                  restartResult += `Restart signal sent but may need manual 'docker compose up -d': ${String(restartErr)}`;
+                  restartMethod = `error: ${String(restartErr)}`;
                 }
               } else {
-                restartResult += "Could not identify container. Run 'docker compose up -d' on the host to apply.";
+                restartMethod = "no-container-found";
               }
+
+              const restartMsg = restartMethod === "watchtower"
+                ? "Image pulled. Watchtower will restart the container in ~3 seconds."
+                : restartMethod === "direct-stop"
+                  ? "Image pulled. Container will restart in ~3 seconds."
+                  : restartMethod === "no-container-found"
+                    ? "Image pulled. Could not identify container. Run 'docker compose up -d' on the host to apply."
+                    : `Image pulled. Restart may need manual intervention: ${restartMethod}`;
 
               return {
                 success: true,
-                message: `Update applied: ${restartResult}`,
+                message: `Update applied: ${restartMsg}`,
                 details: pullResult.trim(),
                 method: "docker-socket" as const,
               };
