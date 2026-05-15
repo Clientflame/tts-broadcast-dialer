@@ -116,10 +116,10 @@ export const audioFiles = mysqlTable("audio_files", {
   s3Key: varchar("s3Key", { length: 512 }),
   duration: int("duration"),
   fileSize: int("fileSize"),
-  status: mysqlEnum("status", ["generating", "ready", "failed"]).default("generating").notNull(),
+    status: mysqlEnum("status", ["generating", "ready", "failed"]).default("generating").notNull(),
+  tag: varchar("tag", { length: 100 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type InsertAudioFile = typeof audioFiles.$inferInsert;
 

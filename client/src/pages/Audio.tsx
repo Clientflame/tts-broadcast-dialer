@@ -12,9 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic, Pencil, XCircle } from "lucide-react";
+import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic, Pencil, XCircle, Clock, Tag, CheckSquare } from "lucide-react";
 import { ImportExportButtons } from "@/components/ImportExportButtons";
 
 const OPENAI_VOICE_OPTIONS = [
@@ -243,6 +244,73 @@ export default function Audio() {
 
   const importAudioMut = trpc.audio.importAll.useMutation();
 
+  // ─── Bulk Selection & Regeneration ─────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!audioFiles.data) return;
+    if (selectedIds.size === audioFiles.data.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(audioFiles.data.map(f => f.id)));
+    }
+  };
+
+  const failedSelectedIds = audioFiles.data?.filter(f => selectedIds.has(f.id) && f.status === "failed").map(f => f.id) || [];
+
+  const bulkRegenerate = trpc.audio.bulkRegenerate.useMutation({
+    onSuccess: (r) => {
+      utils.audio.list.invalidate();
+      setSelectedIds(new Set());
+      toast.success(`Bulk regeneration queued: ${r.queued} file(s)${r.skipped ? `, ${r.skipped} skipped` : ""}`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ─── Tag Filtering & Management ─────────────────────────────────────
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [newTagInput, setNewTagInput] = useState("");
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [tagDialogFileId, setTagDialogFileId] = useState<number | null>(null);
+
+  const tagsQuery = trpc.audio.tags.useQuery();
+  const existingTags = tagsQuery.data || [];
+
+  const setTagMut = trpc.audio.setTag.useMutation({
+    onSuccess: () => {
+      utils.audio.list.invalidate();
+      utils.audio.tags.invalidate();
+      setTagDialogOpen(false);
+      toast.success("Tag updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const bulkSetTag = trpc.audio.bulkSetTag.useMutation({
+    onSuccess: (r) => {
+      utils.audio.list.invalidate();
+      utils.audio.tags.invalidate();
+      setSelectedIds(new Set());
+      toast.success(`Tag applied to ${r.updated} file(s)`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const filteredAudioFiles = useMemo(() => {
+    if (!audioFiles.data) return [];
+    if (tagFilter === "all") return audioFiles.data;
+    if (tagFilter === "untagged") return audioFiles.data.filter(f => !f.tag);
+    return audioFiles.data.filter(f => f.tag === tagFilter);
+  }, [audioFiles.data, tagFilter]);
+
   // ─── Edit / Cancel / Regenerate ─────────────────────────────────────
   const [editOpen, setEditOpen] = useState(false);
   const [editFile, setEditFile] = useState<any>(null);
@@ -312,6 +380,13 @@ export default function Audio() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1048576).toFixed(1)} MB`;
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
   };
 
   const readyFiles = audioFiles.data?.filter(f => f.status === "ready") || [];
@@ -584,25 +659,74 @@ export default function Audio() {
               <FileAudio className="h-4 w-4" />Generated Audio Files
             </CardTitle>
             <CardDescription>Click play to preview audio in your browser, or use Quick Test to hear it over the phone</CardDescription>
+            {/* Tag filter bar */}
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+              <Button size="sm" variant={tagFilter === "all" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setTagFilter("all")}>All</Button>
+              <Button size="sm" variant={tagFilter === "untagged" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setTagFilter("untagged")}>Untagged</Button>
+              {existingTags.map(tag => (
+                <Button key={tag} size="sm" variant={tagFilter === tag ? "default" : "outline"} className="h-7 text-xs" onClick={() => setTagFilter(tag)}>{tag}</Button>
+              ))}
+            </div>
+            {/* Bulk actions bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <Badge variant="secondary">{selectedIds.size} selected</Badge>
+                {failedSelectedIds.length > 0 && (
+                  <Button size="sm" variant="outline" className="text-blue-600 border-blue-600/30" onClick={() => bulkRegenerate.mutate({ ids: failedSelectedIds })} disabled={bulkRegenerate.isPending}>
+                    {bulkRegenerate.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                    Regenerate {failedSelectedIds.length} Failed
+                  </Button>
+                )}
+                {/* Bulk tag dropdown */}
+                <Select onValueChange={(v) => {
+                  if (v === "__remove__") bulkSetTag.mutate({ ids: Array.from(selectedIds), tag: null });
+                  else bulkSetTag.mutate({ ids: Array.from(selectedIds), tag: v });
+                }}>
+                  <SelectTrigger className="h-7 w-[140px] text-xs">
+                    <Tag className="h-3 w-3 mr-1" /><SelectValue placeholder="Set Tag..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__remove__">Remove Tag</SelectItem>
+                    {existingTags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear Selection</Button>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[40px]">
+                    <Checkbox
+                      checked={audioFiles.data?.length ? selectedIds.size === audioFiles.data.length : false}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Voice</TableHead>
                   <TableHead>Preview</TableHead>
                   <TableHead>Text</TableHead>
+                  <TableHead>Duration</TableHead>
                   <TableHead>Size</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Tag</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {!audioFiles.data?.length ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No audio files yet. Generate your first TTS message.</TableCell></TableRow>
-                ) : audioFiles.data.map(file => (
-                  <TableRow key={file.id}>
+                {!filteredAudioFiles.length ? (
+                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">{audioFiles.data?.length ? "No audio files match this filter." : "No audio files yet. Generate your first TTS message."}</TableCell></TableRow>
+                ) : filteredAudioFiles.map(file => (
+                  <TableRow key={file.id} className={selectedIds.has(file.id) ? "bg-muted/50" : ""}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedIds.has(file.id)}
+                        onCheckedChange={() => toggleSelect(file.id)}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{file.name}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
@@ -624,12 +748,24 @@ export default function Audio() {
                       )}
                     </TableCell>
                     <TableCell className="max-w-[180px] truncate text-sm text-muted-foreground">{file.text}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{file.duration ? formatDuration(file.duration) : "—"}</TableCell>
                     <TableCell className="text-sm">{formatSize(file.fileSize)}</TableCell>
                     <TableCell>
                       <Badge variant={file.status === "ready" ? "default" : file.status === "generating" ? "secondary" : "destructive"}>
                         {file.status === "generating" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                         {file.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {file.tag ? (
+                        <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => { setTagDialogFileId(file.id); setNewTagInput(file.tag || ""); setTagDialogOpen(true); }}>
+                          <Tag className="h-2.5 w-2.5 mr-1" />{file.tag}
+                        </Badge>
+                      ) : (
+                        <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-6 px-2" onClick={() => { setTagDialogFileId(file.id); setNewTagInput(""); setTagDialogOpen(true); }}>
+                          <Tag className="h-3 w-3 mr-1" />Add tag
+                        </Button>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -747,6 +883,56 @@ export default function Audio() {
               >
                 {updateAudio.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editRegenerate ? "Save & Regenerate" : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ─── Tag Assignment Dialog ─────────────────────────────────────── */}
+        <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Set Tag</DialogTitle>
+              <DialogDescription>Choose an existing tag or type a new one.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {existingTags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {existingTags.map(t => (
+                    <Badge
+                      key={t}
+                      variant={newTagInput === t ? "default" : "outline"}
+                      className="cursor-pointer text-xs"
+                      onClick={() => setNewTagInput(t)}
+                    >
+                      {t}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Input
+                value={newTagInput}
+                onChange={(e) => setNewTagInput(e.target.value)}
+                placeholder="Type a tag name (e.g., Campaign A, Voicemail)"
+                maxLength={100}
+              />
+            </div>
+            <DialogFooter className="gap-2">
+              {tagDialogFileId && (
+                <Button variant="ghost" size="sm" className="mr-auto text-destructive" onClick={() => {
+                  setTagMut.mutate({ id: tagDialogFileId, tag: null });
+                }}>Remove Tag</Button>
+              )}
+              <Button variant="outline" onClick={() => setTagDialogOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (!tagDialogFileId || !newTagInput.trim()) return;
+                  setTagMut.mutate({ id: tagDialogFileId, tag: newTagInput.trim() });
+                }}
+                disabled={setTagMut.isPending || !newTagInput.trim()}
+              >
+                {setTagMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Tag
               </Button>
             </DialogFooter>
           </DialogContent>

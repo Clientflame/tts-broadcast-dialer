@@ -1,0 +1,1 @@
+ALTER TABLE `audio_files` ADD `tag` varchar(100);

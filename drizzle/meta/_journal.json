@@ -365,6 +365,13 @@
       "when": 1778808423525,
       "tag": "0051_third_pride",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "5",
+      "when": 1778862084850,
+      "tag": "0052_stiff_ultragirl",
+      "breakpoints": true
     }
   ]
 }

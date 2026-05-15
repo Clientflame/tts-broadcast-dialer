@@ -1222,3 +1222,6 @@
 - [x] Add edit button to Generated Audio Files table (edit name, text, voice, regenerate)
 - [x] Add cancel generating button for stuck files
 - [x] Add regenerate button for failed files
+- [x] Bulk audio regeneration — select multiple failed files and regenerate all at once
+- [x] Audio file tagging/folders — organize audio files by campaign or category with labels/tags
+- [x] Audio duration display — show duration column in Generated Audio Files table

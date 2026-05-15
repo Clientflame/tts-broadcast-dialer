@@ -596,6 +596,7 @@ export const appRouter = router({
       voice: voiceEnum.optional(),
       speed: z.number().min(0.25).max(4.0).optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
+      tag: z.string().max(100).nullable().optional(),
       regenerate: z.boolean().optional(),
     })).mutation(async ({ ctx, input }) => {
       const existing = await db.getAudioFile(input.id);
@@ -605,6 +606,7 @@ export const appRouter = router({
       if (input.name !== undefined) updates.name = input.name;
       if (input.text !== undefined) updates.text = input.text;
       if (input.voice !== undefined) updates.voice = input.voice;
+      if (input.tag !== undefined) updates.tag = input.tag;
       // Apply metadata updates first
       if (Object.keys(updates).length > 0) {
         await db.updateAudioFile(input.id, updates);
@@ -666,6 +668,65 @@ export const appRouter = router({
         });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.regenerate", resource: "audioFile", resourceId: input.id, details: { voice: existing.voice, provider, speed } });
       return { success: true };
+    }),
+    // ─── Set Tag (quick tag assignment without opening edit dialog) ────
+    setTag: protectedProcedure.input(z.object({
+      id: z.number(),
+      tag: z.string().max(100).nullable(),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFile(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+      await db.updateAudioFile(input.id, { tag: input.tag });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.setTag", resource: "audioFile", resourceId: input.id, details: { tag: input.tag } });
+      return { success: true };
+    }),
+    // ─── Get unique tags for filter dropdown ──────────────────────────────
+    tags: protectedProcedure.query(async ({ ctx }) => {
+      const files = await db.getAudioFiles();
+      const tags = Array.from(new Set(files.map(f => f.tag).filter(Boolean))) as string[];
+      return tags.sort();
+    }),
+    // ─── Bulk Set Tag ─────────────────────────────────────────────
+    bulkSetTag: protectedProcedure.input(z.object({
+      ids: z.array(z.number()).min(1).max(100),
+      tag: z.string().max(100).nullable(),
+    })).mutation(async ({ ctx, input }) => {
+      let updated = 0;
+      for (const id of input.ids) {
+        await db.updateAudioFile(id, { tag: input.tag });
+        updated++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.bulkSetTag", resource: "audioFile", details: { ids: input.ids, tag: input.tag, updated } });
+      return { success: true, updated };
+    }),
+    // ─── Bulk Regenerate (re-trigger TTS for multiple files) ──────────
+    bulkRegenerate: protectedProcedure.input(z.object({
+      ids: z.array(z.number()).min(1).max(100),
+      speed: z.number().min(0.25).max(4.0).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      let queued = 0;
+      let skipped = 0;
+      for (const id of input.ids) {
+        const existing = await db.getAudioFile(id);
+        if (!existing) { skipped++; continue; }
+        const provider = GOOGLE_VOICES.includes(existing.voice as any) ? "google" : "openai";
+        const speed = input.speed ?? 1.0;
+        await db.updateAudioFile(id, { status: "generating", s3Url: null, s3Key: null, fileSize: null });
+        const generateFn = provider === "google"
+          ? generateGoogleTTS({ text: existing.text, voice: existing.voice as GoogleTTSVoice, name: existing.name, speed })
+          : generateTTS({ text: existing.text, voice: existing.voice as any, name: existing.name, speed });
+        generateFn
+          .then(async (result) => {
+            await db.updateAudioFile(id, { s3Url: result.s3Url, s3Key: result.s3Key, fileSize: result.fileSize, status: "ready" });
+          })
+          .catch(async (err) => {
+            console.error(`[TTS] Bulk regeneration failed for id ${id}:`, err);
+            await db.updateAudioFile(id, { status: "failed" });
+          });
+        queued++;
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.bulkRegenerate", resource: "audioFile", details: { ids: input.ids, queued, skipped } });
+      return { success: true, queued, skipped };
     }),
   }),
 

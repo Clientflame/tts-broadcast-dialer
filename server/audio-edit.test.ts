@@ -21,6 +21,7 @@ vi.mock("./db", async (importOriginal) => {
   return {
     ...actual,
     getAudioFile: vi.fn(),
+    getAudioFiles: vi.fn().mockResolvedValue([]),
     updateAudioFile: vi.fn().mockResolvedValue(undefined),
     createAuditLog: vi.fn().mockResolvedValue(undefined),
   };
@@ -198,5 +199,100 @@ describe("Audio Regenerate", () => {
     const result = await caller.audio.regenerate({ id: 1 });
     expect(result.success).toBe(true);
     expect(db.updateAudioFile).toHaveBeenCalledWith(1, { status: "generating", s3Url: null, s3Key: null, fileSize: null });
+  });
+});
+
+describe("Audio Bulk Regenerate", () => {
+  const ctx = createAuthContext();
+  const caller = appRouter.createCaller(ctx);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("bulk regenerates multiple files", async () => {
+    (db.getAudioFile as any)
+      .mockResolvedValueOnce(mockFailedFile)
+      .mockResolvedValueOnce({ ...mockFailedFile, id: 4 });
+    const result = await caller.audio.bulkRegenerate({ ids: [3, 4] });
+    expect(result.success).toBe(true);
+    expect(result.queued).toBe(2);
+    expect(result.skipped).toBe(0);
+  });
+
+  it("skips non-existent files in bulk", async () => {
+    (db.getAudioFile as any)
+      .mockResolvedValueOnce(mockFailedFile)
+      .mockResolvedValueOnce(undefined);
+    const result = await caller.audio.bulkRegenerate({ ids: [3, 999] });
+    expect(result.queued).toBe(1);
+    expect(result.skipped).toBe(1);
+  });
+});
+
+describe("Audio Tags", () => {
+  const ctx = createAuthContext();
+  const caller = appRouter.createCaller(ctx);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets a tag on an audio file", async () => {
+    (db.getAudioFile as any).mockResolvedValue(mockAudioFile);
+    const result = await caller.audio.setTag({ id: 1, tag: "Campaign A" });
+    expect(result.success).toBe(true);
+    expect(db.updateAudioFile).toHaveBeenCalledWith(1, { tag: "Campaign A" });
+  });
+
+  it("removes a tag from an audio file", async () => {
+    (db.getAudioFile as any).mockResolvedValue({ ...mockAudioFile, tag: "Old Tag" });
+    const result = await caller.audio.setTag({ id: 1, tag: null });
+    expect(result.success).toBe(true);
+    expect(db.updateAudioFile).toHaveBeenCalledWith(1, { tag: null });
+  });
+
+  it("throws NOT_FOUND for setTag on non-existent file", async () => {
+    (db.getAudioFile as any).mockResolvedValue(undefined);
+    await expect(caller.audio.setTag({ id: 999, tag: "Test" }))
+      .rejects.toThrow("Audio file not found");
+  });
+
+  it("returns unique tags from audio files", async () => {
+    (db.getAudioFiles as any).mockResolvedValue([
+      { ...mockAudioFile, tag: "Campaign A" },
+      { ...mockAudioFile, id: 2, tag: "Voicemail" },
+      { ...mockAudioFile, id: 3, tag: "Campaign A" },
+      { ...mockAudioFile, id: 4, tag: null },
+    ]);
+    const tags = await caller.audio.tags();
+    expect(tags).toEqual(["Campaign A", "Voicemail"]);
+  });
+
+  it("bulk sets tags on multiple files", async () => {
+    const result = await caller.audio.bulkSetTag({ ids: [1, 2, 3], tag: "Batch Tag" });
+    expect(result.success).toBe(true);
+    expect(result.updated).toBe(3);
+    expect(db.updateAudioFile).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("Audio Update with Tag", () => {
+  const ctx = createAuthContext();
+  const caller = appRouter.createCaller(ctx);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("updates audio file with tag field", async () => {
+    (db.getAudioFile as any).mockResolvedValue(mockAudioFile);
+    const result = await caller.audio.update({
+      id: 1,
+      name: "Tagged Audio",
+      tag: "Campaign B",
+    });
+    expect(result.success).toBe(true);
+    expect(db.updateAudioFile).toHaveBeenCalledWith(1, { name: "Tagged Audio", tag: "Campaign B" });
   });
 });
