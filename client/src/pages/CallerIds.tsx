@@ -1284,13 +1284,21 @@ export default function CallerIds() {
             </Button>
             <Dialog open={showBulk} onOpenChange={(open) => {
               setShowBulk(open);
-              if (open) setFetchDests(true);
+              if (open) {
+                setFetchDests(true);
+                // Default label to import date in M.DD.YY format
+                const now = new Date();
+                const m = now.getMonth() + 1;
+                const dd = String(now.getDate()).padStart(2, "0");
+                const yy = String(now.getFullYear()).slice(-2);
+                setBulkLabel(`${m}.${dd}.${yy}`);
+              }
               if (!open) { setShowRouteConfig(true); setBulkRouteEntries([]); setBulkLabel(""); }
             }}>
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm"><Upload className="h-4 w-4 mr-1" /> Bulk Add</Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Import DIDs (up to 50)</DialogTitle>
                   <DialogDescription>
@@ -1318,7 +1326,7 @@ export default function CallerIds() {
                     className="mt-1"
                     value={bulkLabel}
                     onChange={e => handleBulkLabelChange(e.target.value)}
-                    placeholder="e.g. Campaign A, Sales, etc."
+                    placeholder="e.g. 5.14.26, Campaign A, Sales, etc."
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Applied to all DIDs that don't have a per-line label. Per-line labels (after the comma) take priority.

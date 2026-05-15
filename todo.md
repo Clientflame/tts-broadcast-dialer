@@ -1113,3 +1113,9 @@
 - [x] Auto-apply global settings to new entries as they're typed
 - [x] Ensure fwconsole reload runs after import (already handled in backend)
 - [x] Fix update button UX: show "Restarting..." overlay with countdown, auto-poll server, and auto-reload when back online
+
+## Caller IDs Enhancements
+- [x] Bulk edit: select multiple DIDs and change label — already existed with checkboxes + "Edit Labels" button
+- [x] Bulk delete: select multiple DIDs and delete with confirmation — already existed with "Delete" button + FreePBX route cleanup
+- [x] Default "Apply Label to All" to import date format M.DD.YY (e.g., 5.14.26)
+- [x] Make Import DIDs dialog larger (max-w-4xl, max-h-95vh) to show everything without scrolling
