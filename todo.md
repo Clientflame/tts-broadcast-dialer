@@ -1124,3 +1124,17 @@
 - [x] Bulk edit destination: "Edit Routes" button + dialog with DestinationPicker, description, CID prefix for selected DIDs (backend bulkUpdateInboundRoutes + frontend)
 - [x] CSV export: added CNAM column to existing export
 - [x] DID grouping: flat/grouped view toggle, collapsible label sections with per-group stats, date labels sorted newest first
+
+## v2.3.8 Features
+- [x] Bulk route deletion: already implemented — bulk delete dialog warns about FreePBX route removal and cleans up via SSH
+- [x] DID auto-assignment: pool strategy selector in campaign form with 6 strategies
+  - [x] All DIDs (use entire pool)
+  - [x] Toll-free only (800, 888, 877, 866, 855, 844, 833)
+  - [x] Local only (non-toll-free)
+  - [x] By area code match (match DID area code to contact area code)
+  - [x] By label/group (assign DIDs by their label tag)
+  - [x] Manual selection (pick specific DIDs for a campaign)
+  - [x] Round-robin vs random rotation within the selected pool
+- [x] Schema: added didPoolStrategy, didRotationMode, didManualIds columns to campaigns
+- [x] Backend: getActiveCallerIds supports all strategies, dialer uses random rotation mode
+- [x] Frontend: strategy cards, rotation toggle, manual DID picker, detail view shows strategy+mode

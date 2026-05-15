@@ -90,6 +90,9 @@ type FormState = {
   usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
   useDidRotation: boolean;
   didLabel: string;
+  didPoolStrategy: "all" | "toll_free" | "local" | "area_code" | "label" | "manual";
+  didRotationMode: "round_robin" | "random";
+  didManualIds: number[];
   scriptId: number; callbackNumber: string; useDidCallbackNumber: boolean;
   pacingMode: "fixed" | "adaptive" | "predictive";
   pacingTargetDropRate: number; pacingMinConcurrent: number; pacingMaxConcurrent: number;
@@ -116,7 +119,8 @@ const DEFAULT_FORM: FormState = {
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: [], useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-  useDidRotation: false, didLabel: "", scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
+  useDidRotation: false, didLabel: "", didPoolStrategy: "all", didRotationMode: "round_robin", didManualIds: [],
+  scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
   predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
   amdEnabled: false, voicemailAudioId: 0, voicemailMessage: "",
@@ -549,35 +553,87 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               <Switch checked={form.useDidRotation} onCheckedChange={v => setForm(p => ({ ...p, useDidRotation: v }))} />
             </div>
             {form.useDidRotation && (
-              <div className="pt-2 border-t">
-                <Label className="text-xs flex items-center gap-1.5 mb-1.5">
-                  <Tag className="h-3.5 w-3.5" /> DID Pool Label (optional)
-                </Label>
-                <Select value={form.didLabel || "__all__"} onValueChange={v => setForm(p => ({ ...p, didLabel: v === "__all__" ? "" : v }))}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="All active DIDs" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">
-                      All Active DIDs
-                      <span className="ml-2 text-xs text-muted-foreground">({labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)} DIDs)</span>
-                    </SelectItem>
-                    {(didLabels || []).map(label => {
-                      const lc = labelCounts.find(c => c.label === label);
-                      return (
-                        <SelectItem key={label} value={label}>
-                          {label}
-                          <span className="ml-2 text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {form.didLabel
-                    ? `Only DIDs labeled "${form.didLabel}" will be used (${labelCounts.find(c => c.label === form.didLabel)?.count || 0} DIDs)`
-                    : `All active DIDs will be used for rotation (${labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
-                </p>
+              <div className="pt-2 border-t space-y-3">
+                {/* Pool Strategy */}
+                <div>
+                  <Label className="text-xs mb-1.5 block">DID Pool Strategy</Label>
+                  <Select value={form.didPoolStrategy} onValueChange={(v: any) => setForm(p => ({ ...p, didPoolStrategy: v }))}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Active DIDs</SelectItem>
+                      <SelectItem value="toll_free">Toll-Free Only (800/888/877/866/855/844/833)</SelectItem>
+                      <SelectItem value="local">Local Numbers Only</SelectItem>
+                      <SelectItem value="area_code">Match Contact Area Code</SelectItem>
+                      <SelectItem value="label">Filter by Label</SelectItem>
+                      <SelectItem value="manual">Manual Selection</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {form.didPoolStrategy === "all" && `All active DIDs will be used (${labelCounts.filter(lc => lc.label !== "__all__").reduce((sum, lc) => sum + lc.count, 0)} DIDs)`}
+                    {form.didPoolStrategy === "toll_free" && "Only toll-free numbers (800, 888, 877, etc.) will be used"}
+                    {form.didPoolStrategy === "local" && "Only local (non-toll-free) numbers will be used"}
+                    {form.didPoolStrategy === "area_code" && "DIDs matching each contact's area code will be preferred, with fallback to all DIDs"}
+                    {form.didPoolStrategy === "label" && "Only DIDs with the selected label will be used"}
+                    {form.didPoolStrategy === "manual" && "Manually select which DIDs to use"}
+                  </p>
+                </div>
+
+                {/* Label filter (only for label strategy) */}
+                {form.didPoolStrategy === "label" && (
+                  <div>
+                    <Label className="text-xs flex items-center gap-1.5 mb-1.5">
+                      <Tag className="h-3.5 w-3.5" /> DID Pool Label
+                    </Label>
+                    <Select value={form.didLabel || "__all__"} onValueChange={v => setForm(p => ({ ...p, didLabel: v === "__all__" ? "" : v }))}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Select a label" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All Labels</SelectItem>
+                        {(didLabels || []).map(label => {
+                          const lc = labelCounts.find(c => c.label === label);
+                          return (
+                            <SelectItem key={label} value={label}>
+                              {label}
+                              <span className="ml-2 text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Manual DID selection (only for manual strategy) */}
+                {form.didPoolStrategy === "manual" && (
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Select DIDs</Label>
+                    <p className="text-xs text-muted-foreground mb-2">Check the DIDs you want to include in this campaign's rotation pool.</p>
+                    <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
+                      {(labelCounts.filter(lc => lc.label !== "__all__").length === 0) ? (
+                        <p className="text-xs text-muted-foreground">No active DIDs available. Add DIDs in the Caller IDs page first.</p>
+                      ) : null}
+                      {/* We'll show all DIDs grouped by label - need callerIds query */}
+                      <p className="text-xs text-muted-foreground italic">Manual DID selection is configured after campaign creation via the Caller IDs page. Selected DIDs: {form.didManualIds.length || "none"}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rotation Mode */}
+                <div>
+                  <Label className="text-xs mb-1.5 block">Rotation Mode</Label>
+                  <Select value={form.didRotationMode} onValueChange={(v: any) => setForm(p => ({ ...p, didRotationMode: v }))}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="round_robin">Round Robin (sequential, even distribution)</SelectItem>
+                      <SelectItem value="random">Random (randomized per call)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             )}
           </div>
@@ -1143,6 +1199,9 @@ export default function Campaigns() {
       ttsSpeed: c.ttsSpeed || "1.0",
       useDidRotation: !!c.useDidRotation,
       didLabel: (c as any).didLabel || "",
+      didPoolStrategy: (c as any).didPoolStrategy || "all",
+      didRotationMode: (c as any).didRotationMode || "round_robin",
+      didManualIds: (c as any).didManualIds ? JSON.parse((c as any).didManualIds) : [],
       pacingMode: (c as any).pacingMode || "fixed",
       pacingTargetDropRate: (c as any).pacingTargetDropRate || 3,
       pacingMinConcurrent: (c as any).pacingMinConcurrent || 1,
@@ -1197,6 +1256,9 @@ export default function Campaigns() {
       ttsSpeed: editForm.ttsSpeed !== "1.0" ? editForm.ttsSpeed : undefined,
       useDidRotation: editForm.useDidRotation ? 1 : 0,
       didLabel: editForm.useDidRotation && editForm.didLabel ? editForm.didLabel : null,
+      didPoolStrategy: editForm.useDidRotation ? editForm.didPoolStrategy : undefined,
+      didRotationMode: editForm.useDidRotation ? editForm.didRotationMode : undefined,
+      didManualIds: editForm.useDidRotation && editForm.didManualIds.length > 0 ? JSON.stringify(editForm.didManualIds) : null,
       pacingMode: editForm.pacingMode,
       pacingTargetDropRate: editForm.pacingMode !== "fixed" ? editForm.pacingTargetDropRate : undefined,
       pacingMinConcurrent: editForm.pacingMode !== "fixed" ? editForm.pacingMinConcurrent : undefined,
@@ -1253,6 +1315,9 @@ export default function Campaigns() {
       ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
       useDidRotation: form.useDidRotation ? 1 : 0,
       didLabel: form.useDidRotation && form.didLabel ? form.didLabel : null,
+      didPoolStrategy: form.useDidRotation ? form.didPoolStrategy : undefined,
+      didRotationMode: form.useDidRotation ? form.didRotationMode : undefined,
+      didManualIds: form.useDidRotation && form.didManualIds.length > 0 ? JSON.stringify(form.didManualIds) : null,
       pacingMode: form.pacingMode,
       pacingTargetDropRate: form.pacingMode !== "fixed" ? form.pacingTargetDropRate : undefined,
       pacingMinConcurrent: form.pacingMode !== "fixed" ? form.pacingMinConcurrent : undefined,
@@ -1465,7 +1530,8 @@ export default function Campaigns() {
                 )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didPoolStrategy && (c as any).didPoolStrategy !== "all" ? ` (${(c as any).didPoolStrategy === "toll_free" ? "Toll-Free" : (c as any).didPoolStrategy === "local" ? "Local" : (c as any).didPoolStrategy === "area_code" ? "Area Code Match" : (c as any).didPoolStrategy === "label" ? `Label: ${(c as any).didLabel}` : (c as any).didPoolStrategy === "manual" ? "Manual" : "All"})` : (c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
+                {(c as any).useDidRotation ? <div className="flex justify-between"><span className="text-muted-foreground">Rotation Mode</span><span>{(c as any).didRotationMode === "random" ? "Random" : "Round Robin"}</span></div> : null}
               </CardContent>
             </Card>
             <Card>

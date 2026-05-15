@@ -628,6 +628,9 @@ export const appRouter = router({
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
       didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
+      didPoolStrategy: z.enum(["all", "toll_free", "local", "area_code", "label", "manual"]).optional(),
+      didRotationMode: z.enum(["round_robin", "random"]).optional(),
+      didManualIds: z.string().max(2000).optional().nullable(), // JSON array of DID ids
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -656,7 +659,9 @@ export const appRouter = router({
       // Day-Part Script Rotation
       dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const result = await db.createCampaign({ ...input, userId: ctx.user.id });
+      const { didManualIds: didManualIdsStr, ...rest } = input;
+      const didManualIds = didManualIdsStr ? JSON.parse(didManualIdsStr) : undefined;
+      const result = await db.createCampaign({ ...rest, didManualIds, userId: ctx.user.id });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
       return result;
     }),
@@ -690,6 +695,9 @@ export const appRouter = router({
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
       didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
+      didPoolStrategy: z.enum(["all", "toll_free", "local", "area_code", "label", "manual"]).optional(),
+      didRotationMode: z.enum(["round_robin", "random"]).optional(),
+      didManualIds: z.string().max(2000).optional().nullable(), // JSON array of DID ids
       pacingMode: z.enum(["fixed", "adaptive", "predictive"]).optional(),
       pacingTargetDropRate: z.number().min(1).max(20).optional(),
       pacingMinConcurrent: z.number().min(1).max(50).optional(),
@@ -718,11 +726,12 @@ export const appRouter = router({
       // Day-Part Script Rotation
       dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
+      const { id, didManualIds: didManualIdsStr, ...data } = input;
       const campaign = await db.getCampaign(id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot update a running campaign" });
-      await db.updateCampaign(id, data);
+      const didManualIds = didManualIdsStr ? JSON.parse(didManualIdsStr) : didManualIdsStr;
+      await db.updateCampaign(id, { ...data, didManualIds });
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {

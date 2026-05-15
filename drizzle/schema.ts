@@ -168,6 +168,9 @@ export const campaigns = mysqlTable("campaigns", {
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
   didLabel: varchar("didLabel", { length: 100 }), // Filter DID rotation pool by label
+  didPoolStrategy: varchar("didPoolStrategy", { length: 20 }).default("all"), // all | toll_free | local | area_code | label | manual
+  didRotationMode: varchar("didRotationMode", { length: 20 }).default("round_robin"), // round_robin | random
+  didManualIds: json("didManualIds").$type<number[]>(), // manually selected DID ids
   // Call Script (mixed TTS + recorded segments)
   scriptId: int("scriptId"),
   callbackNumber: varchar("callbackNumber", { length: 20 }),

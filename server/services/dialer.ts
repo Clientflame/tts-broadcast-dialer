@@ -31,6 +31,7 @@ interface ActiveCampaign {
   audioName: string | null;
   callerIds: Array<{ id: number; phoneNumber: string; label: string | null }>;
   callerIdIndex: number;
+  didRotationMode: "round_robin" | "random";
   usePersonalizedTTS: boolean;
   pacingConfig: PacingConfig;
   // Script-based campaigns
@@ -182,13 +183,20 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const updatedCampaign = await db.getCampaign(campaignId);
   if (!updatedCampaign) throw new Error("Campaign not found after update");
 
-  // Load caller IDs for DID rotation (optionally filtered by label)
+  // Load caller IDs for DID rotation (with pool strategy support)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
+  const didRotationMode = (campaign as any).didRotationMode || "round_robin";
   if ((campaign as any).useDidRotation) {
     const didLabel = (campaign as any).didLabel || null;
-    callerIdPool = await db.getActiveCallerIds(didLabel);
+    const didPoolStrategy = (campaign as any).didPoolStrategy || "all";
+    const didManualIds = (campaign as any).didManualIds || null;
+    callerIdPool = await db.getActiveCallerIds({
+      label: didPoolStrategy === "label" ? didLabel : null,
+      strategy: didPoolStrategy,
+      manualIds: didManualIds,
+    });
     if (callerIdPool.length > 0) {
-      console.log(`[Dialer] DID rotation enabled with ${callerIdPool.length} caller IDs${didLabel ? ` (label: "${didLabel}")` : ""}`);
+      console.log(`[Dialer] DID rotation: strategy=${didPoolStrategy}, mode=${didRotationMode}, pool=${callerIdPool.length} DIDs${didLabel ? ` (label: "${didLabel}")` : ""}`);
     }
   }
 
@@ -231,6 +239,7 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     audioName,
     callerIds: callerIdPool,
     callerIdIndex: 0,
+    didRotationMode: (didRotationMode === "random" ? "random" : "round_robin"),
     usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
     pacingConfig,
     scriptSegments,
@@ -429,8 +438,13 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
     }
   }
   if (active.callerIds.length > 0) {
-    const did = active.callerIds[active.callerIdIndex % active.callerIds.length];
-    active.callerIdIndex++;
+    let did;
+    if (active.didRotationMode === "random") {
+      did = active.callerIds[Math.floor(Math.random() * active.callerIds.length)];
+    } else {
+      did = active.callerIds[active.callerIdIndex % active.callerIds.length];
+      active.callerIdIndex++;
+    }
     callerIdStr = `"${did.label || "Broadcast"}" <${did.phoneNumber}>`;
     callerIdNumber = did.phoneNumber;
     db.incrementCallerIdUsage(did.id).catch(err => console.error("[Dialer] Failed to update DID usage:", err));
@@ -824,12 +838,19 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     }
   }
 
-  // Load caller IDs (optionally filtered by label)
+  // Load caller IDs (with pool strategy support)
   let callerIdPool: Array<{ id: number; phoneNumber: string; label: string | null }> = [];
+  const didRotationMode = (campaign as any).didRotationMode || "round_robin";
   if ((campaign as any).useDidRotation) {
     try {
       const didLabel = (campaign as any).didLabel || null;
-      callerIdPool = await db.getActiveCallerIds(didLabel);
+      const didPoolStrategy = (campaign as any).didPoolStrategy || "all";
+      const didManualIds = (campaign as any).didManualIds || null;
+      callerIdPool = await db.getActiveCallerIds({
+        label: didPoolStrategy === "label" ? didLabel : null,
+        strategy: didPoolStrategy,
+        manualIds: didManualIds,
+      });
     } catch (err) {
       console.warn(`[Dialer Recovery] Could not load caller IDs for campaign ${campaignId}:`, err);
     }
@@ -878,6 +899,7 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
     audioName,
     callerIds: callerIdPool,
     callerIdIndex: 0,
+    didRotationMode: (didRotationMode === "random" ? "random" : "round_robin"),
     usePersonalizedTTS: !!(campaign as any).usePersonalizedTTS && !!(campaign as any).messageText,
     pacingConfig,
     scriptSegments,

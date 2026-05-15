@@ -795,13 +795,56 @@ export async function getCallerIds() {
   return db.select().from(callerIds).orderBy(desc(callerIds.createdAt));
 }
 
-export async function getActiveCallerIds(label?: string | null) {
+const TOLL_FREE_PREFIXES = ["800", "888", "877", "866", "855", "844", "833"];
+
+export async function getActiveCallerIds(opts?: {
+  label?: string | null;
+  strategy?: string | null;
+  manualIds?: number[] | null;
+  contactAreaCode?: string | null;
+}) {
   const db = await getDb();
   if (!db) return [];
-  if (label) {
-    return db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
+  const { label, strategy, manualIds, contactAreaCode } = opts || {};
+
+  // Get all active DIDs first, then filter in JS for complex strategies
+  let pool;
+  if (strategy === "manual" && manualIds && manualIds.length > 0) {
+    pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), inArray(callerIds.id, manualIds))).orderBy(callerIds.callCount);
+  } else if (strategy === "label" && label) {
+    pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
+  } else if (label && !strategy) {
+    // Legacy: filter by label when no strategy specified
+    pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
+  } else {
+    pool = await db.select().from(callerIds).where(eq(callerIds.isActive, 1)).orderBy(callerIds.callCount);
   }
-  return db.select().from(callerIds).where(eq(callerIds.isActive, 1)).orderBy(callerIds.callCount);
+
+  // Apply strategy filters
+  if (strategy === "toll_free") {
+    pool = pool.filter(d => {
+      const digits = d.phoneNumber.replace(/\D/g, "");
+      const areaCode = digits.length >= 10 ? digits.slice(digits.length === 11 ? 1 : 0, digits.length === 11 ? 4 : 3) : "";
+      return TOLL_FREE_PREFIXES.includes(areaCode);
+    });
+  } else if (strategy === "local") {
+    pool = pool.filter(d => {
+      const digits = d.phoneNumber.replace(/\D/g, "");
+      const areaCode = digits.length >= 10 ? digits.slice(digits.length === 11 ? 1 : 0, digits.length === 11 ? 4 : 3) : "";
+      return !TOLL_FREE_PREFIXES.includes(areaCode);
+    });
+  } else if (strategy === "area_code" && contactAreaCode) {
+    // Prefer DIDs matching the contact's area code, fall back to all
+    const matching = pool.filter(d => {
+      const digits = d.phoneNumber.replace(/\D/g, "");
+      const areaCode = digits.length >= 10 ? digits.slice(digits.length === 11 ? 1 : 0, digits.length === 11 ? 4 : 3) : "";
+      return areaCode === contactAreaCode;
+    });
+    if (matching.length > 0) pool = matching;
+    // else fall back to full pool
+  }
+
+  return pool;
 }
 
 export async function updateCallerId(id: number, data: Partial<InsertCallerId>) {
