@@ -1237,3 +1237,6 @@
 - [x] Enhancement: Add detailed call progress stats (numbers remaining, status breakdown)
 - [x] Enhancement: Real-time auto-refresh polling (5-10s) for running campaign stats
 - [x] Enhancement: Per-contact call history table in campaign detail view
+- [x] Bug: Calls show 'dialing' but never transition to 'ringing' status
+- [x] Bug: Call history table shows only 'pending' status — intermediate statuses not updating
+- [x] Enhancement: Increase Max Concurrent Calls limit to 75

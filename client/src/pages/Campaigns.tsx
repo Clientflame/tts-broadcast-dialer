@@ -125,7 +125,7 @@ const DEFAULT_FORM: FormState = {
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
   useDidRotation: false, didLabel: "", didPoolStrategy: "all", didRotationMode: "round_robin", didManualIds: [],
   scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
-  pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
+  pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 75,
   predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
   amdEnabled: false, amdAction: "leave_voicemail" as const, voicemailAudioId: 0, voicemailMessage: "",
   ivrPaymentEnabled: false, ivrPaymentDigit: "1", ivrPaymentAmount: 0,
@@ -673,20 +673,20 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
             </Label>
             <Slider
               min={1}
-              max={10}
+              max={75}
               step={1}
               value={[form.maxConcurrentCalls]}
               onValueChange={([v]) => setForm(p => ({ ...p, maxConcurrentCalls: v }))}
               className="mt-2"
             />
             <div className="flex gap-1.5 mt-2">
-              {[{l:"1",v:1},{l:"3",v:3},{l:"5",v:5},{l:"10",v:10}].map(p => (
+              {[{l:"5",v:5},{l:"10",v:10},{l:"25",v:25},{l:"50",v:50},{l:"75",v:75}].map(p => (
                 <Button key={p.l} type="button" variant={form.maxConcurrentCalls === p.v ? "default" : "outline"} size="sm" className="flex-1 text-xs h-6" onClick={() => setForm(f => ({ ...f, maxConcurrentCalls: p.v }))}>
                   {p.v}
                 </Button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Maximum simultaneous calls for this campaign (1-10). Cannot exceed agent's max.</p>
+            <p className="text-xs text-muted-foreground mt-1">Maximum simultaneous calls for this campaign (1-75). Cannot exceed agent's max.</p>
           </div>
 
           <div>
@@ -753,7 +753,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   <div>
                     <Label>Max Concurrent</Label>
                     <Input type="number" min={1} max={100} value={form.pacingMaxConcurrent}
-                      onChange={e => setForm(p => ({ ...p, pacingMaxConcurrent: parseInt(e.target.value) || 10 }))} />
+                      onChange={e => setForm(p => ({ ...p, pacingMaxConcurrent: parseInt(e.target.value) || 75 }))} />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -1297,7 +1297,7 @@ export default function Campaigns() {
       pacingMode: (c as any).pacingMode || "fixed",
       pacingTargetDropRate: (c as any).pacingTargetDropRate || 3,
       pacingMinConcurrent: (c as any).pacingMinConcurrent || 1,
-      pacingMaxConcurrent: (c as any).pacingMaxConcurrent || 10,
+      pacingMaxConcurrent: (c as any).pacingMaxConcurrent || 75,
       scriptId: (c as any).scriptId || 0,
       callbackNumber: (c as any).callbackNumber || "",
       useDidCallbackNumber: !!(c as any).useDidCallbackNumber,
@@ -1662,7 +1662,7 @@ export default function Campaigns() {
                 {(c as any).pacingMode && (c as any).pacingMode !== "fixed" && (
                   <>
                     <div className="flex justify-between"><span className="text-muted-foreground">Target Drop Rate</span><span>{(c as any).pacingTargetDropRate || 3}%</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Pacing Range</span><span>{(c as any).pacingMinConcurrent || 1} - {(c as any).pacingMaxConcurrent || 10}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Pacing Range</span><span>{(c as any).pacingMinConcurrent || 1} - {(c as any).pacingMaxConcurrent || 75}</span></div>
                   </>
                 )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>

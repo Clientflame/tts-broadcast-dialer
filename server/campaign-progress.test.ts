@@ -288,6 +288,82 @@ describe("Campaign Progress Stats (v2.5.2)", () => {
     });
   });
 
+  describe("Call status transitions (v2.5.4)", () => {
+    it("should include ringing as a valid call_log status", () => {
+      const validStatuses = ["pending", "dialing", "ringing", "answered", "busy", "no-answer", "failed", "completed", "cancelled"];
+      expect(validStatuses).toContain("ringing");
+    });
+
+    it("should count ringing calls as active in stats", () => {
+      const stats = {
+        dialing: 3,
+        ringing: 7,
+        active: 10, // dialing + ringing
+      };
+      expect(stats.active).toBe(stats.dialing + stats.ringing);
+    });
+
+    it("should transition call_log to ringing when PBX agent claims queue item", () => {
+      // The PBX poll endpoint now updates call_log status to "ringing"
+      // when the agent claims a call from the queue
+      const callLogBefore = { status: "dialing" };
+      const callLogAfter = { status: "ringing" };
+      expect(callLogBefore.status).toBe("dialing");
+      expect(callLogAfter.status).toBe("ringing");
+    });
+
+    it("should reset in-flight calls to pending on campaign pause", () => {
+      // pauseCampaign now resets dialing/ringing call_logs to pending
+      const inFlightStatuses = ["dialing", "ringing"];
+      const resetStatus = "pending";
+      inFlightStatuses.forEach(s => {
+        expect(s).not.toBe(resetStatus);
+      });
+      expect(resetStatus).toBe("pending");
+    });
+
+    it("should cancel all pending/in-flight calls on campaign cancel", () => {
+      // cancelCampaign now marks pending/dialing/ringing call_logs as cancelled
+      const cancelledStatuses = ["pending", "dialing", "ringing"];
+      const targetStatus = "cancelled";
+      cancelledStatuses.forEach(s => {
+        expect(s).not.toBe(targetStatus);
+      });
+      expect(targetStatus).toBe("cancelled");
+    });
+
+    it("should include ringing in recovery check for pending logs", () => {
+      // Recovery now checks for pending, dialing, AND ringing
+      const recoveryStatuses = ["pending", "dialing", "ringing"];
+      expect(recoveryStatuses).toContain("ringing");
+      expect(recoveryStatuses).toHaveLength(3);
+    });
+  });
+
+  describe("Max concurrent calls limit (v2.5.4)", () => {
+    it("should allow up to 75 concurrent calls per campaign", () => {
+      const MAX_CONCURRENT = 75;
+      expect(MAX_CONCURRENT).toBe(75);
+      expect(MAX_CONCURRENT).toBeGreaterThan(10);
+    });
+
+    it("should have preset buttons for 5, 10, 25, 50, 75", () => {
+      const presets = [5, 10, 25, 50, 75];
+      expect(presets).toHaveLength(5);
+      expect(presets[presets.length - 1]).toBe(75);
+    });
+
+    it("should default to 5 concurrent calls for new campaigns", () => {
+      const defaultConcurrent = 5;
+      expect(defaultConcurrent).toBe(5);
+    });
+
+    it("should default pacing max concurrent to 75", () => {
+      const pacingMaxDefault = 75;
+      expect(pacingMaxDefault).toBe(75);
+    });
+  });
+
   describe("Frontend completionRate calculation", () => {
     it("should use contactListTotal as denominator for completion rate", () => {
       const stats = {

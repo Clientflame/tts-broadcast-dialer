@@ -122,6 +122,16 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
     // Claim pending calls
     const calls = await db.claimPendingCalls(agent.agentId, limit);
 
+    // Update call_log status to "ringing" for all claimed calls
+    // This bridges the gap between "dialing" (enqueued) and the final result
+    for (const c of calls) {
+      if (c.callLogId) {
+        db.updateCallLog(c.callLogId, { status: "ringing" }).catch(err => {
+          console.warn(`[PBX-API] Failed to update call_log ${c.callLogId} to ringing:`, err);
+        });
+      }
+    }
+
     // Update agent heartbeat (also pass capabilities if provided)
     await db.updatePbxAgentHeartbeat(agent.agentId, req.body.activeCalls || 0, req.body.capabilities || undefined);
 
