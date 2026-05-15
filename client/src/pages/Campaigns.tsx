@@ -1235,8 +1235,18 @@ export default function Campaigns() {
   const readyAudioFiles = useMemo(() => audioFiles.data?.filter(f => f.status === "ready") || [], [audioFiles.data]);
 
   const completionRate = useMemo(() => {
-    if (!campaignStats.data || campaignStats.data.total === 0) return 0;
-    return Math.round((campaignStats.data.completed / campaignStats.data.total) * 100);
+    const s = campaignStats.data;
+    if (!s) return 0;
+    // Use contactListTotal as the denominator (actual contacts in list)
+    const totalBase = s.contactListTotal || s.total;
+    if (totalBase === 0) return 0;
+    return Math.round((s.completed / totalBase) * 100);
+  }, [campaignStats.data]);
+
+  const dialedCount = useMemo(() => {
+    const s = campaignStats.data;
+    if (!s) return 0;
+    return s.answered + s.busy + s.noAnswer + s.failed;
   }, [campaignStats.data]);
 
   const openEditDialog = (c: any) => {
@@ -1551,14 +1561,41 @@ export default function Campaigns() {
           {/* Progress */}
           {stats && (
             <Card>
-              <CardHeader><CardTitle className="text-base">Campaign Progress</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span>{stats.completed} / {stats.total} calls completed</span>
-                  <span className="font-bold">{completionRate}%</span>
+              <CardHeader>
+                <CardTitle className="text-base">Campaign Progress</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Summary row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="text-center p-3 rounded-lg border bg-card">
+                    <div className="text-2xl font-bold">{stats.contactListTotal || c.totalContacts || 0}</div>
+                    <div className="text-xs text-muted-foreground">Total Contacts</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg border bg-card">
+                    <div className="text-2xl font-bold text-blue-600">{dialedCount}</div>
+                    <div className="text-xs text-muted-foreground">Dialed</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg border bg-card">
+                    <div className="text-2xl font-bold text-amber-600">{stats.remaining}</div>
+                    <div className="text-xs text-muted-foreground">Remaining</div>
+                  </div>
+                  <div className="text-center p-3 rounded-lg border bg-card">
+                    <div className="text-2xl font-bold text-purple-600">{stats.pending + stats.active}</div>
+                    <div className="text-xs text-muted-foreground">In Queue</div>
+                  </div>
                 </div>
-                <Progress value={completionRate} className="h-3" />
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+
+                {/* Progress bar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{dialedCount} / {stats.contactListTotal || c.totalContacts || 0} numbers dialed</span>
+                    <span className="font-bold">{completionRate}% completed</span>
+                  </div>
+                  <Progress value={stats.contactListTotal > 0 ? (dialedCount / stats.contactListTotal) * 100 : 0} className="h-3" />
+                </div>
+
+                {/* Status breakdown */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-1">
                   <div className="text-center p-3 rounded-lg bg-green-50 dark:bg-green-950/30">
                     <div className="text-2xl font-bold text-green-600">{stats.answered}</div>
                     <div className="text-xs text-muted-foreground">Answered</div>
@@ -1575,10 +1612,25 @@ export default function Campaigns() {
                     <div className="text-2xl font-bold text-red-600">{stats.failed}</div>
                     <div className="text-xs text-muted-foreground">Failed</div>
                   </div>
+                  <div className="text-center p-3 rounded-lg bg-slate-50 dark:bg-slate-950/30">
+                    <div className="text-2xl font-bold text-slate-600">{stats.pending}</div>
+                    <div className="text-xs text-muted-foreground">Pending</div>
+                  </div>
                 </div>
+
+                {/* Active calls indicator */}
                 {stats.active > 0 && (
                   <div className="flex items-center gap-2 text-sm text-primary">
                     <Loader2 className="h-4 w-4 animate-spin" />{stats.active} active call{stats.active > 1 ? "s" : ""} in progress
+                    {stats.dialing > 0 && <span className="text-muted-foreground">({stats.dialing} dialing, {stats.ringing} ringing)</span>}
+                  </div>
+                )}
+
+                {/* Queue stats */}
+                {(stats.queuePending > 0 || stats.queueClaimed > 0) && (
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-3">
+                    <span>Queue: {stats.queuePending} pending</span>
+                    {stats.queueClaimed > 0 && <span>{stats.queueClaimed} claimed by agent</span>}
                   </div>
                 )}
               </CardContent>

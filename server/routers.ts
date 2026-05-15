@@ -815,6 +815,9 @@ export const appRouter = router({
       if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
       if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
       if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      // Auto-populate totalContacts from the contact list
+      const contactCount = await db.getContactListContactCount(input.contactListId);
+      dbData.totalContacts = contactCount;
       const result = await db.createCampaign(dbData);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
       return result;
@@ -894,6 +897,11 @@ export const appRouter = router({
       if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
       if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
       if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      // Update totalContacts if contactListId changed
+      if (input.contactListId && input.contactListId !== campaign.contactListId) {
+        const contactCount = await db.getContactListContactCount(input.contactListId);
+        dbData.totalContacts = contactCount;
+      }
       await db.updateCampaign(id, dbData);
       return { success: true };
     }),

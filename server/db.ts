@@ -547,23 +547,67 @@ export async function getActiveCallCount(campaignId: number) {
   return result[0]?.cnt ?? 0;
 }
 
+export async function getContactListContactCount(listId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ cnt: count() }).from(contacts).where(eq(contacts.listId, listId));
+  return result[0]?.cnt ?? 0;
+}
+
 export async function getCampaignStats(campaignId: number) {
   const db = await getDb();
-  if (!db) return { total: 0, completed: 0, answered: 0, busy: 0, noAnswer: 0, failed: 0, pending: 0, active: 0 };
+  if (!db) return { total: 0, completed: 0, answered: 0, busy: 0, noAnswer: 0, failed: 0, pending: 0, active: 0, dialing: 0, ringing: 0, contactListTotal: 0, queuePending: 0, queueClaimed: 0, remaining: 0, cancelled: 0 };
+
+  // Get call log stats
   const rows = await db.select({ status: callLogs.status, cnt: count() }).from(callLogs).where(eq(callLogs.campaignId, campaignId)).groupBy(callLogs.status);
   const stats: Record<string, number> = {};
   let total = 0;
   for (const row of rows) { stats[row.status] = row.cnt; total += row.cnt; }
+
+  // Get call queue stats for this campaign
+  const queueRows = await db.select({ status: callQueue.status, cnt: count() }).from(callQueue).where(eq(callQueue.campaignId, campaignId)).groupBy(callQueue.status);
+  const queueStats: Record<string, number> = {};
+  for (const row of queueRows) { queueStats[row.status] = row.cnt; }
+
+  // Get contact list total from the campaign
+  const campaign = await db.select({ contactListId: campaigns.contactListId, totalContacts: campaigns.totalContacts }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  let contactListTotal = 0;
+  if (campaign[0]) {
+    contactListTotal = campaign[0].totalContacts || 0;
+    // If totalContacts is 0 (not started yet), get from contact list
+    if (contactListTotal === 0 && campaign[0].contactListId) {
+      const listResult = await db.select({ cnt: count() }).from(contacts).where(eq(contacts.listId, campaign[0].contactListId));
+      contactListTotal = listResult[0]?.cnt ?? 0;
+    }
+  }
+
+  const completed = (stats["completed"] || 0) + (stats["answered"] || 0);
+  const failed = stats["failed"] || 0;
+  const active = (stats["dialing"] || 0) + (stats["ringing"] || 0);
+  const pending = stats["pending"] || 0;
+  const cancelled = stats["cancelled"] || 0;
+  const queuePending = queueStats["pending"] || 0;
+  const queueClaimed = queueStats["claimed"] || 0;
+  const dialed = completed + failed + (stats["busy"] || 0) + (stats["no-answer"] || 0);
+  const remaining = Math.max(0, contactListTotal - dialed - active - pending - cancelled);
+
   return {
     total,
-    completed: (stats["completed"] || 0) + (stats["answered"] || 0),
+    completed,
     answered: stats["answered"] || 0,
     busy: stats["busy"] || 0,
     noAnswer: stats["no-answer"] || 0,
-    failed: stats["failed"] || 0,
-    pending: stats["pending"] || 0,
+    failed,
+    pending,
+    cancelled,
     // Note: "answered" is a terminal status, not active
-    active: (stats["dialing"] || 0) + (stats["ringing"] || 0),
+    active,
+    dialing: stats["dialing"] || 0,
+    ringing: stats["ringing"] || 0,
+    contactListTotal,
+    queuePending,
+    queueClaimed,
+    remaining,
   };
 }
 

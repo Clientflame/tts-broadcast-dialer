@@ -1233,3 +1233,5 @@
 - [x] Voicemail drop audio selector — when AMD action is "Leave Message", pick which audio file to play
 - [x] PBX agent integration — include preGeneratedUrl in poll response so agent skips TTS for cached segments
 - [x] Fix: voicemailLibrary is not defined error in Campaigns page
+- [x] Fix: Campaign Progress dashboard not showing contacts
+- [x] Enhancement: Add detailed call progress stats (numbers remaining, status breakdown)
