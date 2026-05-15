@@ -67,6 +67,7 @@ const adminMenuItems = [
   { icon: Database, label: "DB Backups", path: "/backups" },
   { icon: Key, label: "License Keys", path: "/licenses" },
   { icon: Key, label: "API Keys", path: "/api-keys" },
+  { icon: Activity, label: "Queue Monitor", path: "/queue-monitor" },
   { icon: BookOpen, label: "Help & Docs", path: "/help" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
   { icon: Sparkles, label: "Product Tour", path: "/__product_tour__" },

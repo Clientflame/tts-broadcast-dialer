@@ -1198,3 +1198,10 @@
   - [x] Backend: queue throughput metrics (calls/min, avg wait time, avg call duration)
   - [x] Backend: requeue dead letter items back to pending
   - [x] tRPC: queueMonitor router (stats, throughput, depthHistory, deadLetter, requeueDeadLetter)
+
+- [x] Queue Monitor Dashboard Page
+  - [x] Live metrics cards (queue depth, throughput, avg wait time, avg call duration)
+  - [x] Queue depth history stacked area chart (24h default, selectable range)
+  - [x] Dead letter queue table with requeue actions (single + bulk)
+  - [x] Auto-refresh every 5 seconds
+  - [x] Sidebar navigation entry
