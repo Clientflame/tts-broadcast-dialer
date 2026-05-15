@@ -4594,12 +4594,15 @@ Return ONLY the message text, nothing else.`;
       if (!host || !sshUser || !sshPass) {
         throw new TRPCError({ code: "BAD_REQUEST", message: "SSH credentials not configured" });
       }
+      // Use the web app's origin (from the request) for the installer URL, NOT the FreePBX host
+      const reqOrigin = ctx.req.headers.origin || ctx.req.headers.referer?.replace(/\/+$/, "") || `https://${ctx.req.headers.host}`;
+      const appOrigin = reqOrigin.replace(/\/+$/, "");
       return new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {
         const conn = new SSHClient();
         const timeout = setTimeout(() => { conn.end(); resolve({ success: false, error: "SSH timeout (60s)" }); }, 60000);
         conn.on("ready", () => {
-          // Stop the agent, pull latest code, restart
-          const cmd = `cd /opt/pbx-agent && systemctl stop pbx-agent 2>/dev/null; curl -sL "https://${host}:443/api/pbx/installer" -o /tmp/pbx-update.sh 2>/dev/null; bash /tmp/pbx-update.sh 2>&1 || (systemctl restart pbx-agent 2>&1); echo "UPDATE_DONE"`;
+          // Stop the agent, download installer from the web app (not FreePBX), then run it
+          const cmd = `cd /opt/pbx-agent && systemctl stop pbx-agent 2>/dev/null; curl -sL "${appOrigin}/api/pbx/installer" -o /tmp/pbx-update.sh 2>/dev/null; bash /tmp/pbx-update.sh 2>&1 || (systemctl restart pbx-agent 2>&1); echo "UPDATE_DONE"`;
           conn.exec(cmd, (err, stream) => {
             if (err) { clearTimeout(timeout); conn.end(); resolve({ success: false, error: err.message }); return; }
             let output = "";
