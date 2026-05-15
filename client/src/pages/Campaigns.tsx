@@ -27,11 +27,11 @@ const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "o
 };
 
 const US_STATES = [
-  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
+  "AL","AK","AZ","AR","CA","CO","CT","DC","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA",
   "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
   "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
 ];
-const EXCLUDED_STATES = ["MI", "NY", "NJ"];
+const EXCLUDED_STATES = ["DC", "MI", "NY", "NJ"];
 const DEFAULT_TARGET_STATES = US_STATES.filter(s => !EXCLUDED_STATES.includes(s));
 
 const IVR_ACTIONS = [
@@ -930,7 +930,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
             <div className="flex items-center justify-between mt-2">
               <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
               <div className="flex gap-1">
-                <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: DEFAULT_TARGET_STATES }))}>Default (excl. MI, NY, NJ)</Button>
+                <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: DEFAULT_TARGET_STATES }))}>Default (excl. DC, MI, NY, NJ)</Button>
                 <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [...US_STATES] }))}>All States</Button>
                 <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [] }))}>Clear All</Button>
               </div>
