@@ -588,6 +588,85 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.import", resource: "audioFile", details: { imported, skipped, total: input.data.length } });
       return { success: true, imported, skipped, total: input.data.length };
     }),
+    // ─── Update / Edit Audio File ─────────────────────────────────────
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      text: z.string().min(1).max(5000).optional(),
+      voice: voiceEnum.optional(),
+      speed: z.number().min(0.25).max(4.0).optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
+      regenerate: z.boolean().optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFile(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+      // Build update payload (only changed fields)
+      const updates: Record<string, any> = {};
+      if (input.name !== undefined) updates.name = input.name;
+      if (input.text !== undefined) updates.text = input.text;
+      if (input.voice !== undefined) updates.voice = input.voice;
+      // Apply metadata updates first
+      if (Object.keys(updates).length > 0) {
+        await db.updateAudioFile(input.id, updates);
+      }
+      // If regenerate requested, re-trigger TTS generation
+      if (input.regenerate) {
+        const finalText = input.text ?? existing.text;
+        const finalVoice = input.voice ?? existing.voice;
+        const finalSpeed = input.speed ?? 1.0;
+        const provider = input.ttsProvider ?? (GOOGLE_VOICES.includes(finalVoice as any) ? "google" : "openai");
+        await db.updateAudioFile(input.id, { status: "generating", s3Url: null, s3Key: null, fileSize: null });
+        const generateFn = provider === "google"
+          ? generateGoogleTTS({ text: finalText, voice: finalVoice as GoogleTTSVoice, name: input.name ?? existing.name, speed: finalSpeed })
+          : generateTTS({ text: finalText, voice: finalVoice as any, name: input.name ?? existing.name, speed: finalSpeed });
+        generateFn
+          .then(async (result) => {
+            await db.updateAudioFile(input.id, { s3Url: result.s3Url, s3Key: result.s3Key, fileSize: result.fileSize, status: "ready" });
+          })
+          .catch(async (err) => {
+            console.error("[TTS] Regeneration failed:", err);
+            await db.updateAudioFile(input.id, { status: "failed" });
+          });
+      }
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.update", resource: "audioFile", resourceId: input.id, details: { ...updates, regenerate: !!input.regenerate } });
+      return { success: true };
+    }),
+    // ─── Cancel Generating (set stuck files to failed) ───────────────
+    cancelGenerating: protectedProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFile(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+      if (existing.status !== "generating") throw new TRPCError({ code: "BAD_REQUEST", message: "File is not in generating state" });
+      await db.updateAudioFile(input.id, { status: "failed" });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.cancelGenerating", resource: "audioFile", resourceId: input.id });
+      return { success: true };
+    }),
+    // ─── Regenerate (re-trigger TTS for failed/ready files) ──────────
+    regenerate: protectedProcedure.input(z.object({
+      id: z.number(),
+      speed: z.number().min(0.25).max(4.0).optional(),
+      ttsProvider: z.enum(["openai", "google"]).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const existing = await db.getAudioFile(input.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found" });
+      const provider = input.ttsProvider ?? (GOOGLE_VOICES.includes(existing.voice as any) ? "google" : "openai");
+      const speed = input.speed ?? 1.0;
+      await db.updateAudioFile(input.id, { status: "generating", s3Url: null, s3Key: null, fileSize: null });
+      const generateFn = provider === "google"
+        ? generateGoogleTTS({ text: existing.text, voice: existing.voice as GoogleTTSVoice, name: existing.name, speed })
+        : generateTTS({ text: existing.text, voice: existing.voice as any, name: existing.name, speed });
+      generateFn
+        .then(async (result) => {
+          await db.updateAudioFile(input.id, { s3Url: result.s3Url, s3Key: result.s3Key, fileSize: result.fileSize, status: "ready" });
+        })
+        .catch(async (err) => {
+          console.error("[TTS] Regeneration failed:", err);
+          await db.updateAudioFile(input.id, { status: "failed" });
+        });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.regenerate", resource: "audioFile", resourceId: input.id, details: { voice: existing.voice, provider, speed } });
+      return { success: true };
+    }),
   }),
 
   campaigns: router({
@@ -3358,6 +3437,7 @@ Return ONLY the message text, nothing else.`;
         { key: "contacts.import", label: "Import Contacts", category: "Contacts" },
         { key: "audio.view", label: "View Audio Files", category: "Audio" },
         { key: "audio.create", label: "Generate TTS Audio", category: "Audio" },
+        { key: "audio.edit", label: "Edit Audio Files", category: "Audio" },
         { key: "audio.delete", label: "Delete Audio Files", category: "Audio" },
         { key: "callerIds.view", label: "View Caller IDs", category: "Caller IDs" },
         { key: "callerIds.manage", label: "Manage Caller IDs", category: "Caller IDs" },

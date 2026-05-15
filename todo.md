@@ -1219,3 +1219,6 @@
   - [x] Frontend: Carrier Error Log table with filters, export, and report generation
   - [x] Sidebar navigation entry
 - [x] Add stop button to audio player in Generated Audio Files / TTS section
+- [x] Add edit button to Generated Audio Files table (edit name, text, voice, regenerate)
+- [x] Add cancel generating button for stuck files
+- [x] Add regenerate button for failed files

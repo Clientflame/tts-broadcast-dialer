@@ -14,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic } from "lucide-react";
+import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic, Pencil, XCircle } from "lucide-react";
 import { ImportExportButtons } from "@/components/ImportExportButtons";
 
 const OPENAI_VOICE_OPTIONS = [
@@ -242,6 +242,62 @@ export default function Audio() {
   });
 
   const importAudioMut = trpc.audio.importAll.useMutation();
+
+  // ─── Edit / Cancel / Regenerate ─────────────────────────────────────
+  const [editOpen, setEditOpen] = useState(false);
+  const [editFile, setEditFile] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editText, setEditText] = useState("");
+  const [editVoice, setEditVoice] = useState<string>("alloy");
+  const [editProvider, setEditProvider] = useState<"openai" | "google">("openai");
+  const [editSpeed, setEditSpeed] = useState(1.0);
+  const [editRegenerate, setEditRegenerate] = useState(false);
+
+  const editSpeedLabel = useMemo(() => {
+    if (editSpeed === 1.0) return "Normal";
+    if (editSpeed < 1.0) return `${editSpeed.toFixed(2)}x (Slower)`;
+    return `${editSpeed.toFixed(2)}x (Faster)`;
+  }, [editSpeed]);
+
+  const openEditDialog = (file: any) => {
+    setEditFile(file);
+    setEditName(file.name);
+    setEditText(file.text);
+    setEditVoice(file.voice);
+    const isGoogle = file.voice?.startsWith("en-US-");
+    setEditProvider(isGoogle ? "google" : "openai");
+    setEditSpeed(1.0);
+    setEditRegenerate(false);
+    setEditOpen(true);
+  };
+
+  const editVoiceOptions = editProvider === "openai" ? OPENAI_VOICE_OPTIONS : GOOGLE_VOICE_OPTIONS;
+
+  const updateAudio = trpc.audio.update.useMutation({
+    onSuccess: () => {
+      utils.audio.list.invalidate();
+      setEditOpen(false);
+      setEditFile(null);
+      toast.success(editRegenerate ? "Audio updated & regeneration started" : "Audio file updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const cancelGenerating = trpc.audio.cancelGenerating.useMutation({
+    onSuccess: () => {
+      utils.audio.list.invalidate();
+      toast.success("Generation cancelled — file marked as failed");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const regenerateAudio = trpc.audio.regenerate.useMutation({
+    onSuccess: () => {
+      utils.audio.list.invalidate();
+      toast.success("Regeneration started. Audio will be ready shortly.");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const quickTestMut = trpc.quickTest.dial.useMutation({
     onSuccess: (r) => {
@@ -577,6 +633,23 @@ export default function Audio() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Edit button — always available */}
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(file)} title="Edit">
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        {/* Cancel — only for stuck generating files */}
+                        {file.status === "generating" && (
+                          <Button variant="ghost" size="sm" className="text-orange-600" onClick={() => { if (confirm("Cancel generation and mark as failed?")) cancelGenerating.mutate({ id: file.id }); }} title="Cancel Generation">
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* Regenerate — for failed files */}
+                        {file.status === "failed" && (
+                          <Button variant="ghost" size="sm" className="text-blue-600" onClick={() => regenerateAudio.mutate({ id: file.id })} title="Regenerate">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* Quick Test — only for ready files */}
                         {file.status === "ready" && (
                           <Button variant="ghost" size="sm" onClick={() => { setTestAudioId(file.id); setQuickTestOpen(true); }} title="Quick Test Call">
                             <PhoneCall className="h-3.5 w-3.5" />
@@ -593,6 +666,91 @@ export default function Audio() {
             </Table>
           </CardContent>
         </Card>
+
+        {/* ─── Edit Audio Dialog ─────────────────────────────────────────── */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Audio File</DialogTitle>
+              <DialogDescription>Update the audio file details. Check "Save & Regenerate" to re-generate the audio with the new settings.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Audio file name" />
+              </div>
+              <div className="space-y-2">
+                <Label>Message Text</Label>
+                <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} placeholder="Enter TTS message text" rows={4} />
+                <p className="text-xs text-muted-foreground">{editText.length} / 5,000 characters</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>TTS Provider</Label>
+                  <Select value={editProvider} onValueChange={(v: "openai" | "google") => {
+                    setEditProvider(v);
+                    setEditVoice(v === "openai" ? "alloy" : "en-US-Studio-M");
+                  }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI TTS</SelectItem>
+                      <SelectItem value="google">Google Cloud TTS</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Voice</Label>
+                  <Select value={editVoice} onValueChange={setEditVoice}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {editVoiceOptions.map(v => (
+                        <SelectItem key={v.id} value={v.id}>{v.name} — {v.desc}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Speed: {editSpeedLabel}</Label>
+                  <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setEditSpeed(1.0)}>Reset</Button>
+                </div>
+                <Slider min={0.25} max={4.0} step={0.05} value={[editSpeed]} onValueChange={([v]) => setEditSpeed(v)} />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>0.25x</span><span>1.0x</span><span>4.0x</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+                <input type="checkbox" id="edit-regenerate" checked={editRegenerate} onChange={(e) => setEditRegenerate(e.target.checked)} className="h-4 w-4 rounded" />
+                <label htmlFor="edit-regenerate" className="text-sm cursor-pointer">
+                  <span className="font-medium">Save & Regenerate Audio</span>
+                  <span className="text-muted-foreground ml-1">— Re-generate the audio file with the updated text, voice, and speed settings</span>
+                </label>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => {
+                  if (!editFile) return;
+                  updateAudio.mutate({
+                    id: editFile.id,
+                    name: editName !== editFile.name ? editName : undefined,
+                    text: editText !== editFile.text ? editText : undefined,
+                    voice: editVoice !== editFile.voice ? editVoice as any : undefined,
+                    speed: editSpeed,
+                    ttsProvider: editProvider,
+                    regenerate: editRegenerate,
+                  });
+                }}
+                disabled={updateAudio.isPending || !editName.trim()}
+              >
+                {updateAudio.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {editRegenerate ? "Save & Regenerate" : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
