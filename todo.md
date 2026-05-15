@@ -1235,3 +1235,5 @@
 - [x] Fix: voicemailLibrary is not defined error in Campaigns page
 - [x] Fix: Campaign Progress dashboard not showing contacts
 - [x] Enhancement: Add detailed call progress stats (numbers remaining, status breakdown)
+- [x] Enhancement: Real-time auto-refresh polling (5-10s) for running campaign stats
+- [x] Enhancement: Per-contact call history table in campaign detail view

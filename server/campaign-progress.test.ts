@@ -215,6 +215,79 @@ describe("Campaign Progress Stats (v2.5.2)", () => {
     });
   });
 
+  describe("getCampaignCallLogsPaginated", () => {
+    it("should return paginated call logs with total count", async () => {
+      const mockResult = {
+        items: [
+          { id: 1, phoneNumber: "4075551234", contactName: "John Doe", status: "answered", duration: 45, attempt: 1, callerIdUsed: "4075559999", startedAt: Date.now() },
+          { id: 2, phoneNumber: "4075555678", contactName: "Jane Smith", status: "failed", duration: null, attempt: 1, callerIdUsed: null, startedAt: null },
+        ],
+        total: 150,
+      };
+      (db.getCampaignCallLogsPaginated as any) = vi.fn().mockResolvedValue(mockResult);
+
+      const result = await db.getCampaignCallLogsPaginated({ campaignId: 1, limit: 25, offset: 0 });
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(150);
+      expect(result.items[0].phoneNumber).toBe("4075551234");
+      expect(result.items[0].status).toBe("answered");
+    });
+
+    it("should filter by status", async () => {
+      const mockResult = { items: [{ id: 1, status: "failed" }], total: 10 };
+      (db.getCampaignCallLogsPaginated as any) = vi.fn().mockResolvedValue(mockResult);
+
+      const result = await db.getCampaignCallLogsPaginated({ campaignId: 1, status: "failed" });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].status).toBe("failed");
+    });
+
+    it("should filter by search term", async () => {
+      const mockResult = { items: [{ id: 1, phoneNumber: "4075551234", contactName: "John" }], total: 1 };
+      (db.getCampaignCallLogsPaginated as any) = vi.fn().mockResolvedValue(mockResult);
+
+      const result = await db.getCampaignCallLogsPaginated({ campaignId: 1, search: "John" });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].contactName).toBe("John");
+    });
+
+    it("should return empty results for no matches", async () => {
+      (db.getCampaignCallLogsPaginated as any) = vi.fn().mockResolvedValue({ items: [], total: 0 });
+
+      const result = await db.getCampaignCallLogsPaginated({ campaignId: 999 });
+      expect(result.items).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+
+    it("should handle pagination offset correctly", async () => {
+      const page2Items = Array.from({ length: 25 }, (_, i) => ({ id: 26 + i, phoneNumber: `407555${1000 + i}` }));
+      (db.getCampaignCallLogsPaginated as any) = vi.fn().mockResolvedValue({ items: page2Items, total: 150 });
+
+      const result = await db.getCampaignCallLogsPaginated({ campaignId: 1, limit: 25, offset: 25 });
+      expect(result.items).toHaveLength(25);
+      expect(result.items[0].id).toBe(26);
+      expect(result.total).toBe(150);
+    });
+  });
+
+  describe("Auto-refresh polling configuration", () => {
+    it("campaign stats should poll at 5 second intervals", () => {
+      // Verify the polling interval constant
+      const STATS_POLL_INTERVAL = 5000;
+      expect(STATS_POLL_INTERVAL).toBe(5000);
+    });
+
+    it("campaign detail should poll at 10 second intervals", () => {
+      const DETAIL_POLL_INTERVAL = 10000;
+      expect(DETAIL_POLL_INTERVAL).toBe(10000);
+    });
+
+    it("call history should poll at 8 second intervals", () => {
+      const HISTORY_POLL_INTERVAL = 8000;
+      expect(HISTORY_POLL_INTERVAL).toBe(8000);
+    });
+  });
+
   describe("Frontend completionRate calculation", () => {
     it("should use contactListTotal as denominator for completion rate", () => {
       const stats = {

@@ -1368,6 +1368,15 @@ export const appRouter = router({
     list: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
       return db.getCallLogs(input.campaignId);
     }),
+    paginated: protectedProcedure.input(z.object({
+      campaignId: z.number(),
+      limit: z.number().min(1).max(100).optional(),
+      offset: z.number().min(0).optional(),
+      status: z.string().optional(),
+      search: z.string().optional(),
+    })).query(async ({ ctx, input }) => {
+      return db.getCampaignCallLogsPaginated(input);
+    }),
     export: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
       const logs = await db.getCallLogsForExport(input.campaignId);
       const campaign = await db.getCampaign(input.campaignId);

@@ -520,6 +520,61 @@ export async function getCallLogs(campaignId: number) {
   return db.select().from(callLogs).where(eq(callLogs.campaignId, campaignId)).orderBy(desc(callLogs.createdAt));
 }
 
+export async function getCampaignCallLogsPaginated(opts: {
+  campaignId: number;
+  limit?: number;
+  offset?: number;
+  status?: string;
+  search?: string;
+}): Promise<{ items: any[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  const { campaignId, limit = 50, offset = 0, status, search } = opts;
+  const conditions: any[] = [eq(callLogs.campaignId, campaignId)];
+
+  if (status && status !== "all") {
+    conditions.push(eq(callLogs.status, status as any));
+  }
+  if (search) {
+    conditions.push(
+      or(
+        sql`${callLogs.phoneNumber} LIKE ${`%${search}%`}`,
+        sql`${callLogs.contactName} LIKE ${`%${search}%`}`
+      )
+    );
+  }
+
+  const totalResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs).where(and(...conditions));
+
+  const items = await db.select({
+    id: callLogs.id,
+    phoneNumber: callLogs.phoneNumber,
+    contactName: callLogs.contactName,
+    status: callLogs.status,
+    duration: callLogs.duration,
+    attempt: callLogs.attempt,
+    callerIdUsed: callLogs.callerIdUsed,
+    errorMessage: callLogs.errorMessage,
+    dtmfResponse: callLogs.dtmfResponse,
+    ivrAction: callLogs.ivrAction,
+    amdResult: callLogs.amdResult,
+    voicemailDropped: callLogs.voicemailDropped,
+    startedAt: callLogs.startedAt,
+    answeredAt: callLogs.answeredAt,
+    endedAt: callLogs.endedAt,
+    createdAt: callLogs.createdAt,
+  }).from(callLogs)
+    .where(and(...conditions))
+    .orderBy(desc(callLogs.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  return { items, total: totalResult[0]?.count || 0 };
+}
+
 export async function updateCallLog(id: number, data: Partial<InsertCallLog>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

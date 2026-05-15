@@ -16,9 +16,11 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
+  Search, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -1109,10 +1111,21 @@ export default function Campaigns() {
   const voicemailLibrary = trpc.voicemailCreator.libraryList.useQuery();
   const templates = trpc.templates.list.useQuery();
   const callScripts = trpc.callScripts.list.useQuery();
-  const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });
+  const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 10000 : false });
   const campaignStats = trpc.campaigns.stats.useQuery({ id: detailId! }, { enabled: !!detailId, refetchInterval: detailId ? 5000 : false });
   const { data: didLabels } = trpc.callerIds.getLabels.useQuery();
   const { data: labelCounts = [] } = trpc.callerIds.labelCounts.useQuery();
+
+  // Call history state
+  const [callHistoryPage, setCallHistoryPage] = useState(0);
+  const [callHistoryFilter, setCallHistoryFilter] = useState("all");
+  const [callHistorySearch, setCallHistorySearch] = useState("");
+  const [callHistorySearchInput, setCallHistorySearchInput] = useState("");
+  const CALL_HISTORY_PAGE_SIZE = 25;
+  const callHistory = trpc.callLogs.paginated.useQuery(
+    { campaignId: detailId!, limit: CALL_HISTORY_PAGE_SIZE, offset: callHistoryPage * CALL_HISTORY_PAGE_SIZE, status: callHistoryFilter !== "all" ? callHistoryFilter : undefined, search: callHistorySearch || undefined },
+    { enabled: !!detailId, refetchInterval: detailId ? 8000 : false }
+  );
 
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
@@ -1690,6 +1703,139 @@ export default function Campaigns() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Call History Table */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Call History</CardTitle>
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search phone or name..."
+                      value={callHistorySearchInput}
+                      onChange={(e) => setCallHistorySearchInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { setCallHistorySearch(callHistorySearchInput); setCallHistoryPage(0); } }}
+                      className="h-8 w-[200px] pl-8 text-xs"
+                    />
+                  </div>
+                  <Select value={callHistoryFilter} onValueChange={(v) => { setCallHistoryFilter(v); setCallHistoryPage(0); }}>
+                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="dialing">Dialing</SelectItem>
+                      <SelectItem value="ringing">Ringing</SelectItem>
+                      <SelectItem value="answered">Answered</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="busy">Busy</SelectItem>
+                      <SelectItem value="no-answer">No Answer</SelectItem>
+                      <SelectItem value="failed">Failed</SelectItem>
+                      <SelectItem value="cancelled">Cancelled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {callHistory.isLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : !callHistory.data || callHistory.data.items.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  {callHistoryFilter !== "all" || callHistorySearch ? "No calls match your filters" : "No call history yet — start the campaign to begin dialing"}
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[140px]">Phone Number</TableHead>
+                        <TableHead>Contact</TableHead>
+                        <TableHead className="w-[100px]">Status</TableHead>
+                        <TableHead className="w-[80px]">Duration</TableHead>
+                        <TableHead className="w-[60px]">Attempt</TableHead>
+                        <TableHead className="w-[100px]">Caller ID</TableHead>
+                        <TableHead className="w-[80px]">AMD</TableHead>
+                        <TableHead className="w-[150px]">Time</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {callHistory.data.items.map((log: any) => {
+                        const statusColor: Record<string, string> = {
+                          answered: "text-green-600 bg-green-50 dark:bg-green-950/30",
+                          completed: "text-green-600 bg-green-50 dark:bg-green-950/30",
+                          busy: "text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30",
+                          "no-answer": "text-orange-600 bg-orange-50 dark:bg-orange-950/30",
+                          failed: "text-red-600 bg-red-50 dark:bg-red-950/30",
+                          pending: "text-slate-600 bg-slate-50 dark:bg-slate-950/30",
+                          dialing: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
+                          ringing: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
+                          cancelled: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
+                        };
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="font-mono text-xs">{log.phoneNumber}</TableCell>
+                            <TableCell className="text-xs truncate max-w-[120px]">{log.contactName || "—"}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusColor[log.status] || ""}`}>
+                                {log.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">{log.duration ? `${log.duration}s` : "—"}</TableCell>
+                            <TableCell className="text-xs text-center">{log.attempt}</TableCell>
+                            <TableCell className="font-mono text-[10px]">{log.callerIdUsed || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {log.amdResult ? (
+                                <Badge variant="outline" className={`text-[10px] px-1 py-0 ${log.amdResult === "HUMAN" ? "text-green-600" : log.amdResult === "MACHINE" ? "text-orange-600" : "text-gray-500"}`}>
+                                  {log.amdResult}{log.voicemailDropped ? " (VM)" : ""}
+                                </Badge>
+                              ) : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {log.startedAt ? new Date(log.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : log.createdAt ? new Date(log.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between pt-4">
+                    <span className="text-xs text-muted-foreground">
+                      Showing {callHistoryPage * CALL_HISTORY_PAGE_SIZE + 1}–{Math.min((callHistoryPage + 1) * CALL_HISTORY_PAGE_SIZE, callHistory.data.total)} of {callHistory.data.total}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={callHistoryPage === 0}
+                        onClick={() => setCallHistoryPage(p => p - 1)}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="text-xs px-2">Page {callHistoryPage + 1} of {Math.ceil(callHistory.data.total / CALL_HISTORY_PAGE_SIZE)}</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={(callHistoryPage + 1) * CALL_HISTORY_PAGE_SIZE >= callHistory.data.total}
+                        onClick={() => setCallHistoryPage(p => p + 1)}
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setLocation(`/call-logs?campaign=${c.id}`)}>
