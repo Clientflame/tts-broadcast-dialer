@@ -2583,6 +2583,48 @@ export const appRouter = router({
 
       return { results };
     }),
+
+    // ─── Auto-Rotate Underperforming DIDs ─────────────────────────────────
+
+    /** Get auto-rotate settings */
+    getAutoRotateSettings: protectedProcedure.query(async () => {
+      return db.getAutoRotateSettings();
+    }),
+
+    /** Update auto-rotate settings */
+    updateAutoRotateSettings: adminProcedure.input(z.object({
+      enabled: z.boolean().optional(),
+      threshold: z.number().min(1).max(100).optional(),
+      minCalls: z.number().min(10).max(10000).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const result = await db.updateAutoRotateSettings(input, ctx.user.id);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.updateAutoRotateSettings",
+        resource: "callerId",
+        details: input,
+      });
+      return result;
+    }),
+
+    /** Manually trigger auto-rotate evaluation */
+    evaluateAutoRotate: adminProcedure.mutation(async ({ ctx }) => {
+      const disabled = await db.evaluateAutoRotate();
+      if (disabled.length > 0) {
+        await db.createAuditLog({
+          userId: ctx.user.id,
+          userName: ctx.user.name || undefined,
+          action: "callerId.autoRotateEvaluation",
+          resource: "callerId",
+          details: {
+            disabledCount: disabled.length,
+            dids: disabled.map(d => ({ phone: d.phoneNumber, answerRate: d.answerRate, calls: d.totalCalls })),
+          },
+        });
+      }
+      return { disabled, count: disabled.length };
+    }),
   }),
 
   templates: router({

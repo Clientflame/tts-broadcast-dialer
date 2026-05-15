@@ -3,13 +3,19 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useState, useMemo } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useState, useMemo, useEffect } from "react";
+import { toast } from "sonner";
 import {
   Activity, Phone, PhoneCall, PhoneOff, Clock, TrendingUp, TrendingDown,
   ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, AlertTriangle,
   BarChart3, Timer, DollarSign, ArrowUpDown, ChevronDown, ChevronUp,
+  Settings, RotateCcw, Loader2, Zap, RefreshCw,
 } from "lucide-react";
 
 type SortField = "phoneNumber" | "totalCalls" | "answerRate" | "avgDuration" | "failureRate";
@@ -49,6 +55,7 @@ function AnswerRateBar({ rate, size = "md" }: { rate: number; size?: "sm" | "md"
 }
 
 export default function DidAnalytics() {
+  const utils = trpc.useUtils();
   const { data: summary = [], isLoading } = trpc.callerIds.analyticsSummary.useQuery();
   const [days, setDays] = useState(7);
   const { data: volumeData = [] } = trpc.callerIds.callVolume.useQuery({ days });
@@ -60,6 +67,43 @@ export default function DidAnalytics() {
     { callerIdStr: selectedDid! },
     { enabled: !!selectedDid }
   );
+
+  // Auto-rotate settings
+  const { data: autoRotateSettings } = trpc.callerIds.getAutoRotateSettings.useQuery();
+  const [showAutoRotateSettings, setShowAutoRotateSettings] = useState(false);
+  const [arEnabled, setArEnabled] = useState(false);
+  const [arThreshold, setArThreshold] = useState(3);
+  const [arMinCalls, setArMinCalls] = useState(50);
+
+  useEffect(() => {
+    if (autoRotateSettings) {
+      setArEnabled(autoRotateSettings.enabled);
+      setArThreshold(autoRotateSettings.threshold);
+      setArMinCalls(autoRotateSettings.minCalls);
+    }
+  }, [autoRotateSettings]);
+
+  const updateAutoRotateMut = trpc.callerIds.updateAutoRotateSettings.useMutation({
+    onSuccess: (result) => {
+      utils.callerIds.getAutoRotateSettings.invalidate();
+      toast.success("Auto-rotate settings updated");
+      setShowAutoRotateSettings(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const evaluateAutoRotateMut = trpc.callerIds.evaluateAutoRotate.useMutation({
+    onSuccess: (result) => {
+      utils.callerIds.analyticsSummary.invalidate();
+      utils.callerIds.list.invalidate();
+      if (result.count > 0) {
+        toast.success(`Auto-rotate disabled ${result.count} underperforming DID(s)`);
+      } else {
+        toast.info("All DIDs are performing above threshold — no changes made");
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   // Aggregate stats
   const totals = useMemo(() => {
@@ -77,6 +121,16 @@ export default function DidAnalytics() {
     }
     return { ...t, answerRate: t.totalCalls > 0 ? Math.round((t.answered / t.totalCalls) * 100) : 0 };
   }, [summary]);
+
+  // Count DIDs that would be affected by current threshold
+  const atRiskCount = useMemo(() => {
+    if (!autoRotateSettings) return 0;
+    return summary.filter(d =>
+      d.isActive === 1 && !d.autoDisabled &&
+      d.totalCalls >= (autoRotateSettings.minCalls) &&
+      d.answerRate < (autoRotateSettings.threshold)
+    ).length;
+  }, [summary, autoRotateSettings]);
 
   // Sorted data
   const sorted = useMemo(() => {
@@ -125,10 +179,69 @@ export default function DidAnalytics() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">DID Analytics</h1>
-          <p className="text-muted-foreground">Per-DID performance metrics, answer rates, and flagging history</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">DID Analytics</h1>
+            <p className="text-muted-foreground">Per-DID performance metrics, answer rates, and flagging history</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAutoRotateSettings(true)}
+                    className={autoRotateSettings?.enabled ? "border-blue-400 text-blue-600" : ""}
+                  >
+                    <Settings className="h-4 w-4 mr-1.5" />
+                    Auto-Rotate
+                    {autoRotateSettings?.enabled && (
+                      <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700">ON</Badge>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {autoRotateSettings?.enabled
+                    ? `Auto-rotate enabled: disable DIDs below ${autoRotateSettings.threshold}% answer rate (min ${autoRotateSettings.minCalls} calls)`
+                    : "Configure auto-rotate to disable underperforming DIDs"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            {autoRotateSettings?.enabled && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => evaluateAutoRotateMut.mutate()}
+                disabled={evaluateAutoRotateMut.isPending}
+              >
+                {evaluateAutoRotateMut.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Evaluating...</>
+                ) : (
+                  <><Zap className="h-4 w-4 mr-1.5" /> Run Evaluation</>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
+
+        {/* Auto-Rotate Status Banner */}
+        {autoRotateSettings?.enabled && atRiskCount > 0 && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-amber-800 dark:text-amber-300">
+                  {atRiskCount} DID{atRiskCount > 1 ? "s" : ""} below auto-rotate threshold
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-400 mt-0.5">
+                  {atRiskCount} active DID{atRiskCount > 1 ? "s have" : " has"} an answer rate below {autoRotateSettings.threshold}% with at least {autoRotateSettings.minCalls} calls.
+                  Click "Run Evaluation" to disable them.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -341,52 +454,73 @@ export default function DidAnalytics() {
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No DIDs found. Add caller IDs to start tracking performance.
                     </td></tr>
-                  ) : sorted.map(did => (
-                    <tr
-                      key={did.id}
-                      className={`border-b hover:bg-muted/30 cursor-pointer transition-colors ${selectedDid === did.phoneNumber ? "bg-primary/5 border-primary/20" : ""} ${did.autoDisabled ? "bg-red-50/30" : ""}`}
-                      onClick={() => setSelectedDid(selectedDid === did.phoneNumber ? null : did.phoneNumber)}
-                    >
-                      <td className="p-3">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <HealthIcon status={did.healthStatus} autoDisabled={did.autoDisabled} />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {did.autoDisabled ? "Flagged/Disabled" : did.healthStatus}
-                              {did.flagReason ? ` — ${did.flagReason}` : ""}
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </td>
-                      <td className="p-3 font-mono font-medium">{did.phoneNumber}</td>
-                      <td className="p-3 text-muted-foreground">{did.label || "—"}</td>
-                      <td className="p-3 text-right font-medium">{did.totalCalls.toLocaleString()}</td>
-                      <td className="p-3 text-right text-green-600">{did.answered.toLocaleString()}</td>
-                      <td className="p-3 text-right text-red-600">{did.failed.toLocaleString()}</td>
-                      <td className="p-3 text-right text-muted-foreground">{did.noAnswer.toLocaleString()}</td>
-                      <td className="p-3 text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                          <AnswerRateBar rate={did.answerRate} size="sm" />
-                          <span className={`font-medium min-w-[3ch] ${did.answerRate >= 5 ? "text-green-600" : did.answerRate >= 2 ? "text-yellow-600" : "text-red-600"}`}>
-                            {did.answerRate}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="p-3 text-right text-muted-foreground">{formatDuration(did.avgDuration)}</td>
-                      <td className="p-3 text-right">
-                        {did.recentCallCount >= 10 ? (
-                          <Badge variant={did.failureRate >= 70 ? "destructive" : did.failureRate >= 50 ? "secondary" : "outline"} className="text-xs">
-                            {did.failureRate}%
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-right text-muted-foreground">{formatMinutes(did.totalDuration)}</td>
-                    </tr>
-                  ))}
+                  ) : sorted.map(did => {
+                    const isBelowThreshold = autoRotateSettings?.enabled &&
+                      did.totalCalls >= (autoRotateSettings?.minCalls || 50) &&
+                      did.answerRate < (autoRotateSettings?.threshold || 3) &&
+                      did.isActive === 1 && !did.autoDisabled;
+
+                    return (
+                      <tr
+                        key={did.id}
+                        className={`border-b hover:bg-muted/30 cursor-pointer transition-colors ${selectedDid === did.phoneNumber ? "bg-primary/5 border-primary/20" : ""} ${did.autoDisabled ? "bg-red-50/30 dark:bg-red-950/20" : ""} ${isBelowThreshold ? "bg-amber-50/30 dark:bg-amber-950/20" : ""}`}
+                        onClick={() => setSelectedDid(selectedDid === did.phoneNumber ? null : did.phoneNumber)}
+                      >
+                        <td className="p-3">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger>
+                                <HealthIcon status={did.healthStatus} autoDisabled={did.autoDisabled} />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {did.autoDisabled ? "Flagged/Disabled" : did.healthStatus}
+                                {did.flagReason ? ` — ${did.flagReason}` : ""}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </td>
+                        <td className="p-3 font-mono font-medium">
+                          <div className="flex items-center gap-2">
+                            {did.phoneNumber}
+                            {did.autoDisabled && did.flagReason?.startsWith("Auto-rotate:") && (
+                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                                <RotateCcw className="h-2.5 w-2.5 mr-0.5" /> Low Answer Rate
+                              </Badge>
+                            )}
+                            {isBelowThreshold && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-400 text-amber-600">
+                                At Risk
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 text-muted-foreground">{did.label || "—"}</td>
+                        <td className="p-3 text-right font-medium">{did.totalCalls.toLocaleString()}</td>
+                        <td className="p-3 text-right text-green-600">{did.answered.toLocaleString()}</td>
+                        <td className="p-3 text-right text-red-600">{did.failed.toLocaleString()}</td>
+                        <td className="p-3 text-right text-muted-foreground">{did.noAnswer.toLocaleString()}</td>
+                        <td className="p-3 text-right">
+                          <div className="flex items-center gap-2 justify-end">
+                            <AnswerRateBar rate={did.answerRate} size="sm" />
+                            <span className={`font-medium min-w-[3ch] ${did.answerRate >= 5 ? "text-green-600" : did.answerRate >= 2 ? "text-yellow-600" : "text-red-600"}`}>
+                              {did.answerRate}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-3 text-right text-muted-foreground">{formatDuration(did.avgDuration)}</td>
+                        <td className="p-3 text-right">
+                          {did.recentCallCount >= 10 ? (
+                            <Badge variant={did.failureRate >= 70 ? "destructive" : did.failureRate >= 50 ? "secondary" : "outline"} className="text-xs">
+                              {did.failureRate}%
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right text-muted-foreground">{formatMinutes(did.totalDuration)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -457,23 +591,33 @@ export default function DidAnalytics() {
                   const details = event.details as Record<string, any> | null;
                   const isFlag = event.action === "did.flagged";
                   const isReactivate = event.action === "did.reactivated";
+                  const isAutoRotate = event.action === "callerId.autoRotateEvaluation";
                   return (
-                    <div key={event.id} className={`flex items-start gap-3 p-3 rounded-lg border ${isFlag ? "border-red-200 bg-red-50/30" : isReactivate ? "border-green-200 bg-green-50/30" : "border-border"}`}>
+                    <div key={event.id} className={`flex items-start gap-3 p-3 rounded-lg border ${isFlag ? "border-red-200 bg-red-50/30" : isReactivate ? "border-green-200 bg-green-50/30" : isAutoRotate ? "border-blue-200 bg-blue-50/30" : "border-border"}`}>
                       <div className="mt-0.5">
                         {isFlag ? <ShieldX className="h-4 w-4 text-red-500" /> :
                          isReactivate ? <ShieldCheck className="h-4 w-4 text-green-500" /> :
+                         isAutoRotate ? <RotateCcw className="h-4 w-4 text-blue-500" /> :
                          <Activity className="h-4 w-4 text-muted-foreground" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">
-                            {isFlag ? "DID Flagged" : isReactivate ? "DID Reactivated" : event.action}
+                            {isFlag ? "DID Flagged" : isReactivate ? "DID Reactivated" : isAutoRotate ? "Auto-Rotate Evaluation" : event.action}
                           </span>
                           {details?.phoneNumber && <span className="font-mono text-xs text-muted-foreground">{details.phoneNumber}</span>}
+                          {isAutoRotate && details?.disabledCount !== undefined && (
+                            <Badge variant="secondary" className="text-[10px]">{details.disabledCount} disabled</Badge>
+                          )}
                         </div>
                         {details?.reason && <p className="text-xs text-muted-foreground mt-0.5">{details.reason}</p>}
                         {details?.failureRate !== undefined && (
                           <p className="text-xs text-muted-foreground mt-0.5">Failure rate: {details.failureRate}%</p>
+                        )}
+                        {isAutoRotate && details?.dids && Array.isArray(details.dids) && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {details.dids.map((d: any) => `${d.phone} (${d.answerRate}%)`).join(", ")}
+                          </p>
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -487,6 +631,126 @@ export default function DidAnalytics() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Auto-Rotate Settings Dialog */}
+      <Dialog open={showAutoRotateSettings} onOpenChange={setShowAutoRotateSettings}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" /> Auto-Rotate Settings
+            </DialogTitle>
+            <DialogDescription>
+              Automatically disable DIDs that fall below a minimum answer rate threshold.
+              Disabled DIDs can be re-enabled from the Caller IDs page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-2">
+            {/* Enable Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base font-medium">Enable Auto-Rotate</Label>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  When enabled, DIDs below the answer rate threshold will be flagged for removal from the active pool
+                </p>
+              </div>
+              <Switch checked={arEnabled} onCheckedChange={setArEnabled} />
+            </div>
+
+            {arEnabled && (
+              <>
+                {/* Threshold */}
+                <div className="space-y-2">
+                  <Label>Minimum Answer Rate (%)</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={arThreshold}
+                      onChange={e => setArThreshold(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                      className="w-24"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      DIDs with answer rate below {arThreshold}% will be disabled
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 5, 10].map(v => (
+                      <Button
+                        key={v}
+                        variant={arThreshold === v ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setArThreshold(v)}
+                      >
+                        {v}%
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Min Calls */}
+                <div className="space-y-2">
+                  <Label>Minimum Calls Before Evaluation</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="number"
+                      min={10}
+                      max={10000}
+                      value={arMinCalls}
+                      onChange={e => setArMinCalls(Math.max(10, Math.min(10000, parseInt(e.target.value) || 10)))}
+                      className="w-24"
+                    />
+                    <span className="text-sm text-muted-foreground">
+                      DIDs need at least {arMinCalls} calls before being evaluated
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    {[25, 50, 100, 200, 500].map(v => (
+                      <Button
+                        key={v}
+                        variant={arMinCalls === v ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setArMinCalls(v)}
+                      >
+                        {v}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-medium">Preview</p>
+                  <p className="text-sm text-muted-foreground">
+                    DIDs with an answer rate below <span className="font-semibold text-foreground">{arThreshold}%</span> after
+                    at least <span className="font-semibold text-foreground">{arMinCalls}</span> calls will be auto-disabled.
+                  </p>
+                  {summary.length > 0 && (
+                    <p className="text-sm">
+                      Currently <span className="font-semibold text-amber-600">
+                        {summary.filter(d => d.isActive === 1 && !d.autoDisabled && d.totalCalls >= arMinCalls && d.answerRate < arThreshold).length}
+                      </span> active DID(s) would be affected.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAutoRotateSettings(false)}>Cancel</Button>
+            <Button
+              onClick={() => updateAutoRotateMut.mutate({ enabled: arEnabled, threshold: arThreshold, minCalls: arMinCalls })}
+              disabled={updateAutoRotateMut.isPending}
+            >
+              {updateAutoRotateMut.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
+              ) : "Save Settings"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

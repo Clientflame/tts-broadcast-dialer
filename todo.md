@@ -1138,3 +1138,16 @@
 - [x] Schema: added didPoolStrategy, didRotationMode, didManualIds columns to campaigns
 - [x] Backend: getActiveCallerIds supports all strategies, dialer uses random rotation mode
 - [x] Frontend: strategy cards, rotation toggle, manual DID picker, detail view shows strategy+mode
+
+## v2.3.9 Features
+- [x] DID usage analytics: per-DID answer rates, call volumes, and performance metrics
+  - [x] Backend: query call logs grouped by caller ID to compute answer rate, total calls, avg duration
+  - [x] Backend: time-series data for DID performance trends (daily/weekly)
+  - [x] Frontend: DID analytics tab/section on Caller IDs page with sortable table
+  - [x] Frontend: per-DID performance cards (answer rate, total calls, last used, trend)
+  - [x] Frontend: chart showing top/bottom performing DIDs
+- [x] Auto-rotate underperforming DIDs
+  - [x] Add performance threshold setting (min answer rate %, min call volume before evaluation)
+  - [x] Add auto-disable logic: disable DIDs below threshold after N calls
+  - [x] Add auto-rotate UI: settings panel with threshold controls, enable/disable toggle
+  - [x] Show disabled-by-performance status on DID cards with reason and reset option

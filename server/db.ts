@@ -4232,3 +4232,125 @@ export async function getDidImportHistory(userId?: number, limit = 50) {
     .orderBy(desc(didImportHistory.createdAt))
     .limit(limit);
 }
+
+// ─── Auto-Rotate Underperforming DIDs ─────────────────────────────────────────
+
+const AUTO_ROTATE_SETTINGS_KEYS = {
+  enabled: "auto_rotate_enabled",
+  threshold: "auto_rotate_threshold",
+  minCalls: "auto_rotate_min_calls",
+} as const;
+
+export interface AutoRotateSettings {
+  enabled: boolean;
+  threshold: number; // minimum answer rate % — DIDs below this get disabled
+  minCalls: number;  // minimum calls before a DID is evaluated
+}
+
+export async function getAutoRotateSettings(): Promise<AutoRotateSettings> {
+  const keys = Object.values(AUTO_ROTATE_SETTINGS_KEYS);
+  const settings = await getAppSettings(keys);
+  const get = (key: string) => settings.find(s => s.key === key)?.value;
+  return {
+    enabled: get(AUTO_ROTATE_SETTINGS_KEYS.enabled) === "1",
+    threshold: parseInt(get(AUTO_ROTATE_SETTINGS_KEYS.threshold) || "3", 10),
+    minCalls: parseInt(get(AUTO_ROTATE_SETTINGS_KEYS.minCalls) || "50", 10),
+  };
+}
+
+export async function updateAutoRotateSettings(
+  data: Partial<AutoRotateSettings>,
+  updatedBy?: number,
+): Promise<AutoRotateSettings> {
+  if (data.enabled !== undefined) {
+    await upsertAppSetting(AUTO_ROTATE_SETTINGS_KEYS.enabled, data.enabled ? "1" : "0", "Auto-rotate: enable/disable", 0, updatedBy);
+  }
+  if (data.threshold !== undefined) {
+    await upsertAppSetting(AUTO_ROTATE_SETTINGS_KEYS.threshold, String(data.threshold), "Auto-rotate: minimum answer rate % threshold", 0, updatedBy);
+  }
+  if (data.minCalls !== undefined) {
+    await upsertAppSetting(AUTO_ROTATE_SETTINGS_KEYS.minCalls, String(data.minCalls), "Auto-rotate: minimum calls before evaluation", 0, updatedBy);
+  }
+  return getAutoRotateSettings();
+}
+
+/**
+ * Evaluate all DIDs against auto-rotate threshold.
+ * Uses call_logs data (callerIdUsed) to compute answer rate per DID.
+ * DIDs below the threshold with enough calls get auto-disabled.
+ * Returns list of newly disabled DIDs.
+ */
+export async function evaluateAutoRotate(): Promise<Array<{ id: number; phoneNumber: string; answerRate: number; totalCalls: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const settings = await getAutoRotateSettings();
+  if (!settings.enabled) return [];
+
+  // Get per-DID answer stats from call_logs
+  const rows = await db.execute(
+    sql`SELECT callerIdUsed,
+      COUNT(*) as total,
+      SUM(CASE WHEN status IN ('answered', 'completed') THEN 1 ELSE 0 END) as answered
+    FROM call_logs
+    WHERE callerIdUsed IS NOT NULL
+      AND status NOT IN ('pending', 'cancelled')
+    GROUP BY callerIdUsed`
+  ) as any;
+
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+
+  // Build answer rate map
+  const statsMap = new Map<string, { total: number; answered: number; answerRate: number }>();
+  for (const r of resultRows) {
+    const cid = String(r.callerIdUsed || "");
+    const total = Number(r.total) || 0;
+    const answered = Number(r.answered) || 0;
+    if (cid && total >= settings.minCalls) {
+      statsMap.set(cid, {
+        total,
+        answered,
+        answerRate: Math.round((answered / total) * 100),
+      });
+    }
+  }
+
+  // Get all active, non-disabled DIDs
+  const activeDids = await db.select({
+    id: callerIds.id,
+    phoneNumber: callerIds.phoneNumber,
+    isActive: callerIds.isActive,
+    autoDisabled: callerIds.autoDisabled,
+  }).from(callerIds).where(
+    and(
+      eq(callerIds.isActive, 1),
+      eq(callerIds.autoDisabled, 0),
+    )
+  );
+
+  const disabled: Array<{ id: number; phoneNumber: string; answerRate: number; totalCalls: number }> = [];
+
+  for (const did of activeDids) {
+    const stats = statsMap.get(did.phoneNumber);
+    if (!stats) continue; // Not enough calls or no data — skip
+
+    if (stats.answerRate < settings.threshold) {
+      // Disable this DID
+      await db.update(callerIds).set({
+        isActive: 0,
+        autoDisabled: 1,
+        flaggedAt: Date.now(),
+        flagReason: `Auto-rotate: ${stats.answerRate}% answer rate (below ${settings.threshold}% threshold, ${stats.total} calls)`,
+      }).where(eq(callerIds.id, did.id));
+
+      disabled.push({
+        id: did.id,
+        phoneNumber: did.phoneNumber,
+        answerRate: stats.answerRate,
+        totalCalls: stats.total,
+      });
+    }
+  }
+
+  return disabled;
+}
