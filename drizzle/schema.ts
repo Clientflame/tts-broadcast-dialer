@@ -146,6 +146,7 @@ export const campaigns = mysqlTable("campaigns", {
   ivrOptions: json("ivrOptions").$type<Array<{ digit: string; action: string; label: string }>>(),
   // Voicemail drop (AMD)
   amdEnabled: int("amdEnabled").default(0).notNull(),
+  amdAction: mysqlEnum("amdAction", ["leave_voicemail", "skip", "hangup"]).default("leave_voicemail").notNull(),
   voicemailAudioFileId: int("voicemailAudioFileId"),
   voicemailMessageText: text("voicemailMessageText"),
   // Time zone enforcement
@@ -464,6 +465,10 @@ export type ScriptSegment = {
   voice?: string;       // TTS voice ID (OpenAI or Google)
   provider?: "openai" | "google"; // TTS provider
   speed?: string;       // TTS speed (e.g., "1.0")
+  // Pre-generated static audio (for TTS segments without merge fields)
+  preGeneratedUrl?: string;  // S3 URL of pre-generated static audio
+  preGeneratedKey?: string;  // S3 key of pre-generated static audio
+  isDynamic?: boolean;       // true if text contains merge fields (needs real-time TTS)
   // Recorded segment fields
   audioFileId?: number; // reference to audio_files table
   audioName?: string;   // display name of the recorded audio

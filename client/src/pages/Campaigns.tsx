@@ -101,7 +101,7 @@ type FormState = {
   // Predictive dialer
   predictiveAgentCount: number; predictiveMaxAbandonRate: number;
   // Voicemail drop / AMD
-  amdEnabled: boolean; voicemailAudioId: number; voicemailMessage: string;
+  amdEnabled: boolean; amdAction: "leave_voicemail" | "skip" | "hangup"; voicemailAudioId: number; voicemailMessage: string;
   // IVR Payment
   ivrPaymentEnabled: boolean; ivrPaymentDigit: string; ivrPaymentAmount: number;
   // Timezone enforcement
@@ -125,7 +125,7 @@ const DEFAULT_FORM: FormState = {
   scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 10,
   predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
-  amdEnabled: false, voicemailAudioId: 0, voicemailMessage: "",
+  amdEnabled: false, amdAction: "leave_voicemail" as const, voicemailAudioId: 0, voicemailMessage: "",
   ivrPaymentEnabled: false, ivrPaymentDigit: "1", ivrPaymentAmount: 0,
   tzEnforcementEnabled: true, tcpaStartHour: 8, tcpaEndHour: 21,
   routingMode: "broadcast", voiceAiPromptId: 0,
@@ -793,17 +793,49 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
               <Switch checked={form.amdEnabled} onCheckedChange={v => setForm(p => ({ ...p, amdEnabled: v }))} />
             </div>
             {form.amdEnabled && (
-              <div className="space-y-3 pt-2 border-t">
+              <div className="space-y-4 pt-2 border-t">
+                {/* AMD Action Selection */}
                 <div>
-                  <Label>Voicemail Message (TTS)</Label>
-                  <textarea
-                    className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    placeholder="Hi, this is a message from... Please call us back at..."
-                    value={form.voicemailMessage}
-                    onChange={e => setForm(p => ({ ...p, voicemailMessage: e.target.value }))}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">This message will be converted to speech and played when a voicemail is detected. Leave empty to use the main campaign audio.</p>
+                  <Label className="font-medium">When Voicemail Detected</Label>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <button type="button" className={`p-3 rounded-lg border text-center text-sm transition-colors ${
+                      form.amdAction === "leave_voicemail" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                    }`} onClick={() => setForm(p => ({ ...p, amdAction: "leave_voicemail" }))}>
+                      <Volume2 className="h-4 w-4 mx-auto mb-1" />
+                      <div className="font-medium text-xs">Leave Message</div>
+                      <div className="text-[10px] text-muted-foreground">Play voicemail audio</div>
+                    </button>
+                    <button type="button" className={`p-3 rounded-lg border text-center text-sm transition-colors ${
+                      form.amdAction === "skip" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                    }`} onClick={() => setForm(p => ({ ...p, amdAction: "skip" }))}>
+                      <RotateCcw className="h-4 w-4 mx-auto mb-1" />
+                      <div className="font-medium text-xs">Skip</div>
+                      <div className="text-[10px] text-muted-foreground">Hang up, retry later</div>
+                    </button>
+                    <button type="button" className={`p-3 rounded-lg border text-center text-sm transition-colors ${
+                      form.amdAction === "hangup" ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/50"
+                    }`} onClick={() => setForm(p => ({ ...p, amdAction: "hangup" }))}>
+                      <XCircle className="h-4 w-4 mx-auto mb-1" />
+                      <div className="font-medium text-xs">Hang Up</div>
+                      <div className="text-[10px] text-muted-foreground">End call, no retry</div>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Voicemail message only shown when action is leave_voicemail */}
+                {form.amdAction === "leave_voicemail" && (
+                  <div>
+                    <Label>Voicemail Message (TTS)</Label>
+                    <textarea
+                      className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Hi, this is a message from... Please call us back at..."
+                      value={form.voicemailMessage}
+                      onChange={e => setForm(p => ({ ...p, voicemailMessage: e.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">This message will be converted to speech and played when a voicemail is detected. Leave empty to use the main campaign audio.</p>
+                  </div>
+                )}
+
                 <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium text-amber-600">How AMD Works</span>
@@ -811,7 +843,9 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
                     <li>When a call is answered, Asterisk's AMD module analyzes the audio</li>
                     <li>If a <strong>human</strong> is detected, the full campaign message plays normally</li>
-                    <li>If a <strong>machine/voicemail</strong> is detected, the voicemail message is played after the beep</li>
+                    <li><strong>Leave Message:</strong> Plays voicemail audio after the beep</li>
+                    <li><strong>Skip:</strong> Hangs up and schedules a retry attempt</li>
+                    <li><strong>Hang Up:</strong> Ends the call immediately, no retry</li>
                     <li>AMD results are tracked in call logs for analytics</li>
                   </ul>
                 </div>
@@ -1216,6 +1250,7 @@ export default function Campaigns() {
       predictiveAgentCount: (c as any).predictiveAgentCount || 1,
       predictiveMaxAbandonRate: (c as any).predictiveMaxAbandonRate || 3,
       amdEnabled: !!(c as any).amdEnabled,
+      amdAction: (c as any).amdAction || "leave_voicemail",
       voicemailAudioId: (c as any).voicemailAudioId || 0,
       voicemailMessage: (c as any).voicemailMessage || "",
       ivrPaymentEnabled: !!(c as any).ivrPaymentEnabled,
@@ -1275,8 +1310,9 @@ export default function Campaigns() {
       predictiveMaxAbandonRate: editForm.pacingMode === "predictive" ? editForm.predictiveMaxAbandonRate : undefined,
       // AMD / Voicemail drop
       amdEnabled: editForm.amdEnabled ? 1 : 0,
-      voicemailMessage: editForm.amdEnabled ? editForm.voicemailMessage || undefined : undefined,
-      voicemailAudioId: editForm.amdEnabled && editForm.voicemailAudioId ? editForm.voicemailAudioId : undefined,
+      amdAction: editForm.amdEnabled ? editForm.amdAction : undefined,
+      voicemailMessage: editForm.amdEnabled && editForm.amdAction === "leave_voicemail" ? editForm.voicemailMessage || undefined : undefined,
+      voicemailAudioId: editForm.amdEnabled && editForm.amdAction === "leave_voicemail" && editForm.voicemailAudioId ? editForm.voicemailAudioId : undefined,
       // IVR Payment
       ivrPaymentEnabled: editForm.ivrPaymentEnabled ? 1 : 0,
       ivrPaymentDigit: editForm.ivrPaymentEnabled ? editForm.ivrPaymentDigit : undefined,
@@ -1334,8 +1370,9 @@ export default function Campaigns() {
       predictiveMaxAbandonRate: form.pacingMode === "predictive" ? form.predictiveMaxAbandonRate : undefined,
       // AMD / Voicemail drop
       amdEnabled: form.amdEnabled ? 1 : 0,
-      voicemailMessage: form.amdEnabled ? form.voicemailMessage || undefined : undefined,
-      voicemailAudioId: form.amdEnabled && form.voicemailAudioId ? form.voicemailAudioId : undefined,
+      amdAction: form.amdEnabled ? form.amdAction : undefined,
+      voicemailMessage: form.amdEnabled && form.amdAction === "leave_voicemail" ? form.voicemailMessage || undefined : undefined,
+      voicemailAudioId: form.amdEnabled && form.amdAction === "leave_voicemail" && form.voicemailAudioId ? form.voicemailAudioId : undefined,
       // IVR Payment
       ivrPaymentEnabled: form.ivrPaymentEnabled ? 1 : 0,
       ivrPaymentDigit: form.ivrPaymentEnabled ? form.ivrPaymentDigit : undefined,

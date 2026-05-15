@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Play, Pause, Loader2, ScrollText, GripVertical,
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
-  History, BarChart3, RotateCcw, Eye,
+  History, BarChart3, RotateCcw, Eye, Zap,
 } from "lucide-react";
 import { ImportExportButtons } from "@/components/ImportExportButtons";
 
@@ -29,6 +29,11 @@ type Segment = {
   voice?: string;
   provider?: "openai" | "google";
   speed?: string;
+  // Pre-generated static audio
+  preGeneratedUrl?: string;
+  preGeneratedKey?: string;
+  isDynamic?: boolean;
+  // Recorded segment
   audioFileId?: number;
   audioName?: string;
   audioUrl?: string;
@@ -133,6 +138,16 @@ function SegmentEditor({
             )}
           </Badge>
           <span className="text-xs text-muted-foreground">#{index + 1}</span>
+          {segment.type === "tts" && segment.preGeneratedUrl && !segment.isDynamic && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-green-600 border-green-300">
+              <Zap className="h-2.5 w-2.5 mr-0.5" /> Pre-Generated
+            </Badge>
+          )}
+          {segment.type === "tts" && segment.isDynamic && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 text-amber-600 border-amber-300">
+              Dynamic
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={onMoveUp}>
@@ -330,6 +345,13 @@ export default function Scripts() {
       } else {
         toast.error(`Preview errors: ${data.errors.join(", ")}`);
       }
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const preGenerateScript = trpc.callScripts.preGenerate.useMutation({
+    onSuccess: (data) => {
+      scripts.refetch();
+      toast.success(`Pre-generated ${data.generated} static segments (${data.skipped} dynamic/skipped)`);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -620,6 +642,9 @@ export default function Scripts() {
                             </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMetricsScriptId(script.id)} title="Performance Metrics">
                               <BarChart3 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => preGenerateScript.mutate({ id: script.id })} title="Pre-Generate Static Segments" disabled={preGenerateScript.isPending}>
+                              <Zap className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => {
                               resetForm();

@@ -1227,3 +1227,5 @@
 - [x] Audio duration display — show duration column in Generated Audio Files table
 - [x] Fix: Exclude MI, NY, NJ from default targeting states in campaign creation
 - [x] Fix: SQL column mismatch error when submitting campaign creation form
+- [x] AMD voicemail detection with options: leave pre-recorded message OR skip/hang up
+- [x] Hybrid call scripts: pre-record static TTS segments at script creation, keep dynamic fields (names, phone) for real-time generation

@@ -783,6 +783,7 @@ export const appRouter = router({
       predictiveMaxAbandonRate: z.number().min(1).max(10).optional(),
       // AMD / Voicemail drop
       amdEnabled: z.number().min(0).max(1).optional(),
+      amdAction: z.enum(["leave_voicemail", "skip", "hangup"]).optional(),
       voicemailAudioId: z.number().optional(),
       voicemailMessage: z.string().max(2000).optional(),
       // IVR Payment
@@ -863,6 +864,7 @@ export const appRouter = router({
       predictiveMaxAbandonRate: z.number().min(1).max(10).optional(),
       // AMD / Voicemail drop
       amdEnabled: z.number().min(0).max(1).optional(),
+      amdAction: z.enum(["leave_voicemail", "skip", "hangup"]).optional(),
       voicemailAudioId: z.number().optional(),
       voicemailMessage: z.string().max(2000).optional(),
       // IVR Payment
@@ -3806,6 +3808,45 @@ Return ONLY the message text, nothing else.`;
       }
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.import", resource: "callScript", details: { imported, skipped, total: input.data.length } });
       return { success: true, imported, skipped, total: input.data.length };
+    }),
+    // Pre-generate static TTS segments (segments without merge fields)
+    preGenerate: protectedProcedure.input(z.object({
+      id: z.number(),
+    })).mutation(async ({ ctx, input }) => {
+      const script = await db.getCallScript(input.id);
+      if (!script) throw new TRPCError({ code: "NOT_FOUND" });
+      const segments = script.segments as ScriptSegment[];
+      const MERGE_FIELD_REGEX = /\{\{[^}]+\}\}/;
+      let generated = 0;
+      let skipped = 0;
+      const updatedSegments = [...segments];
+      for (let i = 0; i < updatedSegments.length; i++) {
+        const seg = updatedSegments[i];
+        if (seg.type !== "tts" || !seg.text) { skipped++; continue; }
+        const hasMergeFields = MERGE_FIELD_REGEX.test(seg.text);
+        if (hasMergeFields) {
+          // Mark as dynamic - needs real-time TTS at dial time
+          updatedSegments[i] = { ...seg, isDynamic: true, preGeneratedUrl: undefined, preGeneratedKey: undefined };
+          skipped++;
+          continue;
+        }
+        // Static segment - pre-generate TTS audio
+        try {
+          const provider = seg.provider || (GOOGLE_VOICES.includes(seg.voice as any) ? "google" : "openai");
+          const speed = seg.speed ? parseFloat(seg.speed) : 1.0;
+          const result = provider === "google"
+            ? await generateGoogleTTS({ text: seg.text, voice: seg.voice as GoogleTTSVoice, name: `script-${script.id}-seg-${seg.id}`, speed })
+            : await generateTTS({ text: seg.text, voice: seg.voice as any, name: `script-${script.id}-seg-${seg.id}`, speed });
+          updatedSegments[i] = { ...seg, isDynamic: false, preGeneratedUrl: result.s3Url, preGeneratedKey: result.s3Key };
+          generated++;
+        } catch (err) {
+          console.error(`[Script PreGen] Failed segment ${seg.id}:`, err);
+          skipped++;
+        }
+      }
+      await db.updateCallScript(input.id, { segments: updatedSegments as any });
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.preGenerate", resource: "callScript", resourceId: input.id, details: { generated, skipped } });
+      return { success: true, generated, skipped, total: segments.length };
     }),
   }),
 

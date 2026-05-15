@@ -1,0 +1,1 @@
+ALTER TABLE `campaigns` ADD `amdAction` enum('leave_voicemail','skip','hangup') DEFAULT 'leave_voicemail' NOT NULL;
