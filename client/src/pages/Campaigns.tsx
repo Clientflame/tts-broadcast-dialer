@@ -182,12 +182,13 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
-function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, templates, scripts, didLabels, labelCounts, onPreviewDayPart }: {
+function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, voicemailLibrary, templates, scripts, didLabels, labelCounts, onPreviewDayPart }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   messageRef: React.RefObject<HTMLTextAreaElement | null>;
   contactLists: any;
   readyAudioFiles: any[];
+  voicemailLibrary: any;
   templates: any;
   scripts: any;
   didLabels: string[];
@@ -1764,6 +1765,7 @@ export default function Campaigns() {
               messageRef={editMessageRef}
               contactLists={contactLists.data}
               readyAudioFiles={readyAudioFiles}
+              voicemailLibrary={voicemailLibrary}
               templates={templates.data}
               scripts={callScripts.data}
               didLabels={didLabels || []}
@@ -1813,6 +1815,7 @@ export default function Campaigns() {
                 messageRef={messageRef}
                 contactLists={contactLists.data}
                 readyAudioFiles={readyAudioFiles}
+                voicemailLibrary={voicemailLibrary}
                 templates={templates.data}
                 scripts={callScripts.data}
                 didLabels={didLabels || []}
