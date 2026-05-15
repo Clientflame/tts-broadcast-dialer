@@ -1229,3 +1229,6 @@
 - [x] Fix: SQL column mismatch error when submitting campaign creation form
 - [x] AMD voicemail detection with options: leave pre-recorded message OR skip/hang up
 - [x] Hybrid call scripts: pre-record static TTS segments at script creation, keep dynamic fields (names, phone) for real-time generation
+- [x] Auto pre-generate static TTS segments on script create/update (fire-and-forget background)
+- [x] Voicemail drop audio selector — when AMD action is "Leave Message", pick which audio file to play
+- [x] PBX agent integration — include preGeneratedUrl in poll response so agent skips TTS for cached segments

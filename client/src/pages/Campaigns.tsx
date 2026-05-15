@@ -824,15 +824,44 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
 
                 {/* Voicemail message only shown when action is leave_voicemail */}
                 {form.amdAction === "leave_voicemail" && (
-                  <div>
-                    <Label>Voicemail Message (TTS)</Label>
-                    <textarea
-                      className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      placeholder="Hi, this is a message from... Please call us back at..."
-                      value={form.voicemailMessage}
-                      onChange={e => setForm(p => ({ ...p, voicemailMessage: e.target.value }))}
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">This message will be converted to speech and played when a voicemail is detected. Leave empty to use the main campaign audio.</p>
+                  <div className="space-y-3">
+                    {/* Voicemail Audio Source Selection */}
+                    <div>
+                      <Label>Voicemail Audio Source</Label>
+                      <select
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.voicemailAudioId || ""}
+                        onChange={e => setForm(p => ({ ...p, voicemailAudioId: parseInt(e.target.value) || 0 }))}
+                      >
+                        <option value="">Use TTS message below (or main campaign audio)</option>
+                        <optgroup label="── Audio Library ──">
+                          {readyAudioFiles.map(f => (
+                            <option key={`audio-${f.id}`} value={f.id}>{f.name} ({f.voice})</option>
+                          ))}
+                        </optgroup>
+                        {voicemailLibrary.data?.entries && voicemailLibrary.data.entries.length > 0 && (
+                          <optgroup label="── Voicemail Library ──">
+                            {voicemailLibrary.data.entries.map((v: any) => (
+                              <option key={`vm-${v.id}`} value={-v.id}>🎙️ {v.name} ({v.voice})</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      <p className="text-xs text-muted-foreground mt-1">Select a pre-recorded audio file, or leave blank to use TTS text below.</p>
+                    </div>
+                    {/* TTS fallback message */}
+                    {!form.voicemailAudioId && (
+                      <div>
+                        <Label>Voicemail Message (TTS Fallback)</Label>
+                        <textarea
+                          className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          placeholder="Hi, this is a message from... Please call us back at..."
+                          value={form.voicemailMessage}
+                          onChange={e => setForm(p => ({ ...p, voicemailMessage: e.target.value }))}
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">This message will be converted to speech and played when a voicemail is detected. Leave empty to use the main campaign audio.</p>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1076,6 +1105,7 @@ export default function Campaigns() {
   const campaigns = trpc.campaigns.list.useQuery();
   const contactLists = trpc.contactLists.list.useQuery();
   const audioFiles = trpc.audio.list.useQuery();
+  const voicemailLibrary = trpc.voicemailCreator.libraryList.useQuery();
   const templates = trpc.templates.list.useQuery();
   const callScripts = trpc.callScripts.list.useQuery();
   const campaignDetail = trpc.campaigns.get.useQuery({ id: detailId! }, { enabled: !!detailId });

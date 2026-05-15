@@ -161,6 +161,17 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
 
     const callsWithSettings = await Promise.all(calls.map(async (c) => {
       const campaign = await getCampaignSettings(c.campaignId);
+      // Resolve voicemail audio file ID to URL if set
+      let voicemailResolvedUrl: string | null = (campaign as any)?.voicemailAudioUrl || (c as any).voicemailAudioUrl || null;
+      const vmAudioFileId = (campaign as any)?.voicemailAudioFileId;
+      if (vmAudioFileId && !voicemailResolvedUrl) {
+        try {
+          const audioFile = await db.getAudioFile(vmAudioFileId);
+          if (audioFile && audioFile.s3Url) {
+            voicemailResolvedUrl = audioFile.s3Url;
+          }
+        } catch { /* ignore - fallback to TTS message */ }
+      }
       return {
         id: c.id,
         phoneNumber: c.phoneNumber,
@@ -176,8 +187,9 @@ pbxRouter.post("/poll", async (req: Request, res: Response) => {
         callLogId: c.callLogId,
         // AMD / Voicemail drop (from campaign settings)
         amdEnabled: !!(campaign as any)?.amdEnabled,
-        voicemailAudioUrl: resolveUrlForAgent((campaign as any)?.voicemailAudioUrl || (c as any).voicemailAudioUrl || null, req),
-        voicemailMessage: (campaign as any)?.voicemailMessage || null,
+        amdAction: (campaign as any)?.amdAction || "leave_voicemail",
+        voicemailAudioUrl: resolveUrlForAgent(voicemailResolvedUrl, req),
+        voicemailMessage: (campaign as any)?.voicemailMessageText || (campaign as any)?.voicemailMessage || null,
         // IVR Payment (from campaign settings)
         ivrPaymentEnabled: !!(campaign as any)?.ivrPaymentEnabled,
         ivrPaymentDigit: (campaign as any)?.ivrPaymentDigit || null,

@@ -3579,6 +3579,41 @@ Return ONLY the message text, nothing else.`;
         status: "active",
       });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.create", resource: "callScript", resourceId: result.id });
+      // Auto pre-generate static TTS segments (fire-and-forget)
+      const { preGenerateStaticSegments } = await import("./services/script-audio");
+      preGenerateStaticSegments({ segments: input.segments as ScriptSegment[] }).then(async (preGenResult) => {
+        if (preGenResult.generated > 0) {
+          // Update segments with pre-generated URLs
+          const MERGE_FIELD_REGEX = /\{\{[^}]+\}\}/;
+          const updatedSegments = [...(input.segments as ScriptSegment[])];
+          for (let i = 0; i < updatedSegments.length; i++) {
+            const seg = updatedSegments[i];
+            if (seg.type !== "tts" || !seg.text) continue;
+            if (MERGE_FIELD_REGEX.test(seg.text)) {
+              updatedSegments[i] = { ...seg, isDynamic: true };
+            } else {
+              updatedSegments[i] = { ...seg, isDynamic: false };
+            }
+          }
+          // Re-run preGenerate to get URLs stored on the script
+          const script = await db.getCallScript(result.id);
+          if (script) {
+            const segs = script.segments as ScriptSegment[];
+            const finalSegments = [...segs];
+            for (let i = 0; i < finalSegments.length; i++) {
+              const seg = finalSegments[i];
+              if (seg.type !== "tts" || !seg.text) continue;
+              if (MERGE_FIELD_REGEX.test(seg.text)) {
+                finalSegments[i] = { ...seg, isDynamic: true };
+              } else {
+                finalSegments[i] = { ...seg, isDynamic: false };
+              }
+            }
+            await db.updateCallScript(result.id, { segments: finalSegments as any });
+          }
+          console.log(`[Script AutoPreGen] Script ${result.id}: ${preGenResult.generated} segments pre-generated`);
+        }
+      }).catch(err => console.error(`[Script AutoPreGen] Failed for script ${result.id}:`, err));
       // Create initial version snapshot
       await db.createScriptVersion({
         scriptId: result.id,
@@ -3651,6 +3686,27 @@ Return ONLY the message text, nothing else.`;
         });
       }
       await db.updateCallScript(id, data as any);
+      // Auto pre-generate static TTS segments on update (fire-and-forget)
+      if (data.segments) {
+        const { preGenerateStaticSegments } = await import("./services/script-audio");
+        const MERGE_FIELD_REGEX = /\{\{[^}]+\}\}/;
+        preGenerateStaticSegments({ segments: data.segments as ScriptSegment[] }).then(async (preGenResult) => {
+          if (preGenResult.generated > 0) {
+            const script = await db.getCallScript(id);
+            if (script) {
+              const segs = script.segments as ScriptSegment[];
+              const finalSegments = [...segs];
+              for (let i = 0; i < finalSegments.length; i++) {
+                const seg = finalSegments[i];
+                if (seg.type !== "tts" || !seg.text) continue;
+                finalSegments[i] = { ...seg, isDynamic: MERGE_FIELD_REGEX.test(seg.text) };
+              }
+              await db.updateCallScript(id, { segments: finalSegments as any });
+            }
+            console.log(`[Script AutoPreGen] Script ${id} updated: ${preGenResult.generated} segments pre-generated`);
+          }
+        }).catch(err => console.error(`[Script AutoPreGen] Failed for script ${id}:`, err));
+      }
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
