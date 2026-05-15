@@ -1218,3 +1218,4 @@
   - [x] Frontend: Automated Response Rules panel (auto-pause, auto-throttle, quarantine)
   - [x] Frontend: Carrier Error Log table with filters, export, and report generation
   - [x] Sidebar navigation entry
+- [x] Add stop button to audio player in Generated Audio Files / TTS section

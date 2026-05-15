@@ -78,11 +78,9 @@ function AudioPlayer({ url, name }: { url: string; name: string }) {
       <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={togglePlay}>
         {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
       </Button>
-      {playing && (
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={stop}>
-          <Square className="h-3 w-3" />
-        </Button>
-      )}
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={stop} disabled={!playing && progress === 0}>
+        <Square className="h-3 w-3" />
+      </Button>
       <div className="flex-1 min-w-0">
         <Progress value={progress} className="h-1.5" />
         <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
@@ -156,21 +154,32 @@ function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor, prov
           <span className="font-bold text-sm">{name}</span>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">{gender}</Badge>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 rounded-full"
-          onClick={handlePlay}
-          disabled={loading}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : playing ? (
-            <Pause className="h-4 w-4" />
-          ) : (
-            <Play className="h-4 w-4" />
-          )}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full"
+            onClick={handlePlay}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : playing ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full"
+            onClick={() => { if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; } setPlaying(false); setProgress(0); }}
+            disabled={!playing && !sampleUrl}
+          >
+            <Square className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
       <p className="text-xs font-medium opacity-90">{desc}</p>
       <div className="space-y-1">
