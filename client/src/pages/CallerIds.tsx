@@ -641,6 +641,17 @@ export default function CallerIds() {
     },
     onError: (e) => toast.error(e.message),
   });
+  const bulkUpdateRoutesMut = trpc.callerIds.bulkUpdateInboundRoutes.useMutation({
+    onSuccess: (r) => {
+      utils.callerIds.listInboundRoutes.invalidate();
+      toast.success(`Updated routes for ${r.updated} DID(s)`);
+      setShowBulkEditDest(false);
+      setBulkEditDest("");
+      setBulkEditDesc("");
+      setBulkEditCidPrefix("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const healthCheckMut = trpc.callerIds.triggerHealthCheck.useMutation({
     onSuccess: (r) => {
       toast.success(r.message);
@@ -963,6 +974,11 @@ export default function CallerIds() {
   const [singleRouteAutoApplied, setSingleRouteAutoApplied] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [showImportHistory, setShowImportHistory] = useState(false);
+  const [showBulkEditDest, setShowBulkEditDest] = useState(false);
+  const [bulkEditDest, setBulkEditDest] = useState("");
+  const [bulkEditDesc, setBulkEditDesc] = useState("");
+  const [bulkEditCidPrefix, setBulkEditCidPrefix] = useState("");
+  const [viewMode, setViewMode] = useState<"flat" | "grouped">("flat");
 
   // Auto-select first queue for single add route when destinations load
   useEffect(() => {
@@ -1168,6 +1184,16 @@ export default function CallerIds() {
     bulkUpdateMut.mutate({ ids: Array.from(selected), label: bulkEditLabelValue });
   };
 
+  const handleBulkEditDest = () => {
+    if (selected.size === 0) return;
+    const selectedDids = callerIds.filter(c => selected.has(c.id)).map(c => c.phoneNumber.replace(/^1/, ""));
+    const updates: { dids: string[]; destination?: string; description?: string; cidPrefix?: string } = { dids: selectedDids };
+    if (bulkEditDest) updates.destination = bulkEditDest;
+    if (bulkEditDesc) updates.description = bulkEditDesc;
+    if (bulkEditCidPrefix) updates.cidPrefix = bulkEditCidPrefix;
+    bulkUpdateRoutesMut.mutate(updates);
+  };
+
   const handleInlineEditLabel = (id: number, newLabel: string) => {
     updateMut.mutate({ id, label: newLabel });
   };
@@ -1197,6 +1223,41 @@ export default function CallerIds() {
     }
     return result;
   }, [callerIds, didSearch, labelFilter]);
+
+  // Grouped caller IDs by label for grouped view
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const groupedCallerIds = useMemo(() => {
+    const groups = new Map<string, typeof filteredCallerIds>();
+    for (const cid of filteredCallerIds) {
+      const key = cid.label || "(No Label)";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(cid);
+    }
+    // Sort groups: date-like labels (M.DD.YY) descending, then alphabetical
+    return Array.from(groups.entries()).sort(([a], [b]) => {
+      const dateA = a.match(/^(\d{1,2})\.(\d{2})\.(\d{2})$/);
+      const dateB = b.match(/^(\d{1,2})\.(\d{2})\.(\d{2})$/);
+      if (dateA && dateB) {
+        const dA = new Date(2000 + parseInt(dateA[3]), parseInt(dateA[1]) - 1, parseInt(dateA[2]));
+        const dB = new Date(2000 + parseInt(dateB[3]), parseInt(dateB[1]) - 1, parseInt(dateB[2]));
+        return dB.getTime() - dA.getTime();
+      }
+      if (dateA) return -1;
+      if (dateB) return 1;
+      if (a === "(No Label)") return 1;
+      if (b === "(No Label)") return -1;
+      return a.localeCompare(b);
+    });
+  }, [filteredCallerIds]);
+
+  const toggleGroupCollapse = (label: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
 
   const handleConfirmDelete = () => {
     if (!showDeleteConfirm) return;
@@ -1230,6 +1291,9 @@ export default function CallerIds() {
               <>
                 <Button variant="outline" size="sm" onClick={() => { setBulkEditLabelValue(""); setShowBulkEditLabel(true); }}>
                   <Tag className="h-4 w-4 mr-1" /> Edit Labels ({selected.size})
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setBulkEditDest(""); setBulkEditDesc(""); setBulkEditCidPrefix(""); setShowBulkEditDest(true); setFetchDests(true); }}>
+                  <Route className="h-4 w-4 mr-1" /> Edit Routes ({selected.size})
                 </Button>
                 <Button variant="destructive" size="sm" onClick={() => {
                   const ids = Array.from(selected);
@@ -1644,6 +1708,14 @@ export default function CallerIds() {
                   Showing {filteredCallerIds.length} of {callerIds.length}
                 </Badge>
               )}
+              <div className="flex items-center gap-1 border rounded-md">
+                <Button variant={viewMode === "flat" ? "default" : "ghost"} size="sm" className="h-7 px-2 rounded-r-none" onClick={() => setViewMode("flat")} title="Flat list view">
+                  <Filter className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant={viewMode === "grouped" ? "default" : "ghost"} size="sm" className="h-7 px-2 rounded-l-none" onClick={() => setViewMode("grouped")} title="Group by label">
+                  <Tag className="h-3.5 w-3.5" />
+                </Button>
+              </div>
               <div className="ml-auto">
                 <Button variant="outline" size="sm" onClick={() => {
                   const rows = filteredCallerIds.map(c => ({
@@ -1651,13 +1723,14 @@ export default function CallerIds() {
                     label: c.label || "",
                     status: c.isActive ? "Active" : "Inactive",
                     healthStatus: (c as any).healthStatus || "unknown",
+                    cnamName: (c as any).cnamName || "",
                     callCount: c.callCount,
                     lastUsedAt: c.lastUsedAt ? new Date(c.lastUsedAt).toLocaleString() : "",
                     createdAt: c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
                   }));
-                  const headers = ["Phone Number", "Label", "Status", "Health", "Call Count", "Last Used", "Created"];
+                  const headers = ["Phone Number", "Label", "Status", "Health", "CNAM", "Call Count", "Last Used", "Created"];
                   const csv = [headers.join(","), ...rows.map(r => [
-                    r.phoneNumber, `"${r.label}"`, r.status, r.healthStatus, r.callCount, `"${r.lastUsedAt}"`, `"${r.createdAt}"`
+                    r.phoneNumber, `"${r.label}"`, r.status, r.healthStatus, `"${r.cnamName}"`, r.callCount, `"${r.lastUsedAt}"`, `"${r.createdAt}"`
                   ].join(","))].join("\n");
                   const blob = new Blob([csv], { type: "text/csv" });
                   const url = URL.createObjectURL(blob);
@@ -1672,6 +1745,107 @@ export default function CallerIds() {
                 </Button>
               </div>
             </div>
+            {viewMode === "grouped" ? (
+              /* ─── Grouped View ─── */
+              <div className="space-y-3">
+                {isLoading ? (
+                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
+                ) : groupedCallerIds.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">
+                    <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    No caller IDs yet.
+                  </div>
+                ) : groupedCallerIds.map(([groupLabel, groupCids]) => {
+                  const isCollapsed = collapsedGroups.has(groupLabel);
+                  const groupActive = groupCids.filter(c => c.isActive === 1).length;
+                  const groupHealthy = groupCids.filter(c => c.healthStatus === "healthy").length;
+                  const allGroupSelected = groupCids.every(c => selected.has(c.id));
+                  return (
+                    <div key={groupLabel} className="border rounded-lg overflow-hidden">
+                      <div
+                        className="flex items-center gap-3 p-3 bg-muted/50 cursor-pointer hover:bg-muted/70"
+                        onClick={() => toggleGroupCollapse(groupLabel)}
+                      >
+                        <Checkbox
+                          checked={allGroupSelected}
+                          onCheckedChange={(e) => {
+                            e && e.valueOf(); // prevent propagation
+                            const newSel = new Set(selected);
+                            if (allGroupSelected) {
+                              groupCids.forEach(c => newSel.delete(c.id));
+                            } else {
+                              groupCids.forEach(c => newSel.add(c.id));
+                            }
+                            setSelected(newSel);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                        <span className="font-semibold">{groupLabel}</span>
+                        <Badge variant="outline" className="text-xs">{groupCids.length} DIDs</Badge>
+                        <Badge variant="outline" className="text-xs text-green-600">{groupActive} active</Badge>
+                        <Badge variant="outline" className="text-xs text-blue-600">{groupHealthy} healthy</Badge>
+                      </div>
+                      {!isCollapsed && (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm min-w-[700px]">
+                            <thead>
+                              <tr className="border-b bg-muted/30">
+                                <th className="p-2 text-left w-10"></th>
+                                <th className="p-2 text-left">Phone Number</th>
+                                <th className="p-2 text-left">Status</th>
+                                <th className="p-2 text-left">Health</th>
+                                <th className="p-2 text-left">Calls</th>
+                                <th className="p-2 text-left">CNAM</th>
+                                <th className="p-2 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {groupCids.map(cid => (
+                                <tr key={cid.id} className={`border-b hover:bg-muted/20 ${cid.autoDisabled ? "bg-red-50/30" : ""}`}>
+                                  <td className="p-2"><Checkbox checked={selected.has(cid.id)} onCheckedChange={() => toggleSelect(cid.id)} /></td>
+                                  <td className="p-2 font-mono">{cid.phoneNumber}</td>
+                                  <td className="p-2">
+                                    <Badge variant={cid.isActive === 1 ? "default" : "secondary"} className="text-xs">
+                                      {cid.isActive === 1 ? "Active" : "Inactive"}
+                                    </Badge>
+                                  </td>
+                                  <td className="p-2">
+                                    <HealthBadge
+                                      status={cid.healthStatus}
+                                      autoDisabled={cid.autoDisabled}
+                                      lastCheckAt={cid.lastCheckAt}
+                                      lastCheckResult={cid.lastCheckResult}
+                                      consecutiveFailures={cid.consecutiveFailures}
+                                      failureRate={(cid as any).failureRate}
+                                      recentCallCount={(cid as any).recentCallCount}
+                                      flagReason={(cid as any).flagReason}
+                                      cooldownUntil={(cid as any).cooldownUntil}
+                                    />
+                                  </td>
+                                  <td className="p-2 font-medium">{cid.callCount}</td>
+                                  <td className="p-2">
+                                    {(cid as any).cnamName ? (
+                                      <Badge variant="outline" className="text-xs max-w-[100px] truncate">{(cid as any).cnamName}</Badge>
+                                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                                  </td>
+                                  <td className="p-2 text-right">
+                                    <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm({ type: "single", id: cid.id, phoneNumbers: [cid.phoneNumber] })}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+            /* ─── Flat View ─── */
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[800px]">
                 <thead>
@@ -1824,6 +1998,7 @@ export default function CallerIds() {
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -2091,6 +2266,69 @@ export default function CallerIds() {
                   <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Updating...</>
                 ) : (
                   <><Tag className="h-4 w-4 mr-1" /> Update Labels</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Edit Destination Dialog */}
+        <Dialog open={showBulkEditDest} onOpenChange={setShowBulkEditDest}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Route className="h-5 w-5" /> Bulk Edit Inbound Routes
+              </DialogTitle>
+              <DialogDescription>
+                Update the inbound route for {selected.size} selected DID{selected.size > 1 ? "s" : ""} on FreePBX.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Destination</Label>
+                {destsLoading ? (
+                  <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading destinations from FreePBX...</div>
+                ) : (
+                  <DestinationPicker
+                    destinations={destinations}
+                    value={bulkEditDest}
+                    onChange={setBulkEditDest}
+                  />
+                )}
+              </div>
+              <div>
+                <Label>Description (optional)</Label>
+                <Input
+                  className="mt-1"
+                  value={bulkEditDesc}
+                  onChange={e => setBulkEditDesc(e.target.value)}
+                  placeholder="e.g. TTS Dialer"
+                />
+              </div>
+              <div>
+                <Label>CID Name Prefix (optional)</Label>
+                <Input
+                  className="mt-1"
+                  value={bulkEditCidPrefix}
+                  onChange={e => setBulkEditCidPrefix(e.target.value)}
+                  placeholder="e.g. Dialer"
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {selected.size} DID{selected.size > 1 ? "s" : ""} selected:
+                <span className="font-mono ml-1">
+                  {callerIds.filter(c => selected.has(c.id)).slice(0, 5).map(c => c.phoneNumber).join(", ")}
+                  {selected.size > 5 ? ` +${selected.size - 5} more` : ""}
+                </span>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBulkEditDest(false)}>Cancel</Button>
+              <Button onClick={handleBulkEditDest} disabled={bulkUpdateRoutesMut.isPending || !bulkEditDest}>
+                {bulkUpdateRoutesMut.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Updating Routes...</>
+                ) : (
+                  <><Route className="h-4 w-4 mr-1" /> Update Routes</>
                 )}
               </Button>
             </DialogFooter>

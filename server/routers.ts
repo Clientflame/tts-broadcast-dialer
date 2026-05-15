@@ -24,7 +24,7 @@ import { agentAssistRouter } from "./routers/agent-assist";
 import { inboundFilterRouter } from "./routers/inbound-filter";
 import { updaterRouter } from "./routers/updater";
 import { voicemailCreatorRouter } from "./routers/voicemail-creator";
-import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute } from "./services/freepbx-routes";
+import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute, bulkUpdateInboundRoutes } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
 function assertPasswordStrength(password: string) {
@@ -1684,6 +1684,25 @@ export const appRouter = router({
         action: "callerId.updateInboundRoute",
         resource: "callerId",
         details: { did: input.did, updates: { destination: input.destination, description: input.description, cidPrefix: input.cidPrefix } },
+      });
+      return result;
+    }),
+
+    /** Bulk update inbound routes' destination, description, or CID prefix */
+    bulkUpdateInboundRoutes: adminProcedure.input(z.object({
+      dids: z.array(z.string().min(1)).min(1).max(500),
+      destination: z.string().min(1).optional(),
+      description: z.string().max(255).optional(),
+      cidPrefix: z.string().max(50).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { dids, ...updates } = input;
+      const result = await bulkUpdateInboundRoutes(dids, updates);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "callerId.bulkUpdateInboundRoutes",
+        resource: "callerId",
+        details: { count: dids.length, updates },
       });
       return result;
     }),

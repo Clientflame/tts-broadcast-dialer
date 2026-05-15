@@ -489,6 +489,53 @@ export async function updateInboundRoute(did: string, updates: { destination?: s
   }
 }
 
+/**
+ * Bulk update inbound routes' destination, description, or CID prefix.
+ * Runs all updates in a single SSH session for efficiency.
+ */
+export async function bulkUpdateInboundRoutes(
+  dids: string[],
+  updates: { destination?: string; description?: string; cidPrefix?: string }
+): Promise<{ success: boolean; updated: number; errors: string[] }> {
+  const config = await getSSHConfig();
+  if (dids.length === 0) return { success: true, updated: 0, errors: [] };
+
+  const setClauses: string[] = [];
+  if (updates.destination !== undefined) {
+    const safe = updates.destination.replace(/'/g, "").replace(/"/g, "");
+    setClauses.push(`destination='${safe}'`);
+  }
+  if (updates.description !== undefined) {
+    const safe = updates.description.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    setClauses.push(`description='${safe}'`);
+  }
+  if (updates.cidPrefix !== undefined) {
+    const safe = updates.cidPrefix.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    setClauses.push(`pricid='${safe}'`);
+  }
+  if (setClauses.length === 0) return { success: true, updated: 0, errors: [] };
+
+  const safeDids = dids.map(d => d.replace(/'/g, "").replace(/"/g, ""));
+  const inList = safeDids.map(d => `'${d}'`).join(",");
+  const query = `UPDATE incoming SET ${setClauses.join(", ")} WHERE extension IN (${inList})`;
+
+  const mysqlCmd = (q: string) =>
+    `mysql -u \$(awk -F'"' '/AMPDBUSER/{print \$4}' /etc/freepbx.conf) ` +
+    `-p\$(awk -F'"' '/AMPDBPASS/{print \$4}' /etc/freepbx.conf) ` +
+    `asterisk -e "${q}"`;
+
+  const errors: string[] = [];
+  try {
+    await sshExec(config, mysqlCmd(query));
+    await sshExec(config, "fwconsole reload", 60000);
+    console.log(`[FreePBX Routes] Bulk updated ${dids.length} inbound routes and reloaded config`);
+    return { success: true, updated: dids.length, errors };
+  } catch (e: any) {
+    errors.push(e.message || "Unknown error");
+    return { success: false, updated: 0, errors };
+  }
+}
+
 // ─── List Existing Inbound Routes ───────────────────────────────────────────
 
 export interface ExistingInboundRoute {

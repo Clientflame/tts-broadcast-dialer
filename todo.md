@@ -1119,3 +1119,8 @@
 - [x] Bulk delete: select multiple DIDs and delete with confirmation — already existed with "Delete" button + FreePBX route cleanup
 - [x] Default "Apply Label to All" to import date format M.DD.YY (e.g., 5.14.26)
 - [x] Make Import DIDs dialog larger (max-w-4xl, max-h-95vh) to show everything without scrolling
+
+## Caller IDs v2.3.7 Features
+- [x] Bulk edit destination: "Edit Routes" button + dialog with DestinationPicker, description, CID prefix for selected DIDs (backend bulkUpdateInboundRoutes + frontend)
+- [x] CSV export: added CNAM column to existing export
+- [x] DID grouping: flat/grouped view toggle, collapsible label sections with per-group stats, date labels sorted newest first
