@@ -4597,12 +4597,25 @@ Return ONLY the message text, nothing else.`;
       // Use the web app's origin (from the request) for the installer URL, NOT the FreePBX host
       const reqOrigin = ctx.req.headers.origin || ctx.req.headers.referer?.replace(/\/+$/, "") || `https://${ctx.req.headers.host}`;
       const appOrigin = reqOrigin.replace(/\/+$/, "");
+      // Get the PBX agent's API key for the installer endpoint authentication
+      const { pbxAgents } = await import("../drizzle/schema");
+      const { desc } = await import("drizzle-orm");
+      const dbInst = await db.getDb();
+      let agentApiKey = "";
+      if (dbInst) {
+        const agents = await dbInst.select().from(pbxAgents).orderBy(desc(pbxAgents.lastHeartbeat)).limit(1);
+        agentApiKey = agents[0]?.apiKey || "";
+      }
+      if (!agentApiKey) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "No PBX agent found. Please set up a PBX agent first." });
+      }
       return new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {
         const conn = new SSHClient();
         const timeout = setTimeout(() => { conn.end(); resolve({ success: false, error: "SSH timeout (60s)" }); }, 60000);
         conn.on("ready", () => {
-          // Stop the agent, download installer from the web app (not FreePBX), then run it
-          const cmd = `cd /opt/pbx-agent && systemctl stop pbx-agent 2>/dev/null; curl -sL "${appOrigin}/api/pbx/installer" -o /tmp/pbx-update.sh 2>/dev/null; bash /tmp/pbx-update.sh 2>&1 || (systemctl restart pbx-agent 2>&1); echo "UPDATE_DONE"`;
+          // Stop the agent, download installer from the web app's /api/pbx/install endpoint with API key, then run it
+          const installerUrl = `${appOrigin}/api/pbx/install?key=${encodeURIComponent(agentApiKey)}`;
+          const cmd = `cd /opt/pbx-agent && systemctl stop pbx-agent 2>/dev/null; curl -sL "${installerUrl}" -o /tmp/pbx-update.sh 2>/dev/null; bash /tmp/pbx-update.sh 2>&1 || (systemctl restart pbx-agent 2>&1); echo "UPDATE_DONE"`;
           conn.exec(cmd, (err, stream) => {
             if (err) { clearTimeout(timeout); conn.end(); resolve({ success: false, error: err.message }); return; }
             let output = "";
