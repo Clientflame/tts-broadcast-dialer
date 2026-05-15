@@ -344,16 +344,28 @@ def prepare_audio(audio_url, audio_name):
         if file_age < 3600:  # Cache for 1 hour
             return f"custom/broadcast/{audio_name}"
 
-    # Download
+    # Download with retry logic (up to 3 attempts with backoff)
     tmp_path = os.path.join(audio_dir, f"{audio_name}_tmp.mp3")
-    try:
-        log.info(f"Downloading audio: {audio_url[:80]}...")
-        req = Request(audio_url, headers={"User-Agent": "PBX-Agent/1.0"})
-        with urlopen(req, timeout=30) as resp:
-            with open(tmp_path, "wb") as f:
-                f.write(resp.read())
-    except Exception as e:
-        log.error(f"Audio download failed: {e}")
+    max_retries = 3
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            log.info(f"Downloading audio (attempt {attempt}/{max_retries}): {audio_url[:80]}...")
+            req = Request(audio_url, headers={"User-Agent": "PBX-Agent/1.0"})
+            with urlopen(req, timeout=30) as resp:
+                with open(tmp_path, "wb") as f:
+                    f.write(resp.read())
+            last_error = None
+            break  # Success
+        except Exception as e:
+            last_error = e
+            log.error(f"Audio download attempt {attempt}/{max_retries} failed: {e}")
+            if attempt < max_retries:
+                backoff = attempt * 2  # 2s, 4s
+                log.info(f"Retrying in {backoff}s...")
+                time.sleep(backoff)
+    if last_error:
+        log.error(f"Audio download failed after {max_retries} attempts: {last_error}")
         return None
 
     # Convert to WAV (8kHz, mono, 16-bit PCM for Asterisk)
@@ -419,12 +431,23 @@ def prepare_multi_audio(audio_urls, audio_name):
         seg_tmp = os.path.join(audio_dir, f"{seg_name}_tmp.mp3")
 
         try:
-            # Download segment
-            log.info(f"  Downloading segment {idx + 1}/{len(audio_urls)}: {url[:80]}...")
-            req = Request(url, headers={"User-Agent": "PBX-Agent/1.0"})
-            with urlopen(req, timeout=30) as resp:
-                with open(seg_tmp, "wb") as f:
-                    f.write(resp.read())
+            # Download segment with retry logic
+            seg_downloaded = False
+            for seg_attempt in range(1, 4):
+                try:
+                    log.info(f"  Downloading segment {idx + 1}/{len(audio_urls)} (attempt {seg_attempt}/3): {url[:80]}...")
+                    req = Request(url, headers={"User-Agent": "PBX-Agent/1.0"})
+                    with urlopen(req, timeout=30) as resp:
+                        with open(seg_tmp, "wb") as f:
+                            f.write(resp.read())
+                    seg_downloaded = True
+                    break
+                except Exception as dl_err:
+                    log.error(f"  Segment {idx + 1} download attempt {seg_attempt}/3 failed: {dl_err}")
+                    if seg_attempt < 3:
+                        time.sleep(seg_attempt * 2)
+            if not seg_downloaded:
+                raise Exception(f"Download failed after 3 attempts")
 
             # Convert to WAV (8kHz, mono, 16-bit PCM)
             subprocess.run([
@@ -628,8 +651,9 @@ def process_call(ami, call_data):
         if audio_path:
             variables["AUDIOFILE"] = audio_path
         else:
-            log.error(f"Failed to prepare audio for call {queue_id}")
-            report_result(queue_id, "failed", {"error": "Audio preparation failed"})
+            url_preview = audio_url[:100] if audio_url else "(empty)"
+            log.error(f"Failed to prepare audio for call {queue_id}, URL: {url_preview}")
+            report_result(queue_id, "failed", {"error": f"Audio preparation failed — could not download or convert audio from {url_preview}"})
             return
 
     # Prepare voicemail audio if AMD + voicemail drop is enabled

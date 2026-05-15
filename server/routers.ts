@@ -3115,6 +3115,20 @@ Return ONLY the message text, nothing else.`;
       const audioFile = await db.getAudioFile(input.audioFileId);
       if (!audioFile || !audioFile.s3Url) throw new TRPCError({ code: "BAD_REQUEST", message: "Audio file not ready" });
 
+      // Pre-validate audio URL is accessible before enqueuing
+      try {
+        const headResp = await fetch(audioFile.s3Url, { method: "HEAD", signal: AbortSignal.timeout(10000) });
+        if (!headResp.ok) {
+          console.error(`[QuickTest] Audio URL validation failed: ${headResp.status} ${headResp.statusText} for ${audioFile.s3Url.substring(0, 80)}`);
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Audio file URL is not accessible (HTTP ${headResp.status}). The file may have been deleted or the storage service is temporarily unavailable. Try re-generating the audio.` });
+        }
+      } catch (err: any) {
+        if (err instanceof TRPCError) throw err;
+        console.error(`[QuickTest] Audio URL pre-check failed:`, err.message);
+        // Don't block on network errors — the PBX agent will retry
+        console.warn(`[QuickTest] Proceeding despite pre-check failure (PBX agent has retry logic)`);
+      }
+
       // Queue-based approach: enqueue the call for the PBX agent to pick up
       // The PBX agent polls /api/pbx/poll, originates via local AMI, and reports back
       const phoneNumber = input.phoneNumber.replace(/[^0-9+]/g, "");
@@ -3171,8 +3185,13 @@ Return ONLY the message text, nothing else.`;
         const status = item.status as string;
         let failureReason = "";
         if (status === "failed" || result === "failed") {
-          if (details.error) failureReason = details.error;
-          else if (details.reason) {
+          if (details.error) {
+            failureReason = details.error;
+            // Add actionable guidance for common errors
+            if (details.error.includes("Audio preparation failed")) {
+              failureReason += ". This usually means the PBX server could not download the audio file. Check network connectivity and DNS on the PBX server.";
+            }
+          } else if (details.reason) {
             const map: Record<string, string> = {
               "0": "Call could not be originated — check SIP trunk and dialplan on PBX",
               "1": "Unallocated number", "17": "User busy", "18": "No user responding",

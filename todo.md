@@ -1240,3 +1240,4 @@
 - [x] Bug: Calls show 'dialing' but never transition to 'ringing' status
 - [x] Bug: Call history table shows only 'pending' status — intermediate statuses not updating
 - [x] Enhancement: Increase Max Concurrent Calls limit to 75
+- [x] Bug: Test call fails with 'Audio preparation failed' error — added retry logic (3 attempts with backoff) in PBX agent, server-side audio URL pre-validation, improved error diagnostics
