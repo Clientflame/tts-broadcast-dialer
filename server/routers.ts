@@ -799,9 +799,22 @@ export const appRouter = router({
       // Day-Part Script Rotation
       dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const { didManualIds: didManualIdsStr, ...rest } = input;
+      const { didManualIds: didManualIdsStr, ttsProvider, voicemailAudioId, voicemailMessage, ivrPaymentAmount, tzEnforcementEnabled, tcpaStartHour, tcpaEndHour, ...rest } = input;
       const didManualIds = didManualIdsStr ? JSON.parse(didManualIdsStr) : undefined;
-      const result = await db.createCampaign({ ...rest, didManualIds, userId: ctx.user.id });
+      // Map input field names to actual DB column names
+      const dbData: any = {
+        ...rest,
+        didManualIds,
+        userId: ctx.user.id,
+      };
+      // ttsProvider doesn't exist as a column - it's determined at dial time from voice selection
+      if (voicemailAudioId !== undefined) dbData.voicemailAudioFileId = voicemailAudioId;
+      if (voicemailMessage !== undefined) dbData.voicemailMessageText = voicemailMessage;
+      if (ivrPaymentAmount !== undefined) dbData.ivrPaymentAmountField = String(ivrPaymentAmount);
+      if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
+      if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
+      if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      const result = await db.createCampaign(dbData);
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.create", resource: "campaign", resourceId: result.id });
       return result;
     }),
@@ -866,12 +879,20 @@ export const appRouter = router({
       // Day-Part Script Rotation
       dayPartScripts: z.array(z.object({ startTime: z.string(), endTime: z.string(), scriptId: z.number(), label: z.string().optional() })).optional(),
     })).mutation(async ({ ctx, input }) => {
-      const { id, didManualIds: didManualIdsStr, ...data } = input;
+      const { id, didManualIds: didManualIdsStr, ttsProvider, voicemailAudioId, voicemailMessage, ivrPaymentAmount, tzEnforcementEnabled, tcpaStartHour, tcpaEndHour, ...data } = input;
       const campaign = await db.getCampaign(id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
       if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot update a running campaign" });
       const didManualIds = didManualIdsStr ? JSON.parse(didManualIdsStr) : didManualIdsStr;
-      await db.updateCampaign(id, { ...data, didManualIds });
+      // Map input field names to actual DB column names
+      const dbData: any = { ...data, didManualIds };
+      if (voicemailAudioId !== undefined) dbData.voicemailAudioFileId = voicemailAudioId;
+      if (voicemailMessage !== undefined) dbData.voicemailMessageText = voicemailMessage;
+      if (ivrPaymentAmount !== undefined) dbData.ivrPaymentAmountField = String(ivrPaymentAmount);
+      if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
+      if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
+      if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      await db.updateCampaign(id, dbData);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {

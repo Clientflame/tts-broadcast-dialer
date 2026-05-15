@@ -1225,3 +1225,5 @@
 - [x] Bulk audio regeneration — select multiple failed files and regenerate all at once
 - [x] Audio file tagging/folders — organize audio files by campaign or category with labels/tags
 - [x] Audio duration display — show duration column in Generated Audio Files table
+- [x] Fix: Exclude MI, NY, NJ from default targeting states in campaign creation
+- [x] Fix: SQL column mismatch error when submitting campaign creation form

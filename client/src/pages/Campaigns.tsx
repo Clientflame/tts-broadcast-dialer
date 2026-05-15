@@ -31,6 +31,8 @@ const US_STATES = [
   "ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK",
   "OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
 ];
+const EXCLUDED_STATES = ["MI", "NY", "NJ"];
+const DEFAULT_TARGET_STATES = US_STATES.filter(s => !EXCLUDED_STATES.includes(s));
 
 const IVR_ACTIONS = [
   { value: "transfer", label: "Transfer to Extension" },
@@ -117,7 +119,7 @@ const DEFAULT_FORM: FormState = {
   maxConcurrentCalls: 5, cpsLimit: 1, retryAttempts: 0, retryDelay: 300,
   timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
-  targetStates: [], useGeoCallerIds: false,
+  targetStates: DEFAULT_TARGET_STATES, useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
   useDidRotation: false, didLabel: "", didPoolStrategy: "all", didRotationMode: "round_robin", didManualIds: [],
   scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
@@ -925,12 +927,14 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   onClick={() => toggleState(state)}>{state}</Badge>
               ))}
             </div>
-            {form.targetStates.length > 0 && (
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-muted-foreground">{form.targetStates.length} state{form.targetStates.length > 1 ? "s" : ""} selected</span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: DEFAULT_TARGET_STATES }))}>Default (excl. MI, NY, NJ)</Button>
+                <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [...US_STATES] }))}>All States</Button>
                 <Button variant="ghost" size="sm" onClick={() => setForm(p => ({ ...p, targetStates: [] }))}>Clear All</Button>
               </div>
-            )}
+            </div>
           </div>
           {/* Timezone Enforcement */}
           <div className="p-4 rounded-lg border space-y-4">
