@@ -50,6 +50,7 @@ import VoicemailCreator from "./pages/VoicemailCreator";
 import SmartScheduler from "./pages/SmartScheduler";
 import ApiKeys from "./pages/ApiKeys";
 import QueueMonitor from "./pages/QueueMonitor";
+import CarrierHealth from "./pages/CarrierHealth";
 
 function Router() {
   return (
@@ -96,6 +97,7 @@ function Router() {
       <Route path={"/smart-scheduler"} component={SmartScheduler} />
       <Route path={"/api-keys"} component={ApiKeys} />
       <Route path={"/queue-monitor"} component={QueueMonitor} />
+      <Route path={"/carrier-health"} component={CarrierHealth} />
       <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />

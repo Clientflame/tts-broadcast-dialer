@@ -1205,3 +1205,16 @@
   - [x] Dead letter queue table with requeue actions (single + bulk)
   - [x] Auto-refresh every 5 seconds
   - [x] Sidebar navigation entry
+
+- [x] Carrier Health & Drop Management
+  - [x] Backend: carrier failure rate analytics (by type, by time window, by campaign)
+  - [x] Backend: drop rate tracking (short calls <5s, false connects <3s, ring timeouts)
+  - [x] Backend: carrier error log with SIP codes, filterable and exportable
+  - [x] Backend: auto-pause rules engine (pause campaign when failure rate > threshold)
+  - [x] Backend: auto-reduce concurrency on carrier congestion detection
+  - [x] Backend: number quarantine for consistently problematic numbers
+  - [x] Frontend: Carrier Failure Dashboard with real-time failure rate gauge and breakdown
+  - [x] Frontend: Drop Rate Monitor with trend chart and alert threshold config
+  - [x] Frontend: Automated Response Rules panel (auto-pause, auto-throttle, quarantine)
+  - [x] Frontend: Carrier Error Log table with filters, export, and report generation
+  - [x] Sidebar navigation entry

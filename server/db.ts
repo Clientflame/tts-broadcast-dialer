@@ -5233,3 +5233,389 @@ export async function requeueDeadLetterItems(ids: number[]): Promise<number> {
 
   return ids.length;
 }
+
+
+// ─── Carrier Health & Drop Management ──────────────────────────────────────────
+
+export async function getCarrierFailureRate(windowMinutes: number = 5): Promise<{
+  totalCalls: number;
+  failedCalls: number;
+  failureRate: number;
+  byType: { result: string; count: number }[];
+}> {
+  const db = await getDb();
+  if (!db) return { totalCalls: 0, failedCalls: 0, failureRate: 0, byType: [] };
+
+  const windowStart = Date.now() - windowMinutes * 60 * 1000;
+
+  const totalResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(gte(callLogs.startedAt, windowStart));
+
+  const failedResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      or(
+        eq(callLogs.status, "failed"),
+        sql`${callLogs.errorMessage} IS NOT NULL AND ${callLogs.status} != 'completed' AND ${callLogs.status} != 'answered'`
+      )
+    ));
+
+  const byTypeResult = await db.select({
+    result: sql<string>`COALESCE(${callLogs.status}, 'unknown')`.as("result"),
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      or(
+        eq(callLogs.status, "failed"),
+        eq(callLogs.status, "busy"),
+        eq(callLogs.status, "no-answer"),
+      )
+    ))
+    .groupBy(callLogs.status);
+
+  const total = totalResult[0]?.count || 0;
+  const failed = failedResult[0]?.count || 0;
+
+  return {
+    totalCalls: total,
+    failedCalls: failed,
+    failureRate: total > 0 ? Math.round((failed / total) * 100 * 10) / 10 : 0,
+    byType: byTypeResult.map(r => ({ result: r.result, count: r.count })),
+  };
+}
+
+export async function getCarrierFailureTrend(hours: number = 24): Promise<{
+  hour: string;
+  total: number;
+  failed: number;
+  failureRate: number;
+}[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const windowStart = Date.now() - hours * 60 * 60 * 1000;
+
+  const hourExpr = sql`DATE_FORMAT(${callLogs.createdAt}, '%Y-%m-%d %H:00')`;
+  const results = await db.select({
+    hour: sql<string>`${hourExpr}`.as("hour"),
+    total: sql<number>`COUNT(*)`.as("total"),
+    failed: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('failed', 'busy', 'no-answer') THEN 1 ELSE 0 END)`.as("failed"),
+  }).from(callLogs)
+    .where(gte(callLogs.startedAt, windowStart))
+    .groupBy(hourExpr)
+    .orderBy(hourExpr);
+
+  return results.map(r => ({
+    hour: r.hour,
+    total: r.total,
+    failed: r.failed,
+    failureRate: r.total > 0 ? Math.round((r.failed / r.total) * 100 * 10) / 10 : 0,
+  }));
+}
+
+export async function getDropRateStats(windowMinutes: number = 60): Promise<{
+  totalAnswered: number;
+  shortCalls: number; // < 5s duration
+  falseConnects: number; // < 3s duration
+  ringTimeouts: number; // no-answer
+  dropRate: number;
+}> {
+  const db = await getDb();
+  if (!db) return { totalAnswered: 0, shortCalls: 0, falseConnects: 0, ringTimeouts: 0, dropRate: 0 };
+
+  const windowStart = Date.now() - windowMinutes * 60 * 1000;
+
+  const answeredResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      or(eq(callLogs.status, "answered"), eq(callLogs.status, "completed"))
+    ));
+
+  const shortCallsResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      or(eq(callLogs.status, "answered"), eq(callLogs.status, "completed")),
+      sql`${callLogs.duration} IS NOT NULL AND ${callLogs.duration} > 0 AND ${callLogs.duration} < 5`
+    ));
+
+  const falseConnectsResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      or(eq(callLogs.status, "answered"), eq(callLogs.status, "completed")),
+      sql`${callLogs.duration} IS NOT NULL AND ${callLogs.duration} > 0 AND ${callLogs.duration} < 3`
+    ));
+
+  const ringTimeoutsResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(
+      gte(callLogs.startedAt, windowStart),
+      eq(callLogs.status, "no-answer")
+    ));
+
+  const totalAnswered = answeredResult[0]?.count || 0;
+  const shortCalls = shortCallsResult[0]?.count || 0;
+  const falseConnects = falseConnectsResult[0]?.count || 0;
+  const ringTimeouts = ringTimeoutsResult[0]?.count || 0;
+
+  return {
+    totalAnswered,
+    shortCalls,
+    falseConnects,
+    ringTimeouts,
+    dropRate: totalAnswered > 0 ? Math.round((shortCalls / totalAnswered) * 100 * 10) / 10 : 0,
+  };
+}
+
+export async function getCarrierErrorLog(opts: {
+  limit?: number;
+  offset?: number;
+  campaignId?: number;
+  status?: string;
+  startDate?: number;
+  endDate?: number;
+}): Promise<{ items: any[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  const { limit = 50, offset = 0, campaignId, status, startDate, endDate } = opts;
+
+  const conditions: any[] = [
+    or(
+      eq(callLogs.status, "failed"),
+      eq(callLogs.status, "busy"),
+      eq(callLogs.status, "no-answer"),
+      sql`${callLogs.errorMessage} IS NOT NULL`
+    ),
+  ];
+
+  if (campaignId) conditions.push(eq(callLogs.campaignId, campaignId));
+  if (status) conditions.push(eq(callLogs.status, status as any));
+  if (startDate) conditions.push(gte(callLogs.startedAt, startDate));
+  if (endDate) conditions.push(sql`${callLogs.startedAt} <= ${endDate}`);
+
+  const totalResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(callLogs)
+    .where(and(...conditions));
+
+  const items = await db.select({
+    id: callLogs.id,
+    campaignId: callLogs.campaignId,
+    phoneNumber: callLogs.phoneNumber,
+    contactName: callLogs.contactName,
+    status: callLogs.status,
+    errorMessage: callLogs.errorMessage,
+    callerIdUsed: callLogs.callerIdUsed,
+    duration: callLogs.duration,
+    attempt: callLogs.attempt,
+    startedAt: callLogs.startedAt,
+    createdAt: callLogs.createdAt,
+  }).from(callLogs)
+    .where(and(...conditions))
+    .orderBy(sql`${callLogs.createdAt} DESC`)
+    .limit(limit)
+    .offset(offset);
+
+  return { items, total: totalResult[0]?.count || 0 };
+}
+
+export async function getCarrierFailureByCampaign(windowMinutes: number = 60): Promise<{
+  campaignId: number;
+  total: number;
+  failed: number;
+  failureRate: number;
+}[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const windowStart = Date.now() - windowMinutes * 60 * 1000;
+
+  const results = await db.select({
+    campaignId: callLogs.campaignId,
+    total: sql<number>`COUNT(*)`.as("total"),
+    failed: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('failed', 'busy', 'no-answer') THEN 1 ELSE 0 END)`.as("failed"),
+  }).from(callLogs)
+    .where(gte(callLogs.startedAt, windowStart))
+    .groupBy(callLogs.campaignId);
+
+  return results.map(r => ({
+    campaignId: r.campaignId,
+    total: r.total,
+    failed: r.failed,
+    failureRate: r.total > 0 ? Math.round((r.failed / r.total) * 100 * 10) / 10 : 0,
+  }));
+}
+
+// Auto-pause rules stored in app settings
+export async function getCarrierAutoRules(): Promise<{
+  autoPauseEnabled: boolean;
+  autoPauseThreshold: number; // failure rate % to trigger pause
+  autoPauseWindowMinutes: number; // time window to evaluate
+  autoThrottleEnabled: boolean;
+  autoThrottleThreshold: number; // congestion rate % to reduce concurrency
+  quarantineEnabled: boolean;
+  quarantineThreshold: number; // number of consecutive failures to quarantine a number
+}> {
+  const db = await getDb();
+  if (!db) return {
+    autoPauseEnabled: false,
+    autoPauseThreshold: 50,
+    autoPauseWindowMinutes: 5,
+    autoThrottleEnabled: false,
+    autoThrottleThreshold: 30,
+    quarantineEnabled: false,
+    quarantineThreshold: 3,
+  };
+
+  const settings = await db.select().from(appSettings)
+    .where(sql`${appSettings.key} LIKE 'carrier_%'`);
+
+  const get = (key: string, def: string) => settings.find(s => s.key === key)?.value || def;
+
+  return {
+    autoPauseEnabled: get("carrier_auto_pause_enabled", "false") === "true",
+    autoPauseThreshold: parseInt(get("carrier_auto_pause_threshold", "50")),
+    autoPauseWindowMinutes: parseInt(get("carrier_auto_pause_window", "5")),
+    autoThrottleEnabled: get("carrier_auto_throttle_enabled", "false") === "true",
+    autoThrottleThreshold: parseInt(get("carrier_auto_throttle_threshold", "30")),
+    quarantineEnabled: get("carrier_quarantine_enabled", "false") === "true",
+    quarantineThreshold: parseInt(get("carrier_quarantine_threshold", "3")),
+  };
+}
+
+export async function updateCarrierAutoRules(rules: {
+  autoPauseEnabled?: boolean;
+  autoPauseThreshold?: number;
+  autoPauseWindowMinutes?: number;
+  autoThrottleEnabled?: boolean;
+  autoThrottleThreshold?: number;
+  quarantineEnabled?: boolean;
+  quarantineThreshold?: number;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const mappings: [string, string | undefined][] = [
+    ["carrier_auto_pause_enabled", rules.autoPauseEnabled?.toString()],
+    ["carrier_auto_pause_threshold", rules.autoPauseThreshold?.toString()],
+    ["carrier_auto_pause_window", rules.autoPauseWindowMinutes?.toString()],
+    ["carrier_auto_throttle_enabled", rules.autoThrottleEnabled?.toString()],
+    ["carrier_auto_throttle_threshold", rules.autoThrottleThreshold?.toString()],
+    ["carrier_quarantine_enabled", rules.quarantineEnabled?.toString()],
+    ["carrier_quarantine_threshold", rules.quarantineThreshold?.toString()],
+  ];
+
+  for (const [key, value] of mappings) {
+    if (value === undefined) continue;
+    await db.insert(appSettings)
+      .values({ key, value, updatedAt: new Date() })
+      .onDuplicateKeyUpdate({ set: { value, updatedAt: new Date() } });
+  }
+}
+
+export async function getQuarantinedNumbers(opts: {
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: any[]; total: number }> {
+  const db = await getDb();
+  if (!db) return { items: [], total: 0 };
+
+  const { limit = 50, offset = 0 } = opts;
+
+  // Quarantined numbers are those with consecutive failures >= threshold
+  // We'll use the DNC list with source "quarantine" for storage
+  const totalResult = await db.select({
+    count: sql<number>`COUNT(*)`.as("count"),
+  }).from(dncList)
+    .where(eq(dncList.source, "quarantine"));
+
+  const items = await db.select().from(dncList)
+    .where(eq(dncList.source, "quarantine"))
+    .orderBy(sql`${dncList.createdAt} DESC`)
+    .limit(limit)
+    .offset(offset);
+
+  return { items, total: totalResult[0]?.count || 0 };
+}
+
+export async function quarantineNumber(phoneNumber: string, reason: string, userId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Add to DNC with quarantine source
+  await db.insert(dncList)
+    .values({
+      phoneNumber,
+      source: "quarantine",
+      reason,
+      addedBy: userId,
+      createdAt: new Date(),
+    })
+    .onDuplicateKeyUpdate({ set: { source: "quarantine", reason, updatedAt: new Date() } });
+}
+
+export async function unquarantineNumbers(ids: number[]): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  if (ids.length === 0) return 0;
+
+  await db.delete(dncList)
+    .where(and(
+      sql`${dncList.id} IN (${sql.raw(ids.join(","))})`,
+      eq(dncList.source, "quarantine")
+    ));
+
+  return ids.length;
+}
+
+export async function evaluateCarrierHealth(): Promise<{
+  shouldPause: boolean;
+  shouldThrottle: boolean;
+  quarantineCandidates: string[];
+  currentFailureRate: number;
+}> {
+  const rules = await getCarrierAutoRules();
+  const failureData = await getCarrierFailureRate(rules.autoPauseWindowMinutes);
+
+  const shouldPause = rules.autoPauseEnabled && failureData.failureRate >= rules.autoPauseThreshold;
+  const shouldThrottle = rules.autoThrottleEnabled && failureData.failureRate >= rules.autoThrottleThreshold;
+
+  // Find numbers with consecutive failures >= threshold
+  let quarantineCandidates: string[] = [];
+  if (rules.quarantineEnabled) {
+    const db = await getDb();
+    if (db) {
+      const candidates = await db.select({
+        phoneNumber: callLogs.phoneNumber,
+        failCount: sql<number>`COUNT(*)`.as("failCount"),
+      }).from(callLogs)
+        .where(and(
+          eq(callLogs.status, "failed"),
+          gte(callLogs.startedAt, Date.now() - 24 * 60 * 60 * 1000)
+        ))
+        .groupBy(callLogs.phoneNumber)
+        .having(sql`COUNT(*) >= ${rules.quarantineThreshold}`);
+
+      quarantineCandidates = candidates.map(c => c.phoneNumber);
+    }
+  }
+
+  return {
+    shouldPause,
+    shouldThrottle,
+    quarantineCandidates,
+    currentFailureRate: failureData.failureRate,
+  };
+}

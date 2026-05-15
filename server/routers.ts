@@ -5932,6 +5932,83 @@ Return ONLY the message text, nothing else.`;
       return db.getApiRequestLogs(input.apiKeyId, input.limit || 100);
     }),
   }),
+
+  carrierHealth: router({
+    failureRate: protectedProcedure.input(z.object({ windowMinutes: z.number().min(1).max(60).optional() }).optional()).query(async ({ input }) => {
+      return db.getCarrierFailureRate(input?.windowMinutes || 5);
+    }),
+    failureTrend: protectedProcedure.input(z.object({ hours: z.number().min(1).max(168).optional() }).optional()).query(async ({ input }) => {
+      return db.getCarrierFailureTrend(input?.hours || 24);
+    }),
+    dropRate: protectedProcedure.input(z.object({ windowMinutes: z.number().min(1).max(1440).optional() }).optional()).query(async ({ input }) => {
+      return db.getDropRateStats(input?.windowMinutes || 60);
+    }),
+    errorLog: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(500).optional(),
+      offset: z.number().min(0).optional(),
+      campaignId: z.number().optional(),
+      status: z.string().optional(),
+      startDate: z.number().optional(),
+      endDate: z.number().optional(),
+    }).optional()).query(async ({ input }) => {
+      return db.getCarrierErrorLog(input || {});
+    }),
+    failureByCampaign: protectedProcedure.input(z.object({ windowMinutes: z.number().min(1).max(1440).optional() }).optional()).query(async ({ input }) => {
+      return db.getCarrierFailureByCampaign(input?.windowMinutes || 60);
+    }),
+    getRules: protectedProcedure.query(async () => {
+      return db.getCarrierAutoRules();
+    }),
+    updateRules: protectedProcedure.input(z.object({
+      autoPauseEnabled: z.boolean().optional(),
+      autoPauseThreshold: z.number().min(10).max(100).optional(),
+      autoPauseWindowMinutes: z.number().min(1).max(30).optional(),
+      autoThrottleEnabled: z.boolean().optional(),
+      autoThrottleThreshold: z.number().min(10).max(100).optional(),
+      quarantineEnabled: z.boolean().optional(),
+      quarantineThreshold: z.number().min(1).max(20).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      await db.updateCarrierAutoRules(input);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "carrierHealth.updateRules",
+        resource: "carrierHealth",
+        details: input,
+      });
+      return { success: true };
+    }),
+    evaluate: protectedProcedure.mutation(async ({ ctx }) => {
+      const result = await db.evaluateCarrierHealth();
+      if (result.quarantineCandidates.length > 0) {
+        for (const phone of result.quarantineCandidates) {
+          await db.quarantineNumber(phone, `Consecutive failures >= threshold in 24h`, ctx.user.id);
+        }
+      }
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "carrierHealth.evaluate",
+        resource: "carrierHealth",
+        details: { ...result, quarantined: result.quarantineCandidates.length },
+      });
+      return result;
+    }),
+    quarantined: protectedProcedure.input(z.object({ limit: z.number().min(1).max(500).optional(), offset: z.number().min(0).optional() }).optional()).query(async ({ input }) => {
+      return db.getQuarantinedNumbers(input || {});
+    }),
+    unquarantine: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ ctx, input }) => {
+      const count = await db.unquarantineNumbers(input.ids);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "carrierHealth.unquarantine",
+        resource: "carrierHealth",
+        details: { ids: input.ids, count },
+      });
+      return { released: count };
+    }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

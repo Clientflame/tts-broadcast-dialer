@@ -341,6 +341,38 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
           }
         }
 
+        // ─── Carrier Health Auto-Pause/Throttle Check ───
+        if (result === "failed" || result === "congestion" || result === "busy") {
+          try {
+            const healthEval = await db.evaluateCarrierHealth();
+            if (healthEval.shouldPause) {
+              // Auto-pause this campaign
+              const campaign = await db.getCampaign(queueItem.campaignId);
+              if (campaign && campaign.status === "running") {
+                await db.updateCampaign(queueItem.campaignId, { status: "paused" });
+                console.warn(`[CarrierHealth] Auto-paused campaign ${queueItem.campaignId} — failure rate ${healthEval.currentFailureRate}% exceeds threshold`);
+                db.isNotificationEnabled("notify_campaign_paused").then(enabled => {
+                  if (enabled) {
+                    dispatchNotification({
+                      title: `Campaign Auto-Paused: ${campaign.name}`,
+                      content: `Campaign "${campaign.name}" was automatically paused due to high carrier failure rate (${healthEval.currentFailureRate}%).\n\nThis is a protective measure to prevent wasting calls during carrier issues.\n\nCheck Carrier Health page for details and manually resume when ready.`,
+                    }).catch(() => {});
+                  }
+                }).catch(() => {});
+              }
+            }
+            // Quarantine problematic numbers
+            if (healthEval.quarantineCandidates.length > 0) {
+              for (const phone of healthEval.quarantineCandidates) {
+                await db.quarantineNumber(phone, `Auto-quarantined: ${healthEval.currentFailureRate}% failure rate`, 0);
+              }
+              console.log(`[CarrierHealth] Auto-quarantined ${healthEval.quarantineCandidates.length} numbers`);
+            }
+          } catch (err) {
+            console.warn("[CarrierHealth] Auto-pause evaluation error:", err);
+          }
+        }
+
         // Check if campaign is complete
         const pending = await db.getPendingCallLogs(queueItem.campaignId);
         const activeCount = await db.getActiveCallCount(queueItem.campaignId);
