@@ -1180,6 +1180,19 @@ export const appRouter = router({
     }),
   }),
 
+  // ─── Smart Campaign Scheduler ──────────────────────────────────────────
+  scheduler: router({
+    heatmap: protectedProcedure.query(async () => {
+      return db.getBestTimeToCallHeatmap();
+    }),
+    volumeByHour: protectedProcedure.query(async () => {
+      return db.getCallVolumeByHour();
+    }),
+    retryCandidates: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ input }) => {
+      return db.getIntelligentRetryCandidates(input.campaignId);
+    }),
+  }),
+
   callLogs: router({
     list: protectedProcedure.input(z.object({ campaignId: z.number() })).query(async ({ ctx, input }) => {
       return db.getCallLogs(input.campaignId);
@@ -1261,6 +1274,68 @@ export const appRouter = router({
     }),
     check: protectedProcedure.input(z.object({ phoneNumber: z.string() })).query(async ({ ctx, input }) => {
       return { onDnc: await db.isPhoneOnDnc(input.phoneNumber) };
+    }),
+    // DNC Analytics
+    stats: protectedProcedure.query(async () => {
+      return db.getDncStats();
+    }),
+    // Disconnected Numbers sub-router
+    disconnected: router({
+      list: protectedProcedure.input(z.object({ search: z.string().optional() })).query(async ({ ctx, input }) => {
+        return db.getDisconnectedNumbers({ search: input.search });
+      }),
+      count: protectedProcedure.query(async () => {
+        return { count: await db.getDisconnectedCount() };
+      }),
+      stats: protectedProcedure.query(async () => {
+        return db.getDisconnectedStats();
+      }),
+      add: adminProcedure.input(z.object({
+        phoneNumber: z.string().min(1).max(20),
+        reason: z.string().optional(),
+        autoAddToDnc: z.boolean().optional().default(true),
+      })).mutation(async ({ ctx, input }) => {
+        const result = await db.addDisconnectedNumber({
+          phoneNumber: input.phoneNumber,
+          reason: input.reason || "manual",
+          autoAddToDnc: input.autoAddToDnc,
+        });
+        if (!result.duplicate) {
+          await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "disconnected.add", resource: "disconnected", resourceId: result.id, details: { phoneNumber: input.phoneNumber } });
+        }
+        return result;
+      }),
+      bulkAdd: adminProcedure.input(z.object({
+        entries: z.array(z.object({
+          phoneNumber: z.string().min(1),
+          reason: z.string().optional(),
+        })).min(1).max(50000),
+      })).mutation(async ({ ctx, input }) => {
+        const result = await db.bulkAddDisconnectedNumbers(input.entries);
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "disconnected.bulkAdd", resource: "disconnected", details: { added: result.added, duplicates: result.duplicates, addedToDnc: result.addedToDnc } });
+        return result;
+      }),
+      remove: adminProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+        await db.removeDisconnectedNumber(input.id);
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "disconnected.remove", resource: "disconnected", resourceId: input.id });
+        return { success: true };
+      }),
+      bulkRemove: adminProcedure.input(z.object({ ids: z.array(z.number()).min(1) })).mutation(async ({ ctx, input }) => {
+        await db.bulkRemoveDisconnected(input.ids);
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "disconnected.bulkRemove", resource: "disconnected", details: { count: input.ids.length } });
+        return { success: true };
+      }),
+      importCsv: adminProcedure.input(z.object({
+        entries: z.array(z.object({
+          phoneNumber: z.string().min(1),
+          reason: z.string().optional(),
+          databaseName: z.string().optional(),
+        })).min(1).max(50000),
+      })).mutation(async ({ ctx, input }) => {
+        const result = await db.bulkAddDisconnectedNumbers(input.entries);
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "disconnected.importCsv", resource: "disconnected", details: { added: result.added, duplicates: result.duplicates, addedToDnc: result.addedToDnc } });
+        return result;
+      }),
     }),
   }),
 
@@ -5768,6 +5843,94 @@ Return ONLY the message text, nothing else.`;
           })),
         };
       }),
+  }),
+
+  // ─── Queue Monitoring ──────────────────────────────────────────────
+  queueMonitor: router({
+    stats: protectedProcedure.query(async () => {
+      return db.getCallQueueStats();
+    }),
+    throughput: protectedProcedure.query(async () => {
+      return db.getQueueThroughput();
+    }),
+    depthHistory: protectedProcedure.input(z.object({ hours: z.number().min(1).max(168).optional() })).query(async ({ input }) => {
+      return db.getQueueDepthHistory(input.hours || 24);
+    }),
+    deadLetter: protectedProcedure.input(z.object({ limit: z.number().min(1).max(500).optional() })).query(async ({ input }) => {
+      return db.getDeadLetterQueue(input.limit || 100);
+    }),
+    requeueDeadLetter: protectedProcedure.input(z.object({ ids: z.array(z.number()) })).mutation(async ({ ctx, input }) => {
+      const count = await db.requeueDeadLetterItems(input.ids);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "queue.requeueDeadLetter",
+        resource: "callQueue",
+        details: { count, ids: input.ids },
+      });
+      return { requeued: count };
+    }),
+  }),
+
+  // ─── External API Key Management ──────────────────────────────────────────────
+  apiKeys: router({
+    list: protectedProcedure.query(async () => {
+      return db.getApiKeys();
+    }),
+    create: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(255),
+      permissions: z.object({
+        campaigns: z.object({ read: z.boolean(), write: z.boolean(), launch: z.boolean() }),
+        contacts: z.object({ read: z.boolean(), write: z.boolean(), import: z.boolean() }),
+        callLogs: z.object({ read: z.boolean() }),
+        reports: z.object({ read: z.boolean() }),
+        dnc: z.object({ read: z.boolean(), write: z.boolean() }),
+      }),
+      rateLimit: z.number().min(1).max(1000).optional(),
+      expiresInDays: z.number().min(1).max(365).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const expiresAt = input.expiresInDays ? Date.now() + input.expiresInDays * 86400000 : null;
+      const result = await db.createApiKey({
+        name: input.name,
+        permissions: input.permissions,
+        rateLimit: input.rateLimit,
+        expiresAt,
+        createdBy: ctx.user.id,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "apiKey.create",
+        resource: "apiKeys",
+        details: { name: input.name, keyPrefix: result.prefix },
+      });
+      return result;
+    }),
+    revoke: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.revokeApiKey(input.id);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "apiKey.revoke",
+        resource: "apiKeys",
+        details: { keyId: input.id },
+      });
+      return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      await db.deleteApiKey(input.id);
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "apiKey.delete",
+        resource: "apiKeys",
+        details: { keyId: input.id },
+      });
+      return { success: true };
+    }),
+    logs: protectedProcedure.input(z.object({ apiKeyId: z.number().optional(), limit: z.number().min(1).max(500).optional() })).query(async ({ input }) => {
+      return db.getApiRequestLogs(input.apiKeyId, input.limit || 100);
+    }),
   }),
 });
 

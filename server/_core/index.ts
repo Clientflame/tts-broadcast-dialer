@@ -14,6 +14,7 @@ import { serveStatic, setupVite } from "./vite";
 import { pbxRouter, installerRouter } from "../services/pbx-api";
 import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
 import { mountLocalStorageRoute } from "../storage";
+import { restApiRouter } from "../services/rest-api";
 
 // Rate limiter for auth endpoints — 10 attempts per 15 minutes per IP
 const authRateLimiter = rateLimit({
@@ -68,6 +69,8 @@ async function startServer() {
   mountLocalStorageRoute(app);
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
+  // External REST API (authenticated with API keys)
+  app.use("/api/v1", restApiRouter);
   // Plain health check endpoint for Docker healthcheck (no tRPC input required)
   app.get("/api/trpc/health", (_req, res) => {
     res.json({ ok: true });

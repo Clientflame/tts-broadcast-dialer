@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, ShieldCheck, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun, Sparkles, Filter } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Users, Megaphone, Volume2, FileText, Shield, ShieldCheck, Phone, Ban, PhoneCall, BookTemplate, BarChart3, DollarSign, Wand2, Download, UserCog, ScrollText, Activity, Rocket, Settings, Headset, Gauge, Monitor, Mic, Bot, Brain, Workflow, BookOpen, Database, Key, Calendar, Moon, Sun, Sparkles, Filter, Clock } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -34,6 +34,7 @@ const adminMenuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Megaphone, label: "Campaigns", path: "/campaigns" },
   { icon: Calendar, label: "Campaign Calendar", path: "/campaign-calendar" },
+  { icon: Clock, label: "Smart Scheduler", path: "/smart-scheduler" },
   { icon: Users, label: "Contacts", path: "/contacts" },
   { icon: Volume2, label: "Audio / TTS", path: "/audio" },
   { icon: PhoneCall, label: "Caller IDs", path: "/caller-ids" },
@@ -65,6 +66,7 @@ const adminMenuItems = [
   { icon: Activity, label: "System Status", path: "/system-status" },
   { icon: Database, label: "DB Backups", path: "/backups" },
   { icon: Key, label: "License Keys", path: "/licenses" },
+  { icon: Key, label: "API Keys", path: "/api-keys" },
   { icon: BookOpen, label: "Help & Docs", path: "/help" },
   { icon: Rocket, label: "Getting Started", path: "/onboarding" },
   { icon: Sparkles, label: "Product Tour", path: "/__product_tour__" },

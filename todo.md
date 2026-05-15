@@ -1151,3 +1151,50 @@
   - [x] Add auto-disable logic: disable DIDs below threshold after N calls
   - [x] Add auto-rotate UI: settings panel with threshold controls, enable/disable toggle
   - [x] Show disabled-by-performance status on DID cards with reason and reset option
+
+## v2.4.0 Features
+
+- [x] Disconnected Number Flagging
+  - [x] Schema: disconnected_numbers table (phoneNumber, detectedAt, reason, campaignId, autoAddedToDnc)
+  - [x] Backend: auto-detect disconnected numbers from call results (congestion, invalid-number, unallocated, number-changed)
+  - [x] Backend: auto-add disconnected numbers to DNC list with source="disconnected"
+  - [x] Backend: check disconnected list before dialing (dialer engine filter)
+  - [x] Backend: getDisconnectedNumbers, getDisconnectedStats endpoints
+  - [x] Frontend: Disconnected Numbers tab/section on DNC page with count, table, export
+  - [x] Frontend: Badge on DNC page showing disconnected count separately
+  - [x] Report: disconnected number growth over time, top campaigns generating disconnects
+- [x] DNC Report & Analytics
+  - [x] Backend: DNC growth over time (daily additions/removals)
+  - [x] Backend: DNC source breakdown (manual, import, opt-out, complaint, disconnected)
+  - [x] Backend: DNC impact on campaigns (how many leads filtered per campaign)
+  - [x] Frontend: DNC Analytics tab with charts (growth line, source pie, campaign impact bar)
+- [x] Smart Campaign Scheduler (Best-Time-to-Call)
+  - [x] Backend: analyze call_logs by hour-of-day and day-of-week for answer rates
+  - [x] Backend: generate heatmap data (hour x day matrix with answer rate %)
+  - [x] Backend: recommend optimal launch windows based on historical data
+  - [x] Frontend: heatmap visualization on campaign create/schedule page
+  - [x] Frontend: "Suggested Times" badge with AI-recommended launch windows
+- [x] Intelligent Retry Strategy
+  - [x] Backend: score contacts for retry worthiness (past pickup patterns, time-of-day, attempts)
+  - [x] Backend: determine optimal retry time per contact (when similar contacts answered)
+  - [x] Backend: select best DID for retry (geographic match, previous success)
+  - [x] Backend: prioritize high-value retries (contacts with partial engagement)
+  - [x] Frontend: Intelligent Retry button on campaign detail (replaces basic "Retry Failed")
+  - [x] Frontend: retry preview showing estimated success rate and recommended schedule
+- [x] REST API with API Keys
+  - [x] Schema: api_keys table (id, userId, name, keyHash, prefix, permissions, lastUsedAt, expiresAt, createdAt)
+  - [x] Backend: API key generation, validation, revocation endpoints
+  - [x] Backend: REST middleware for API key auth (Bearer token)
+  - [x] Backend: REST endpoints — GET /api/v1/campaigns, POST /api/v1/campaigns/:id/launch
+  - [x] Backend: REST endpoints — GET /api/v1/contacts, POST /api/v1/contacts/import
+  - [x] Backend: REST endpoints — GET /api/v1/reports/:campaignId
+  - [x] Backend: REST endpoints — GET /api/v1/dnc, POST /api/v1/dnc
+  - [x] Backend: rate limiting per API key (100 req/min default)
+  - [x] Frontend: API Keys management page (generate, list, revoke, copy)
+  - [x] Frontend: API documentation page with examples (curl, Python, Node.js)
+- [x] Enhanced Call Queue Monitoring (DB-backed distributed queue already exists)
+  - [x] Backend: queue depth history tracking (hourly aggregation)
+  - [x] Backend: dead letter queue for permanently failed calls (3+ attempts or congestion)
+  - [x] Backend: queue throughput metrics (calls/min, avg wait time, avg call duration)
+  - [x] Backend: requeue dead letter items back to pending
+  - [x] tRPC: queueMonitor router (stats, throughput, depthHistory, deadLetter, requeueDeadLetter)

@@ -278,13 +278,30 @@ export const dncList = mysqlTable("dnc_list", {
   userId: int("userId").notNull(),
   phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
   reason: varchar("reason", { length: 255 }),
-  source: mysqlEnum("source", ["manual", "import", "opt-out", "complaint"]).default("manual").notNull(),
+  source: mysqlEnum("source", ["manual", "import", "opt-out", "complaint", "disconnected"]).default("manual").notNull(),
   addedBy: varchar("addedBy", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type DncEntry = typeof dncList.$inferSelect;
 export type InsertDncEntry = typeof dncList.$inferInsert;
+
+// ─── Disconnected Numbers ───────────────────────────────────────────────────
+export const disconnectedNumbers = mysqlTable("disconnected_numbers", {
+  id: int("id").autoincrement().primaryKey(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  reason: mysqlEnum("reason", ["congestion", "invalid-number", "unallocated", "number-changed", "disconnected", "out-of-service", "manual"]).default("disconnected").notNull(),
+  campaignId: int("campaignId"),
+  campaignName: varchar("campaignName", { length: 255 }),
+  contactId: int("contactId"),
+  databaseName: varchar("databaseName", { length: 255 }),
+  autoAddedToDnc: int("autoAddedToDnc").default(0).notNull(),
+  detectedAt: bigint("detectedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DisconnectedNumber = typeof disconnectedNumbers.$inferSelect;
+export type InsertDisconnectedNumber = typeof disconnectedNumbers.$inferInsert;
 
 // ─── DID / Caller ID Pool ──────────────────────────────────────────────────
 export const callerIds = mysqlTable("caller_ids", {
@@ -1250,3 +1267,43 @@ export const ttsAudioCache = mysqlTable("tts_audio_cache", {
 });
 export type TtsAudioCache = typeof ttsAudioCache.$inferSelect;
 export type InsertTtsAudioCache = typeof ttsAudioCache.$inferInsert;
+
+
+// ─── External API Keys ──────────────────────────────────────────────────────
+export const externalApiKeys = mysqlTable("external_api_keys", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(), // Friendly name (e.g. "CRM Integration")
+  keyPrefix: varchar("keyPrefix", { length: 10 }).notNull(), // First 8 chars for display (e.g. "tbd_a1b2")
+  keyHash: varchar("keyHash", { length: 128 }).notNull().unique(), // SHA-256 hash of full key
+  permissions: json("permissions").$type<{
+    campaigns: { read: boolean; write: boolean; launch: boolean };
+    contacts: { read: boolean; write: boolean; import: boolean };
+    callLogs: { read: boolean };
+    reports: { read: boolean };
+    dnc: { read: boolean; write: boolean };
+  }>(),
+  rateLimit: int("rateLimit").default(60).notNull(), // Requests per minute
+  lastUsedAt: bigint("lastUsedAt", { mode: "number" }),
+  expiresAt: bigint("expiresAt", { mode: "number" }), // null = never expires
+  isActive: int("isActive").default(1).notNull(),
+  createdBy: int("createdBy").notNull(), // userId who created this key
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ExternalApiKey = typeof externalApiKeys.$inferSelect;
+export type InsertExternalApiKey = typeof externalApiKeys.$inferInsert;
+
+// ─── API Request Logs ───────────────────────────────────────────────────────
+export const apiRequestLogs = mysqlTable("api_request_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  apiKeyId: int("apiKeyId").notNull(),
+  method: varchar("method", { length: 10 }).notNull(),
+  endpoint: varchar("endpoint", { length: 255 }).notNull(),
+  statusCode: int("statusCode").notNull(),
+  responseTimeMs: int("responseTimeMs"),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
+export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;

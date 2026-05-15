@@ -319,6 +319,28 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
           }
         }
 
+        // Auto-detect disconnected numbers and add to DNC
+        if ((result === "failed" || result === "congestion") && details?.error) {
+          if (db.isDisconnectedError(details.error)) {
+            try {
+              const campaign = await db.getCampaign(queueItem.campaignId);
+              const disconnectResult = await db.addDisconnectedNumber({
+                phoneNumber: queueItem.phoneNumber,
+                reason: db.detectDisconnectReason(details.error),
+                campaignId: queueItem.campaignId || undefined,
+                campaignName: campaign?.name || undefined,
+                databaseName: queueItem.audioName || undefined,
+                autoAddToDnc: true,
+              });
+              if (!disconnectResult.duplicate) {
+                console.log(`[PBX-API] Disconnected number detected: ${queueItem.phoneNumber} (${details.error}) - added to DNC`);
+              }
+            } catch (err) {
+              console.warn("[PBX-API] Disconnected number tracking error:", err);
+            }
+          }
+        }
+
         // Check if campaign is complete
         const pending = await db.getPendingCallLogs(queueItem.campaignId);
         const activeCount = await db.getActiveCallCount(queueItem.campaignId);

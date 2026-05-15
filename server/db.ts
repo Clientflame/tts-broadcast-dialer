@@ -1,4 +1,4 @@
-import { eq, ne, and, desc, sql, inArray, notInArray, count, gte } from "drizzle-orm";
+import { eq, ne, and, or, desc, sql, inArray, notInArray, count, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -44,6 +44,7 @@ import {
   inboundFilterLog, InsertInboundFilterLogEntry,
   crmIntegrations, InsertCrmIntegration,
   voicemailLibrary, InsertVoicemailLibraryEntry,
+  disconnectedNumbers, InsertDisconnectedNumber,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -4353,4 +4354,882 @@ export async function evaluateAutoRotate(): Promise<Array<{ id: number; phoneNum
   }
 
   return disabled;
+}
+
+
+// ─── Disconnected Numbers ─────────────────────────────────────────────────────
+
+/** Reasons that indicate a number is disconnected/invalid */
+const DISCONNECTED_REASONS = [
+  "congestion",
+  "invalid-number",
+  "unallocated",
+  "number-changed",
+  "disconnected",
+  "out-of-service",
+] as const;
+
+/** Error messages from PBX that indicate disconnected numbers */
+const DISCONNECTED_ERROR_PATTERNS = [
+  "number not in use",
+  "unallocated",
+  "no route to destination",
+  "number changed",
+  "number disconnected",
+  "not in service",
+  "vacant code",
+  "invalid number",
+  "congestion",
+  "all circuits busy",
+  "call rejected",
+  "subscriber absent",
+];
+
+export function isDisconnectedError(errorMessage: string | null | undefined): boolean {
+  if (!errorMessage) return false;
+  const lower = errorMessage.toLowerCase();
+  return DISCONNECTED_ERROR_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
+export function detectDisconnectReason(errorMessage: string): typeof DISCONNECTED_REASONS[number] {
+  const lower = errorMessage.toLowerCase();
+  if (lower.includes("congestion") || lower.includes("all circuits")) return "congestion";
+  if (lower.includes("invalid") || lower.includes("vacant")) return "invalid-number";
+  if (lower.includes("unallocated") || lower.includes("not in use")) return "unallocated";
+  if (lower.includes("changed")) return "number-changed";
+  if (lower.includes("not in service") || lower.includes("out of service")) return "out-of-service";
+  return "disconnected";
+}
+
+export async function addDisconnectedNumber(data: {
+  phoneNumber: string;
+  reason?: string;
+  campaignId?: number;
+  campaignName?: string;
+  contactId?: number;
+  databaseName?: string;
+  autoAddToDnc?: boolean;
+}): Promise<{ id: number; duplicate: boolean; addedToDnc: boolean }> {
+  const db = await getDb();
+  if (!db) return { id: 0, duplicate: false, addedToDnc: false };
+
+  const normalized = data.phoneNumber.replace(/\D/g, "");
+
+  // Check if already tracked
+  const existing = await db.select({ id: disconnectedNumbers.id })
+    .from(disconnectedNumbers)
+    .where(eq(disconnectedNumbers.phoneNumber, normalized))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { id: existing[0].id, duplicate: true, addedToDnc: false };
+  }
+
+  const reason = (data.reason || "disconnected") as any;
+  const [result] = await db.insert(disconnectedNumbers).values({
+    phoneNumber: normalized,
+    reason,
+    campaignId: data.campaignId,
+    campaignName: data.campaignName,
+    contactId: data.contactId,
+    databaseName: data.databaseName,
+    autoAddedToDnc: data.autoAddToDnc ? 1 : 0,
+    detectedAt: Date.now(),
+  });
+
+  let addedToDnc = false;
+  if (data.autoAddToDnc !== false) {
+    // Auto-add to DNC list
+    const dncExisting = await db.select({ id: dncList.id })
+      .from(dncList)
+      .where(eq(dncList.phoneNumber, normalized))
+      .limit(1);
+
+    if (dncExisting.length === 0) {
+      await db.insert(dncList).values({
+        userId: 0,
+        phoneNumber: normalized,
+        reason: `Disconnected: ${data.reason || "number not in service"}`,
+        source: "disconnected",
+        addedBy: "System (Auto-Detect)",
+      });
+      addedToDnc = true;
+      // Update the record
+      await db.update(disconnectedNumbers)
+        .set({ autoAddedToDnc: 1 })
+        .where(eq(disconnectedNumbers.id, result.insertId));
+    }
+  }
+
+  return { id: result.insertId, duplicate: false, addedToDnc };
+}
+
+export async function bulkAddDisconnectedNumbers(entries: Array<{
+  phoneNumber: string;
+  reason?: string;
+  campaignId?: number;
+  campaignName?: string;
+  contactId?: number;
+  databaseName?: string;
+}>): Promise<{ added: number; duplicates: number; addedToDnc: number }> {
+  const db = await getDb();
+  if (!db) return { added: 0, duplicates: 0, addedToDnc: 0 };
+
+  // Get existing disconnected numbers
+  const existingRows = await db.select({ phoneNumber: disconnectedNumbers.phoneNumber }).from(disconnectedNumbers);
+  const existingSet = new Set(existingRows.map(r => r.phoneNumber));
+
+  // Get existing DNC numbers
+  const dncRows = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList);
+  const dncSet = new Set(dncRows.map(r => r.phoneNumber));
+
+  const newEntries: InsertDisconnectedNumber[] = [];
+  const newDncEntries: any[] = [];
+  let duplicates = 0;
+
+  for (const entry of entries) {
+    const normalized = entry.phoneNumber.replace(/\D/g, "");
+    if (!normalized) continue;
+
+    if (existingSet.has(normalized)) {
+      duplicates++;
+      continue;
+    }
+
+    existingSet.add(normalized);
+    const reason = (entry.reason || "disconnected") as any;
+    const willAddToDnc = !dncSet.has(normalized);
+
+    newEntries.push({
+      phoneNumber: normalized,
+      reason,
+      campaignId: entry.campaignId,
+      campaignName: entry.campaignName,
+      contactId: entry.contactId,
+      databaseName: entry.databaseName,
+      autoAddedToDnc: willAddToDnc ? 1 : 0,
+      detectedAt: Date.now(),
+    });
+
+    if (willAddToDnc) {
+      dncSet.add(normalized);
+      newDncEntries.push({
+        userId: 0,
+        phoneNumber: normalized,
+        reason: `Disconnected: ${entry.reason || "number not in service"}`,
+        source: "disconnected",
+        addedBy: "System (Auto-Detect)",
+      });
+    }
+  }
+
+  // Batch insert disconnected numbers
+  if (newEntries.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < newEntries.length; i += chunkSize) {
+      await db.insert(disconnectedNumbers).values(newEntries.slice(i, i + chunkSize));
+    }
+  }
+
+  // Batch insert DNC entries
+  if (newDncEntries.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < newDncEntries.length; i += chunkSize) {
+      await db.insert(dncList).values(newDncEntries.slice(i, i + chunkSize));
+    }
+  }
+
+  return { added: newEntries.length, duplicates, addedToDnc: newDncEntries.length };
+}
+
+export async function getDisconnectedNumbers(opts?: { search?: string; limit?: number }): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = opts?.limit || 500;
+
+  if (opts?.search) {
+    return db.select().from(disconnectedNumbers)
+      .where(like(disconnectedNumbers.phoneNumber, `%${opts.search}%`))
+      .orderBy(desc(disconnectedNumbers.createdAt))
+      .limit(limit);
+  }
+  return db.select().from(disconnectedNumbers)
+    .orderBy(desc(disconnectedNumbers.createdAt))
+    .limit(limit);
+}
+
+export async function getDisconnectedCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const [result] = await db.select({ cnt: count() }).from(disconnectedNumbers);
+  return result?.cnt || 0;
+}
+
+export async function getDisconnectedStats(): Promise<{
+  total: number;
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  byReason: Record<string, number>;
+  byCampaign: Array<{ campaignName: string; count: number }>;
+  dailyGrowth: Array<{ date: string; count: number }>;
+}> {
+  const db = await getDb();
+  if (!db) return { total: 0, last24h: 0, last7d: 0, last30d: 0, byReason: {}, byCampaign: [], dailyGrowth: [] };
+
+  const now = Date.now();
+  const day = 86400000;
+
+  const allRows = await db.select().from(disconnectedNumbers);
+  const total = allRows.length;
+  const last24h = allRows.filter(r => r.detectedAt > now - day).length;
+  const last7d = allRows.filter(r => r.detectedAt > now - 7 * day).length;
+  const last30d = allRows.filter(r => r.detectedAt > now - 30 * day).length;
+
+  // By reason
+  const byReason: Record<string, number> = {};
+  for (const row of allRows) {
+    byReason[row.reason] = (byReason[row.reason] || 0) + 1;
+  }
+
+  // By campaign (top 10)
+  const campaignMap: Record<string, number> = {};
+  for (const row of allRows) {
+    const name = row.campaignName || "Unknown";
+    campaignMap[name] = (campaignMap[name] || 0) + 1;
+  }
+  const byCampaign = Object.entries(campaignMap)
+    .map(([campaignName, count]) => ({ campaignName, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // Daily growth (last 30 days)
+  const dailyGrowth: Array<{ date: string; count: number }> = [];
+  for (let i = 29; i >= 0; i--) {
+    const dayStart = now - (i + 1) * day;
+    const dayEnd = now - i * day;
+    const count = allRows.filter(r => r.detectedAt >= dayStart && r.detectedAt < dayEnd).length;
+    const date = new Date(dayEnd).toISOString().split("T")[0];
+    dailyGrowth.push({ date, count });
+  }
+
+  return { total, last24h, last7d, last30d, byReason, byCampaign, dailyGrowth };
+}
+
+export async function isPhoneDisconnected(phoneNumber: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const normalized = phoneNumber.replace(/\D/g, "");
+  const result = await db.select({ id: disconnectedNumbers.id })
+    .from(disconnectedNumbers)
+    .where(eq(disconnectedNumbers.phoneNumber, normalized))
+    .limit(1);
+  return result.length > 0;
+}
+
+export async function removeDisconnectedNumber(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(disconnectedNumbers).where(eq(disconnectedNumbers.id, id));
+}
+
+export async function bulkRemoveDisconnected(ids: number[]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  if (ids.length === 0) return;
+  await db.delete(disconnectedNumbers).where(inArray(disconnectedNumbers.id, ids));
+}
+
+// ─── DNC Analytics ────────────────────────────────────────────────────────────
+
+export async function getDncStats(): Promise<{
+  total: number;
+  bySource: Record<string, number>;
+  last30dGrowth: Array<{ date: string; additions: number }>;
+  campaignImpact: Array<{ campaignName: string; filtered: number }>;
+}> {
+  const db = await getDb();
+  if (!db) return { total: 0, bySource: {}, last30dGrowth: [], campaignImpact: [] };
+
+  const allDnc = await db.select().from(dncList);
+  const total = allDnc.length;
+
+  // By source
+  const bySource: Record<string, number> = {};
+  for (const row of allDnc) {
+    bySource[row.source] = (bySource[row.source] || 0) + 1;
+  }
+
+  // Daily growth (last 30 days)
+  const now = Date.now();
+  const day = 86400000;
+  const last30dGrowth: Array<{ date: string; additions: number }> = [];
+  for (let i = 29; i >= 0; i--) {
+    const dayStart = new Date(now - (i + 1) * day);
+    const dayEnd = new Date(now - i * day);
+    const additions = allDnc.filter(r => {
+      const created = new Date(r.createdAt).getTime();
+      return created >= dayStart.getTime() && created < dayEnd.getTime();
+    }).length;
+    last30dGrowth.push({ date: dayEnd.toISOString().split("T")[0], additions });
+  }
+
+  // Campaign impact - how many disconnected numbers per campaign
+  const disconnectedRows = await db.select().from(disconnectedNumbers);
+  const campaignMap: Record<string, number> = {};
+  for (const row of disconnectedRows) {
+    const name = row.campaignName || "Unknown";
+    campaignMap[name] = (campaignMap[name] || 0) + 1;
+  }
+  const campaignImpact = Object.entries(campaignMap)
+    .map(([campaignName, filtered]) => ({ campaignName, filtered }))
+    .sort((a, b) => b.filtered - a.filtered)
+    .slice(0, 10);
+
+  return { total, bySource, last30dGrowth, campaignImpact };
+}
+
+
+// ─── Smart Campaign Scheduler (Best-Time-to-Call) ─────────────────────────────
+
+export async function getBestTimeToCallHeatmap(): Promise<{
+  heatmap: Array<{ hour: number; day: number; answerRate: number; totalCalls: number }>;
+  bestWindows: Array<{ day: string; startHour: number; endHour: number; avgAnswerRate: number }>;
+  overallBestHour: number;
+  overallBestDay: string;
+}> {
+  const db = await getDb();
+  if (!db) return { heatmap: [], bestWindows: [], overallBestHour: 10, overallBestDay: "Tuesday" };
+
+  // Get all call logs with timestamps
+  const logs = await db.select({
+    status: callLogs.status,
+    startedAt: callLogs.startedAt,
+    answeredAt: callLogs.answeredAt,
+  }).from(callLogs).where(
+    and(
+      isNotNull(callLogs.startedAt),
+      inArray(callLogs.status, ["answered", "completed", "busy", "no-answer", "failed"])
+    )
+  );
+
+  if (logs.length === 0) {
+    return { heatmap: [], bestWindows: [], overallBestHour: 10, overallBestDay: "Tuesday" };
+  }
+
+  // Build hour x day matrix
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const matrix: Record<string, { answered: number; total: number }> = {};
+
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      matrix[`${d}-${h}`] = { answered: 0, total: 0 };
+    }
+  }
+
+  for (const log of logs) {
+    if (!log.startedAt) continue;
+    const date = new Date(log.startedAt);
+    const day = date.getDay();
+    const hour = date.getHours();
+    const key = `${day}-${hour}`;
+
+    matrix[key].total++;
+    if (log.status === "answered" || log.status === "completed") {
+      matrix[key].answered++;
+    }
+  }
+
+  // Generate heatmap data
+  const heatmap: Array<{ hour: number; day: number; answerRate: number; totalCalls: number }> = [];
+  let bestRate = 0;
+  let bestHour = 10;
+  let bestDay = 2;
+
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      const cell = matrix[`${d}-${h}`];
+      const answerRate = cell.total > 0 ? Math.round((cell.answered / cell.total) * 100) : 0;
+      heatmap.push({ hour: h, day: d, answerRate, totalCalls: cell.total });
+
+      if (cell.total >= 5 && answerRate > bestRate) {
+        bestRate = answerRate;
+        bestHour = h;
+        bestDay = d;
+      }
+    }
+  }
+
+  // Find best 2-hour windows per day (minimum 10 calls in window)
+  const bestWindows: Array<{ day: string; startHour: number; endHour: number; avgAnswerRate: number }> = [];
+  for (let d = 0; d < 7; d++) {
+    let bestWindowRate = 0;
+    let bestWindowStart = 9;
+
+    for (let h = 8; h <= 20; h++) {
+      const cell1 = matrix[`${d}-${h}`];
+      const cell2 = matrix[`${d}-${h + 1}`];
+      const totalCalls = cell1.total + cell2.total;
+      if (totalCalls < 5) continue;
+
+      const totalAnswered = cell1.answered + cell2.answered;
+      const rate = Math.round((totalAnswered / totalCalls) * 100);
+
+      if (rate > bestWindowRate) {
+        bestWindowRate = rate;
+        bestWindowStart = h;
+      }
+    }
+
+    if (bestWindowRate > 0) {
+      bestWindows.push({
+        day: dayNames[d],
+        startHour: bestWindowStart,
+        endHour: bestWindowStart + 2,
+        avgAnswerRate: bestWindowRate,
+      });
+    }
+  }
+
+  // Sort best windows by answer rate
+  bestWindows.sort((a, b) => b.avgAnswerRate - a.avgAnswerRate);
+
+  return {
+    heatmap,
+    bestWindows,
+    overallBestHour: bestHour,
+    overallBestDay: dayNames[bestDay],
+  };
+}
+
+export async function getCallVolumeByHour(): Promise<Array<{ hour: number; total: number; answered: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const logs = await db.select({
+    status: callLogs.status,
+    startedAt: callLogs.startedAt,
+  }).from(callLogs).where(isNotNull(callLogs.startedAt));
+
+  const hourData: Array<{ hour: number; total: number; answered: number }> = Array.from({ length: 24 }, (_, h) => ({ hour: h, total: 0, answered: 0 }));
+
+  for (const log of logs) {
+    if (!log.startedAt) continue;
+    const hour = new Date(log.startedAt).getHours();
+    hourData[hour].total++;
+    if (log.status === "answered" || log.status === "completed") {
+      hourData[hour].answered++;
+    }
+  }
+
+  return hourData;
+}
+
+
+// ─── Intelligent Retry Strategy ───────────────────────────────────────────────
+
+export interface RetryCandidate {
+  contactId: number;
+  phoneNumber: string;
+  contactName: string | null;
+  databaseName: string | null;
+  attempts: number;
+  lastAttemptAt: number;
+  lastResult: string;
+  retryScore: number;
+  suggestedTime: string;
+  suggestedDid: string | null;
+  reason: string;
+}
+
+export async function getIntelligentRetryCandidates(campaignId: number): Promise<{
+  candidates: RetryCandidate[];
+  estimatedSuccessRate: number;
+  totalEligible: number;
+  recommendation: string;
+}> {
+  const db = await getDb();
+  if (!db) return { candidates: [], estimatedSuccessRate: 0, totalEligible: 0, recommendation: "No database connection" };
+
+  // Get failed/no-answer call logs for this campaign
+  const failedLogs = await db.select().from(callLogs)
+    .where(and(
+      eq(callLogs.campaignId, campaignId),
+      inArray(callLogs.status, ["no-answer", "busy", "failed"])
+    ))
+    .orderBy(desc(callLogs.createdAt));
+
+  if (failedLogs.length === 0) {
+    return { candidates: [], estimatedSuccessRate: 0, totalEligible: 0, recommendation: "No failed calls to retry" };
+  }
+
+  // Get DNC numbers to exclude
+  const dncNumbers = await db.select({ phoneNumber: dncList.phoneNumber }).from(dncList);
+  const dncSet = new Set(dncNumbers.map(r => r.phoneNumber));
+
+  // Get disconnected numbers to exclude
+  const disconnected = await db.select({ phoneNumber: disconnectedNumbers.phoneNumber }).from(disconnectedNumbers);
+  const disconnectedSet = new Set(disconnected.map(r => r.phoneNumber));
+
+  // Group by phone number to get attempt history
+  const phoneMap = new Map<string, typeof failedLogs>();
+  for (const log of failedLogs) {
+    const existing = phoneMap.get(log.phoneNumber) || [];
+    existing.push(log);
+    phoneMap.set(log.phoneNumber, existing);
+  }
+
+  // Get historical answer rates by hour for scoring
+  const answeredLogs = await db.select({ startedAt: callLogs.startedAt, status: callLogs.status })
+    .from(callLogs)
+    .where(and(
+      inArray(callLogs.status, ["answered", "completed"]),
+      isNotNull(callLogs.startedAt)
+    ));
+
+  const hourAnswerRates: number[] = Array(24).fill(0);
+  const hourTotals: number[] = Array(24).fill(0);
+  for (const log of answeredLogs) {
+    if (log.startedAt) {
+      const hour = new Date(log.startedAt).getHours();
+      hourAnswerRates[hour]++;
+    }
+  }
+  // Get all logs for total counts
+  const allLogs = await db.select({ startedAt: callLogs.startedAt })
+    .from(callLogs)
+    .where(isNotNull(callLogs.startedAt));
+  for (const log of allLogs) {
+    if (log.startedAt) {
+      const hour = new Date(log.startedAt).getHours();
+      hourTotals[hour]++;
+    }
+  }
+
+  // Find best hour
+  let bestHour = 10;
+  let bestHourRate = 0;
+  for (let h = 8; h <= 20; h++) {
+    const rate = hourTotals[h] > 0 ? hourAnswerRates[h] / hourTotals[h] : 0;
+    if (rate > bestHourRate) {
+      bestHourRate = rate;
+      bestHour = h;
+    }
+  }
+
+  // Get available DIDs
+  const dids = await db.select().from(callerIds).where(eq(callerIds.isActive, 1));
+
+  // Score each candidate
+  const candidates: RetryCandidate[] = [];
+  for (const [phoneNumber, logs] of Array.from(phoneMap.entries())) {
+    // Skip DNC and disconnected
+    const normalized = phoneNumber.replace(/\D/g, "");
+    if (dncSet.has(normalized) || disconnectedSet.has(normalized)) continue;
+
+    // Skip if too many attempts (>5)
+    if (logs.length > 5) continue;
+
+    const lastLog = logs[0];
+    const attempts = logs.length;
+    const lastAttemptAt = lastLog.startedAt || new Date(lastLog.createdAt).getTime();
+
+    // Calculate retry score (0-100)
+    let score = 50; // Base score
+
+    // Fewer attempts = higher score
+    score += (5 - attempts) * 8; // +8 to +32
+
+    // "busy" is more promising than "no-answer" which is more than "failed"
+    if (lastLog.status === "busy") score += 15;
+    else if (lastLog.status === "no-answer") score += 5;
+    else score -= 10;
+
+    // Time since last attempt (more time = higher score, up to 24h)
+    const hoursSinceLastAttempt = (Date.now() - lastAttemptAt) / 3600000;
+    if (hoursSinceLastAttempt >= 4) score += 10;
+    if (hoursSinceLastAttempt >= 8) score += 5;
+
+    // Clamp score
+    score = Math.max(0, Math.min(100, score));
+
+    // Suggest best DID (match area code if possible)
+    const areaCode = normalized.slice(0, 3);
+    const matchingDid = dids.find(d => d.phoneNumber.replace(/\D/g, "").slice(0, 3) === areaCode);
+    const suggestedDid = matchingDid?.phoneNumber || (dids.length > 0 ? dids[0].phoneNumber : null);
+
+    // Suggest time
+    const formatHour = (h: number) => h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`;
+    const suggestedTime = formatHour(bestHour);
+
+    // Reason
+    let reason = "";
+    if (lastLog.status === "busy") reason = "Previously busy - likely available at different time";
+    else if (lastLog.status === "no-answer") reason = `No answer after ${attempts} attempt(s) - try at ${suggestedTime}`;
+    else reason = `Failed (${attempts} attempts) - retry with different DID`;
+
+    candidates.push({
+      contactId: lastLog.contactId,
+      phoneNumber,
+      contactName: lastLog.contactName,
+      databaseName: null,
+      attempts,
+      lastAttemptAt,
+      lastResult: lastLog.status || "unknown",
+      retryScore: score,
+      suggestedTime,
+      suggestedDid,
+      reason,
+    });
+  }
+
+  // Sort by score descending
+  candidates.sort((a, b) => b.retryScore - a.retryScore);
+
+  // Calculate estimated success rate
+  const highScoreCandidates = candidates.filter(c => c.retryScore >= 60);
+  const estimatedSuccessRate = candidates.length > 0
+    ? Math.round((highScoreCandidates.length / candidates.length) * bestHourRate * 100)
+    : 0;
+
+  // Generate recommendation
+  let recommendation = "";
+  if (candidates.length === 0) {
+    recommendation = "No eligible contacts for retry. All failed contacts are either on DNC, disconnected, or exceeded max attempts.";
+  } else if (highScoreCandidates.length > candidates.length * 0.5) {
+    recommendation = `Strong retry opportunity: ${highScoreCandidates.length} high-score contacts. Schedule retry at ${formatHour(bestHour)} for best results.`;
+  } else {
+    recommendation = `${candidates.length} contacts eligible for retry. Focus on the top ${Math.min(highScoreCandidates.length, 50)} high-score contacts for best ROI.`;
+  }
+
+  function formatHour(h: number) { return h < 12 ? `${h}:00 AM` : h === 12 ? "12:00 PM" : `${h - 12}:00 PM`; }
+
+  return {
+    candidates: candidates.slice(0, 200), // Limit to top 200
+    estimatedSuccessRate,
+    totalEligible: candidates.length,
+    recommendation,
+  };
+}
+
+
+// ─── External API Keys ────────────────────────────────────────────────────────
+
+import { externalApiKeys, apiRequestLogs } from "../drizzle/schema";
+import crypto from "crypto";
+
+export function generateApiKey(): { key: string; prefix: string; hash: string } {
+  const key = `tbd_${crypto.randomBytes(32).toString("hex")}`;
+  const prefix = key.slice(0, 12);
+  const hash = crypto.createHash("sha256").update(key).digest("hex");
+  return { key, prefix, hash };
+}
+
+export function hashApiKey(key: string): string {
+  return crypto.createHash("sha256").update(key).digest("hex");
+}
+
+export async function createApiKey(data: {
+  name: string;
+  permissions: any;
+  rateLimit?: number;
+  expiresAt?: number | null;
+  createdBy: number;
+}): Promise<{ id: number; key: string; prefix: string }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const { key, prefix, hash } = generateApiKey();
+  const result = await db.insert(externalApiKeys).values({
+    name: data.name,
+    keyPrefix: prefix,
+    keyHash: hash,
+    permissions: data.permissions,
+    rateLimit: data.rateLimit || 60,
+    expiresAt: data.expiresAt || null,
+    isActive: 1,
+    createdBy: data.createdBy,
+  });
+
+  return { id: Number(result[0].insertId), key, prefix };
+}
+
+export async function getApiKeys(): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: externalApiKeys.id,
+    name: externalApiKeys.name,
+    keyPrefix: externalApiKeys.keyPrefix,
+    permissions: externalApiKeys.permissions,
+    rateLimit: externalApiKeys.rateLimit,
+    lastUsedAt: externalApiKeys.lastUsedAt,
+    expiresAt: externalApiKeys.expiresAt,
+    isActive: externalApiKeys.isActive,
+    createdAt: externalApiKeys.createdAt,
+  }).from(externalApiKeys).orderBy(desc(externalApiKeys.createdAt));
+}
+
+export async function validateApiKey(key: string): Promise<{ valid: boolean; keyId?: number; permissions?: any }> {
+  const db = await getDb();
+  if (!db) return { valid: false };
+
+  const hash = hashApiKey(key);
+  const results = await db.select().from(externalApiKeys)
+    .where(and(eq(externalApiKeys.keyHash, hash), eq(externalApiKeys.isActive, 1)));
+
+  if (results.length === 0) return { valid: false };
+
+  const apiKey = results[0];
+
+  // Check expiration
+  if (apiKey.expiresAt && apiKey.expiresAt < Date.now()) {
+    return { valid: false };
+  }
+
+  // Update last used
+  await db.update(externalApiKeys).set({ lastUsedAt: Date.now() }).where(eq(externalApiKeys.id, apiKey.id));
+
+  return { valid: true, keyId: apiKey.id, permissions: apiKey.permissions };
+}
+
+export async function revokeApiKey(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(externalApiKeys).set({ isActive: 0 }).where(eq(externalApiKeys.id, id));
+}
+
+export async function deleteApiKey(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(externalApiKeys).where(eq(externalApiKeys.id, id));
+}
+
+export async function logApiRequest(data: {
+  apiKeyId: number;
+  method: string;
+  endpoint: string;
+  statusCode: number;
+  responseTimeMs?: number;
+  ipAddress?: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(apiRequestLogs).values(data);
+}
+
+export async function getApiRequestLogs(apiKeyId?: number, limit = 100): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (apiKeyId) {
+    return db.select().from(apiRequestLogs)
+      .where(eq(apiRequestLogs.apiKeyId, apiKeyId))
+      .orderBy(desc(apiRequestLogs.createdAt))
+      .limit(limit);
+  }
+
+  return db.select().from(apiRequestLogs)
+    .orderBy(desc(apiRequestLogs.createdAt))
+    .limit(limit);
+}
+
+
+// ─── Enhanced Call Queue Monitoring ───────────────────────────────────────────
+
+export async function getQueueDepthHistory(hours: number = 24): Promise<Array<{ hour: string; pending: number; claimed: number; completed: number; failed: number }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - hours * 3600000);
+  const results = await db.select({
+    hour: sql<string>`DATE_FORMAT(${callQueue.createdAt}, '%Y-%m-%d %H:00')`,
+    status: callQueue.status,
+    count: count(),
+  }).from(callQueue)
+    .where(gte(callQueue.createdAt, cutoff))
+    .groupBy(sql`DATE_FORMAT(${callQueue.createdAt}, '%Y-%m-%d %H:00')`, callQueue.status);
+
+  // Aggregate by hour
+  const hourMap = new Map<string, { pending: number; claimed: number; completed: number; failed: number }>();
+  for (const row of results) {
+    const existing = hourMap.get(row.hour) || { pending: 0, claimed: 0, completed: 0, failed: 0 };
+    if (row.status === "pending") existing.pending = row.count;
+    else if (row.status === "claimed") existing.claimed = row.count;
+    else if (row.status === "completed") existing.completed = row.count;
+    else if (row.status === "failed") existing.failed = row.count;
+    hourMap.set(row.hour, existing);
+  }
+
+  return Array.from(hourMap.entries()).map(([hour, stats]) => ({ hour, ...stats })).sort((a, b) => a.hour.localeCompare(b.hour));
+}
+
+export async function getDeadLetterQueue(limit: number = 100): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Dead letter = failed calls with 3+ attempts or specific failure reasons
+  return db.select().from(callQueue)
+    .where(and(
+      eq(callQueue.status, "failed"),
+      or(
+        sql`JSON_EXTRACT(${callQueue.resultDetails}, '$.attempts') >= 3`,
+        inArray(callQueue.result, ["congestion", "failed"])
+      )
+    ))
+    .orderBy(desc(callQueue.createdAt))
+    .limit(limit);
+}
+
+export async function getQueueThroughput(): Promise<{ callsPerMinute: number; avgWaitTimeMs: number; avgCallDurationSec: number }> {
+  const db = await getDb();
+  if (!db) return { callsPerMinute: 0, avgWaitTimeMs: 0, avgCallDurationSec: 0 };
+
+  const fiveMinAgo = new Date(Date.now() - 300000);
+
+  // Calls completed in last 5 minutes
+  const completedRecent = await db.select({ count: count() }).from(callQueue)
+    .where(and(
+      eq(callQueue.status, "completed"),
+      gte(callQueue.createdAt, fiveMinAgo)
+    ));
+
+  const callsPerMinute = Math.round((completedRecent[0]?.count || 0) / 5 * 10) / 10;
+
+  // Average wait time (claimedAt - createdAt) for recent claims
+  const waitTimeResult = await db.select({
+    avgWait: sql<number>`AVG(${callQueue.claimedAt} - UNIX_TIMESTAMP(${callQueue.createdAt}) * 1000)`,
+  }).from(callQueue)
+    .where(and(
+      isNotNull(callQueue.claimedAt),
+      gte(callQueue.createdAt, fiveMinAgo)
+    ));
+
+  // Average call duration for completed calls
+  const durationResult = await db.select({
+    avgDuration: sql<number>`AVG(${callQueue.callDuration})`,
+  }).from(callQueue)
+    .where(and(
+      eq(callQueue.status, "completed"),
+      isNotNull(callQueue.callDuration),
+      gte(callQueue.createdAt, fiveMinAgo)
+    ));
+
+  return {
+    callsPerMinute,
+    avgWaitTimeMs: Math.round(waitTimeResult[0]?.avgWait || 0),
+    avgCallDurationSec: Math.round(durationResult[0]?.avgDuration || 0),
+  };
+}
+
+export async function requeueDeadLetterItems(ids: number[]): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  if (ids.length === 0) return 0;
+
+  await db.update(callQueue)
+    .set({ status: "pending", claimedBy: null, claimedAt: null, result: null, resultDetails: null })
+    .where(inArray(callQueue.id, ids));
+
+  return ids.length;
 }

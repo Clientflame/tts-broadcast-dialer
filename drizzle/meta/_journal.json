@@ -351,6 +351,20 @@
       "when": 1778804725952,
       "tag": "0049_naive_nightshade",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1778807662135,
+      "tag": "0050_abnormal_stingray",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "5",
+      "when": 1778808423525,
+      "tag": "0051_third_pride",
+      "breakpoints": true
     }
   ]
 }

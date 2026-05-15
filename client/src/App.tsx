@@ -47,6 +47,8 @@ import SetupWizard from "./pages/SetupWizard";
 import Security from "./pages/Security";
 import InboundFilter from "./pages/InboundFilter";
 import VoicemailCreator from "./pages/VoicemailCreator";
+import SmartScheduler from "./pages/SmartScheduler";
+import ApiKeys from "./pages/ApiKeys";
 
 function Router() {
   return (
@@ -90,6 +92,8 @@ function Router() {
       <Route path={"/security"} component={Security} />
       <Route path={"/inbound-filter"} component={InboundFilter} />
       <Route path={"/voicemail-creator"} component={VoicemailCreator} />
+      <Route path={"/smart-scheduler"} component={SmartScheduler} />
+      <Route path={"/api-keys"} component={ApiKeys} />
       <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
