@@ -45,6 +45,8 @@ import {
   crmIntegrations, InsertCrmIntegration,
   voicemailLibrary, InsertVoicemailLibraryEntry,
   disconnectedNumbers, InsertDisconnectedNumber,
+  securityEvents, InsertSecurityEvent,
+  ipBlocklist, InsertIpBlocklist,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1679,7 +1681,7 @@ export async function getContact(id: number) {
 
 // ─── Call Queue (PBX Agent Polling) ─────────────────────────────────────────
 import { callQueue, InsertCallQueueItem, pbxAgents, InsertPbxAgent } from "../drizzle/schema";
-import { lt, isNull, isNotNull, asc } from "drizzle-orm";
+import { lt, lte, isNull, isNotNull, asc } from "drizzle-orm";
 
 export async function enqueueCall(data: InsertCallQueueItem) {
   const db = await getDb();
@@ -5717,4 +5719,137 @@ export async function evaluateCarrierHealth(): Promise<{
     quarantineCandidates,
     currentFailureRate: failureData.failureRate,
   };
+}
+
+// ─── Security Events ────────────────────────────────────────────────────────
+
+export async function createSecurityEvent(data: InsertSecurityEvent) {
+  const db = await getDb();
+  if (!db) return;
+  return db.insert(securityEvents).values(data);
+}
+
+export async function getSecurityEvents(opts: {
+  limit?: number;
+  offset?: number;
+  eventType?: string;
+  ipAddress?: string;
+  startDate?: Date;
+  endDate?: Date;
+}) {
+  const db = await getDb();
+  if (!db) return { events: [], total: 0 };
+  const conditions: any[] = [];
+  if (opts.eventType) conditions.push(eq(securityEvents.eventType, opts.eventType as any));
+  if (opts.ipAddress) conditions.push(eq(securityEvents.ipAddress, opts.ipAddress));
+  if (opts.startDate) conditions.push(gte(securityEvents.createdAt, opts.startDate));
+  if (opts.endDate) conditions.push(lte(securityEvents.createdAt, opts.endDate));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const [events, countResult] = await Promise.all([
+    db.select().from(securityEvents).where(where).orderBy(desc(securityEvents.createdAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(securityEvents).where(where),
+  ]);
+  return { events, total: countResult[0]?.count || 0 };
+}
+
+export async function getSecurityEventStats(days: number = 30) {
+  const db = await getDb();
+  if (!db) return { totalEvents: 0, failedLogins: 0, blockedIps: 0, successfulLogins: 0, topOffenders: [] as any[] };
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const [totalResult, failedResult, blockedResult, successResult] = await Promise.all([
+    db.select({ count: count() }).from(securityEvents).where(gte(securityEvents.createdAt, since)),
+    db.select({ count: count() }).from(securityEvents).where(and(eq(securityEvents.eventType, "login_failed"), gte(securityEvents.createdAt, since))),
+    db.select({ count: count() }).from(securityEvents).where(and(eq(securityEvents.eventType, "ip_banned"), gte(securityEvents.createdAt, since))),
+    db.select({ count: count() }).from(securityEvents).where(and(eq(securityEvents.eventType, "login_success"), gte(securityEvents.createdAt, since))),
+  ]);
+  // Top offending IPs
+  const topOffenders = await db.select({
+    ipAddress: securityEvents.ipAddress,
+    count: count(),
+  }).from(securityEvents).where(and(
+    inArray(securityEvents.eventType, ["login_failed", "login_blocked", "rate_limited"]),
+    gte(securityEvents.createdAt, since),
+  )).groupBy(securityEvents.ipAddress).orderBy(desc(count())).limit(10);
+  return {
+    totalEvents: totalResult[0]?.count || 0,
+    failedLogins: failedResult[0]?.count || 0,
+    blockedIps: blockedResult[0]?.count || 0,
+    successfulLogins: successResult[0]?.count || 0,
+    topOffenders,
+  };
+}
+
+export async function getRecentFailedAttempts(ipAddress: string, windowMinutes: number = 15) {
+  const db = await getDb();
+  if (!db) return 0;
+  const since = new Date(Date.now() - windowMinutes * 60 * 1000);
+  const result = await db.select({ count: count() }).from(securityEvents).where(and(
+    eq(securityEvents.ipAddress, ipAddress),
+    eq(securityEvents.eventType, "login_failed"),
+    gte(securityEvents.createdAt, since),
+  ));
+  return result[0]?.count || 0;
+}
+
+// ─── IP Blocklist ───────────────────────────────────────────────────────────
+
+export async function addToBlocklist(data: InsertIpBlocklist) {
+  const db = await getDb();
+  if (!db) return;
+  // Upsert: if IP already exists, update the ban
+  const existing = await db.select().from(ipBlocklist).where(eq(ipBlocklist.ipAddress, data.ipAddress)).limit(1);
+  if (existing.length > 0) {
+    return db.update(ipBlocklist).set({
+      reason: data.reason,
+      source: data.source,
+      failedAttempts: data.failedAttempts,
+      bannedAt: new Date(),
+      expiresAt: data.expiresAt,
+      unbannedAt: null,
+    }).where(eq(ipBlocklist.ipAddress, data.ipAddress));
+  }
+  return db.insert(ipBlocklist).values(data);
+}
+
+export async function removeFromBlocklist(ipAddress: string) {
+  const db = await getDb();
+  if (!db) return;
+  return db.update(ipBlocklist).set({ unbannedAt: new Date() }).where(eq(ipBlocklist.ipAddress, ipAddress));
+}
+
+export async function isIpBlocked(ipAddress: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.select().from(ipBlocklist).where(and(
+    eq(ipBlocklist.ipAddress, ipAddress),
+    isNull(ipBlocklist.unbannedAt),
+  )).limit(1);
+  if (result.length === 0) return false;
+  const entry = result[0];
+  // Check if ban has expired
+  if (entry.expiresAt && entry.expiresAt < new Date()) {
+    await db.update(ipBlocklist).set({ unbannedAt: new Date() }).where(eq(ipBlocklist.id, entry.id));
+    return false;
+  }
+  return true;
+}
+
+export async function getBlocklist(opts: { limit?: number; offset?: number; activeOnly?: boolean }) {
+  const db = await getDb();
+  if (!db) return { entries: [], total: 0 };
+  const conditions: any[] = [];
+  if (opts.activeOnly) conditions.push(isNull(ipBlocklist.unbannedAt));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const [entries, countResult] = await Promise.all([
+    db.select().from(ipBlocklist).where(where).orderBy(desc(ipBlocklist.bannedAt)).limit(opts.limit || 50).offset(opts.offset || 0),
+    db.select({ count: count() }).from(ipBlocklist).where(where),
+  ]);
+  return { entries, total: countResult[0]?.count || 0 };
+}
+
+export async function getSecurityTimeline(days: number = 7) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  return db.select().from(securityEvents).where(gte(securityEvents.createdAt, since)).orderBy(desc(securityEvents.createdAt)).limit(500);
 }

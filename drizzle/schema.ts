@@ -1312,3 +1312,47 @@ export const apiRequestLogs = mysqlTable("api_request_logs", {
 
 export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
 export type InsertApiRequestLog = typeof apiRequestLogs.$inferInsert;
+
+
+// ─── Security Events (login attempts, bans, rate limits) ────────────────────
+export const securityEvents = mysqlTable("security_events", {
+  id: int("id").autoincrement().primaryKey(),
+  eventType: mysqlEnum("eventType", [
+    "login_success",
+    "login_failed",
+    "login_blocked",
+    "ip_banned",
+    "ip_unbanned",
+    "rate_limited",
+    "suspicious_request",
+    "password_reset",
+    "session_expired",
+  ]).notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }).notNull(),
+  userAgent: text("userAgent"),
+  userId: int("userId"),
+  email: varchar("email", { length: 320 }),
+  details: json("details").$type<Record<string, any>>(),
+  country: varchar("country", { length: 2 }),
+  city: varchar("city", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SecurityEvent = typeof securityEvents.$inferSelect;
+export type InsertSecurityEvent = typeof securityEvents.$inferInsert;
+
+// ─── IP Blocklist (application-level bans) ──────────────────────────────────
+export const ipBlocklist = mysqlTable("ip_blocklist", {
+  id: int("id").autoincrement().primaryKey(),
+  ipAddress: varchar("ipAddress", { length: 45 }).notNull().unique(),
+  reason: varchar("reason", { length: 255 }).notNull(),
+  source: mysqlEnum("source", ["fail2ban", "manual", "auto", "rate_limit"]).notNull(),
+  failedAttempts: int("failedAttempts").default(0).notNull(),
+  bannedAt: timestamp("bannedAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt"),
+  unbannedAt: timestamp("unbannedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type IpBlocklist = typeof ipBlocklist.$inferSelect;
+export type InsertIpBlocklist = typeof ipBlocklist.$inferInsert;

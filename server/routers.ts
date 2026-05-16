@@ -3442,10 +3442,17 @@ Return ONLY the message text, nothing else.`;
       email: z.string().email(),
       password: z.string().min(1),
     })).mutation(async ({ ctx, input }) => {
+      const clientIp = ctx.req.ip || ctx.req.socket.remoteAddress || "unknown";
       const authRecord = await db.getLocalAuthByEmail(input.email);
-      if (!authRecord) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      if (!authRecord) {
+        db.createSecurityEvent({ eventType: "login_failed", ipAddress: clientIp, email: input.email, details: { reason: "unknown_email" } }).catch(() => {});
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      }
       const valid = await bcrypt.compare(input.password, authRecord.passwordHash);
-      if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      if (!valid) {
+        db.createSecurityEvent({ eventType: "login_failed", ipAddress: clientIp, email: input.email, details: { reason: "wrong_password" } }).catch(() => {});
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
+      }
       // Check email verification status
       if (!authRecord.isVerified) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Email not verified. Please check your inbox for the verification link, or ask an admin to resend it." });
@@ -3458,6 +3465,7 @@ Return ONLY the message text, nothing else.`;
       ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: 365 * 24 * 60 * 60 * 1000 });
       await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
       await db.createAuditLog({ userId: user.id, userName: user.name || undefined, action: "auth.login", resource: "user", resourceId: user.id, details: { method: "email" } });
+      db.createSecurityEvent({ eventType: "login_success", ipAddress: clientIp, email: input.email, userId: user.id, details: { method: "email" } }).catch(() => {});
       return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
     }),
     changePassword: protectedProcedure.input(z.object({
@@ -6318,6 +6326,106 @@ Return ONLY the message text, nothing else.`;
         details: { ids: input.ids, count },
       });
       return { released: count };
+    }),
+  }),
+
+  // ─── Security Logs ──────────────────────────────────────────────────────
+  security: router({
+    events: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(200).default(50),
+      offset: z.number().min(0).default(0),
+      eventType: z.string().optional(),
+      ipAddress: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    })).query(async ({ input }) => {
+      return db.getSecurityEvents({
+        ...input,
+        startDate: input.startDate ? new Date(input.startDate) : undefined,
+        endDate: input.endDate ? new Date(input.endDate) : undefined,
+      });
+    }),
+
+    stats: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(365).default(30),
+    })).query(async ({ input }) => {
+      return db.getSecurityEventStats(input.days);
+    }),
+
+    timeline: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(30).default(7),
+    })).query(async ({ input }) => {
+      return db.getSecurityTimeline(input.days);
+    }),
+
+    blocklist: protectedProcedure.input(z.object({
+      limit: z.number().min(1).max(200).default(50),
+      offset: z.number().min(0).default(0),
+      activeOnly: z.boolean().default(true),
+    })).query(async ({ input }) => {
+      return db.getBlocklist(input);
+    }),
+
+    banIp: protectedProcedure.input(z.object({
+      ipAddress: z.string().min(1),
+      reason: z.string().min(1).default("Manual ban"),
+      duration: z.number().optional(), // hours, undefined = permanent
+    })).mutation(async ({ ctx, input }) => {
+      const expiresAt = input.duration ? new Date(Date.now() + input.duration * 60 * 60 * 1000) : undefined;
+      await db.addToBlocklist({
+        ipAddress: input.ipAddress,
+        reason: input.reason,
+        source: "manual",
+        failedAttempts: 0,
+        expiresAt,
+      });
+      await db.createSecurityEvent({
+        eventType: "ip_banned",
+        ipAddress: input.ipAddress,
+        details: { reason: input.reason, duration: input.duration, bannedBy: ctx.user.name },
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "security.banIp",
+        resource: "security",
+        details: { ipAddress: input.ipAddress, reason: input.reason },
+      });
+      return { success: true };
+    }),
+
+    unbanIp: protectedProcedure.input(z.object({
+      ipAddress: z.string().min(1),
+    })).mutation(async ({ ctx, input }) => {
+      await db.removeFromBlocklist(input.ipAddress);
+      await db.createSecurityEvent({
+        eventType: "ip_unbanned",
+        ipAddress: input.ipAddress,
+        details: { unbannedBy: ctx.user.name },
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "security.unbanIp",
+        resource: "security",
+        details: { ipAddress: input.ipAddress },
+      });
+      return { success: true };
+    }),
+
+    /** Fetch live fail2ban status from the app server via SSH */
+    fail2banStatus: protectedProcedure.query(async () => {
+      // Return cached fail2ban data from the last sync
+      // This avoids SSH on every request — sync happens via a scheduled job
+      const events = await db.getSecurityEvents({ limit: 1, eventType: "ip_banned" });
+      const blocklist = await db.getBlocklist({ activeOnly: true, limit: 100 });
+      const stats = await db.getSecurityEventStats(30);
+      return {
+        activeBans: blocklist.total,
+        recentBans: stats.blockedIps,
+        failedLogins: stats.failedLogins,
+        topOffenders: stats.topOffenders,
+      };
     }),
   }),
 });

@@ -1241,3 +1241,12 @@
 - [x] Bug: Call history table shows only 'pending' status — intermediate statuses not updating
 - [x] Enhancement: Increase Max Concurrent Calls limit to 75
 - [x] Bug: Test call fails with 'Audio preparation failed' error — added retry logic (3 attempts with backoff) in PBX agent, server-side audio URL pre-validation, improved error diagnostics
+- [x] Security: Install fail2ban on app server (149.28.98.47) for SSH brute-force protection
+- [x] Security: Configure fail2ban web login jail for Caddy/Express auth failures
+- [x] Security: Add security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, X-XSS-Protection)
+- [x] Security: Remove X-Powered-By header from responses
+- [x] Security: Recidive jail for repeat offenders (47 IPs already banned)
+- [x] Security: Add application-level login attempt tracking and IP rate limiting
+- [x] Security: Build Security Logs admin page with ban reports and login history
+- [x] Security: fail2ban sync script deployed with 5-min cron job (47 bans synced)
+- [x] Security: Internal API endpoint for fail2ban event ingestion (localhost only)

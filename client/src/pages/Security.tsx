@@ -14,7 +14,7 @@ import {
   RefreshCw, Copy, Check, ExternalLink, Terminal,
   Lock, Globe, Server, FileKey, ArrowLeft,
   Play, Loader2, TrendingUp, TrendingDown, Minus,
-  History, Wifi, WifiOff, Eye, EyeOff, Save,
+  History, Wifi, WifiOff, Eye, EyeOff, Save, Activity,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -723,15 +723,25 @@ export default function Security() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => security.refetch()}
-            disabled={security.isFetching}
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${security.isFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation("/security-logs")}
+            >
+              <Activity className="h-4 w-4 mr-1.5" />
+              Security Logs
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => security.refetch()}
+              disabled={security.isFetching}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1.5 ${security.isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {/* Host SSH Config — shown when checks are unconfigured due to missing SSH */}

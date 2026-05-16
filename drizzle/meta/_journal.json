@@ -379,6 +379,13 @@
       "when": 1778872988800,
       "tag": "0053_busy_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "5",
+      "when": 1778897005752,
+      "tag": "0054_free_sunfire",
+      "breakpoints": true
     }
   ]
 }

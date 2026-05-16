@@ -85,6 +85,37 @@ async function startServer() {
       timestamp: new Date().toISOString(),
     });
   });
+  // Internal security event API (for fail2ban sync — only accepts localhost)
+  app.post("/api/internal/security-event", async (req, res) => {
+    try {
+      // Only accept from localhost (fail2ban sync script runs on same server)
+      const remoteIp = req.ip || req.socket.remoteAddress || "";
+      const isLocal = remoteIp === "127.0.0.1" || remoteIp === "::1" || remoteIp === "::ffff:127.0.0.1" || remoteIp === "172.17.0.1";
+      if (!isLocal) {
+        return res.status(403).json({ error: "Forbidden — localhost only" });
+      }
+      const { eventType, ipAddress, details } = req.body || {};
+      if (!eventType || !ipAddress) {
+        return res.status(400).json({ error: "Missing eventType or ipAddress" });
+      }
+      const { createSecurityEvent, addToBlocklist } = await import("../db");
+      await createSecurityEvent({ eventType, ipAddress, details: details || {} });
+      if (eventType === "ip_banned") {
+        await addToBlocklist({
+          ipAddress,
+          reason: details?.jail ? `fail2ban: ${details.jail}` : "fail2ban ban",
+          source: "fail2ban",
+          failedAttempts: 0,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h default
+        });
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[SecurityEvent] Error:", err.message);
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // Rate limiting on auth endpoints (before tRPC middleware)
   app.use("/api/trpc", authRateLimiter);
   // tRPC API
