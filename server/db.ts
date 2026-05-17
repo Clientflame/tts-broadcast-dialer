@@ -355,6 +355,9 @@ export async function getContacts(listId: number) {
   return db.select().from(contacts).where(eq(contacts.listId, listId)).orderBy(desc(contacts.createdAt));
 }
 
+// Alias for REST API
+export const getContactsByList = getContacts;
+
 export async function updateContact(id: number, data: Partial<InsertContact>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

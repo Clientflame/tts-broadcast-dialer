@@ -1310,3 +1310,15 @@
 - [x] Feature: Best-Time-to-Call — backend analytics aggregation from call logs with area code breakdown
 - [x] Feature: Best-Time-to-Call — frontend heatmap visualization on Analytics > Best Time tab
 - [x] Test: features-v2.test.ts — 28 tests passing (all 6 features validated)
+- [x] Feature: REST API — API key management (schema, generate, revoke, list) — already existed
+- [x] Feature: REST API — API key auth middleware for Express routes — already existed
+- [x] Feature: REST API — POST /api/v1/contacts (single contact import)
+- [x] Feature: REST API — POST /api/v1/contacts/bulk (bulk JSON import, max 10k, dedup + DNC check)
+- [x] Feature: REST API — POST /api/v1/contacts/csv (CSV upload, auto-detect delimiter, header mapping)
+- [x] Feature: REST API — GET /api/v1/contacts, GET /api/v1/contact-lists, POST /api/v1/contact-lists
+- [x] Feature: REST API — GET /api/v1/campaigns, GET /api/v1/campaigns/:id, POST /api/v1/campaigns/:id/launch
+- [x] Feature: REST API — GET /api/v1/call-logs/:campaignId, GET /api/v1/reports/summary
+- [x] Feature: REST API — GET/POST/DELETE /api/v1/dnc (DNC management)
+- [x] Feature: REST API — Interactive API documentation page at /api-docs with Try It feature
+- [x] Feature: REST API — API Keys management UI — already existed at /api-keys
+- [x] Test: rest-api.test.ts — 24 tests passing (input validation, CSV parsing, phone normalization, permissions)
