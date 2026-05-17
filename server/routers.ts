@@ -13,8 +13,8 @@ import { getAllPrefetchStats } from "./services/audio-prefetch";
 import { invokeLLM } from "./_core/llm";
 import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
-import { callLogs, campaigns, contacts, callQueue, contactScores } from "../drizzle/schema";
-import { eq, and, sql, count } from "drizzle-orm";
+import { callLogs, campaigns, contacts, callQueue, contactScores, apiRequestLogs } from "../drizzle/schema";
+import { eq, and, sql, count, gte, desc } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
 import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
@@ -6673,6 +6673,145 @@ Respond with a JSON object matching this exact schema.`;
     }),
     logs: protectedProcedure.input(z.object({ apiKeyId: z.number().optional(), limit: z.number().min(1).max(500).optional() })).query(async ({ input }) => {
       return db.getApiRequestLogs(input.apiKeyId, input.limit || 100);
+    }),
+    analytics: adminProcedure.input(z.object({
+      days: z.number().min(1).max(90).optional(),
+      apiKeyId: z.number().optional(),
+    }).optional()).query(async ({ input }) => {
+      const days = input?.days || 30;
+      const apiKeyId = input?.apiKeyId;
+      const database = await (await import("./db")).getDb();
+      if (!database) return { overview: { totalRequests: 0, successCount: 0, errorCount: 0, errorRate: 0, avgResponseTime: 0, uniqueEndpoints: 0 }, hourlyVolume: [], dailyVolume: [], endpointBreakdown: [], statusCodeBreakdown: [], perKeyUsage: [], recentErrors: [] };
+
+      const cutoff = new Date(Date.now() - days * 86400000);
+      const baseWhere = apiKeyId
+        ? and(gte(apiRequestLogs.createdAt, cutoff), eq(apiRequestLogs.apiKeyId, apiKeyId))
+        : gte(apiRequestLogs.createdAt, cutoff);
+
+      // All logs in the window
+      const allLogs = await database.select().from(apiRequestLogs).where(baseWhere).orderBy(desc(apiRequestLogs.createdAt));
+
+      // Overview metrics
+      const totalRequests = allLogs.length;
+      const successCount = allLogs.filter(l => l.statusCode >= 200 && l.statusCode < 400).length;
+      const errorCount = allLogs.filter(l => l.statusCode >= 400).length;
+      const errorRate = totalRequests > 0 ? Math.round((errorCount / totalRequests) * 10000) / 100 : 0;
+      const avgResponseTime = totalRequests > 0 ? Math.round(allLogs.reduce((sum, l) => sum + (l.responseTimeMs || 0), 0) / totalRequests) : 0;
+      const uniqueEndpoints = new Set(allLogs.map(l => l.endpoint)).size;
+
+      // Hourly volume (last 48 hours)
+      const hourlyVolume: Array<{ hour: string; requests: number; errors: number }> = [];
+      const now = Date.now();
+      for (let i = 47; i >= 0; i--) {
+        const hourStart = new Date(now - (i + 1) * 3600000);
+        const hourEnd = new Date(now - i * 3600000);
+        const hourLogs = allLogs.filter(l => {
+          const t = new Date(l.createdAt).getTime();
+          return t >= hourStart.getTime() && t < hourEnd.getTime();
+        });
+        hourlyVolume.push({
+          hour: hourEnd.toISOString().slice(0, 13) + ":00",
+          requests: hourLogs.length,
+          errors: hourLogs.filter(l => l.statusCode >= 400).length,
+        });
+      }
+
+      // Daily volume
+      const dailyVolume: Array<{ date: string; requests: number; errors: number; avgResponseTime: number }> = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const dayStart = new Date(now - (i + 1) * 86400000);
+        const dayEnd = new Date(now - i * 86400000);
+        const dayLogs = allLogs.filter(l => {
+          const t = new Date(l.createdAt).getTime();
+          return t >= dayStart.getTime() && t < dayEnd.getTime();
+        });
+        dailyVolume.push({
+          date: dayEnd.toISOString().split("T")[0],
+          requests: dayLogs.length,
+          errors: dayLogs.filter(l => l.statusCode >= 400).length,
+          avgResponseTime: dayLogs.length > 0 ? Math.round(dayLogs.reduce((s, l) => s + (l.responseTimeMs || 0), 0) / dayLogs.length) : 0,
+        });
+      }
+
+      // Endpoint breakdown
+      const endpointMap = new Map<string, { count: number; errors: number; avgMs: number; totalMs: number }>();
+      for (const l of allLogs) {
+        const key = `${l.method} ${l.endpoint}`;
+        const existing = endpointMap.get(key) || { count: 0, errors: 0, avgMs: 0, totalMs: 0 };
+        existing.count++;
+        if (l.statusCode >= 400) existing.errors++;
+        existing.totalMs += l.responseTimeMs || 0;
+        endpointMap.set(key, existing);
+      }
+      const endpointBreakdown = Array.from(endpointMap.entries())
+        .map(([endpoint, stats]) => ({
+          endpoint,
+          requests: stats.count,
+          errors: stats.errors,
+          errorRate: Math.round((stats.errors / stats.count) * 10000) / 100,
+          avgResponseTime: Math.round(stats.totalMs / stats.count),
+        }))
+        .sort((a, b) => b.requests - a.requests)
+        .slice(0, 20);
+
+      // Status code breakdown
+      const statusMap = new Map<number, number>();
+      for (const l of allLogs) {
+        statusMap.set(l.statusCode, (statusMap.get(l.statusCode) || 0) + 1);
+      }
+      const statusCodeBreakdown = Array.from(statusMap.entries())
+        .map(([code, count]) => ({ statusCode: code, count, percentage: Math.round((count / totalRequests) * 10000) / 100 }))
+        .sort((a, b) => b.count - a.count);
+
+      // Per-key usage
+      const keyMap = new Map<number, { count: number; errors: number; lastUsed: Date }>();
+      for (const l of allLogs) {
+        const existing = keyMap.get(l.apiKeyId) || { count: 0, errors: 0, lastUsed: new Date(0) };
+        existing.count++;
+        if (l.statusCode >= 400) existing.errors++;
+        const logDate = new Date(l.createdAt);
+        if (logDate > existing.lastUsed) existing.lastUsed = logDate;
+        keyMap.set(l.apiKeyId, existing);
+      }
+      const apiKeysList = await db.getApiKeys();
+      const perKeyUsage = Array.from(keyMap.entries())
+        .map(([keyId, stats]) => {
+          const keyInfo = apiKeysList.find((k: any) => k.id === keyId);
+          return {
+            apiKeyId: keyId,
+            keyName: keyInfo?.name || `Key #${keyId}`,
+            keyPrefix: keyInfo?.keyPrefix || "unknown",
+            requests: stats.count,
+            errors: stats.errors,
+            errorRate: Math.round((stats.errors / stats.count) * 10000) / 100,
+            lastUsed: stats.lastUsed.getTime(),
+          };
+        })
+        .sort((a, b) => b.requests - a.requests);
+
+      // Recent errors
+      const recentErrors = allLogs
+        .filter(l => l.statusCode >= 400)
+        .slice(0, 50)
+        .map(l => ({
+          id: l.id,
+          method: l.method,
+          endpoint: l.endpoint,
+          statusCode: l.statusCode,
+          responseTimeMs: l.responseTimeMs,
+          ipAddress: l.ipAddress,
+          createdAt: new Date(l.createdAt).getTime(),
+        }));
+
+      return {
+        overview: { totalRequests, successCount, errorCount, errorRate, avgResponseTime, uniqueEndpoints },
+        hourlyVolume,
+        dailyVolume,
+        endpointBreakdown,
+        statusCodeBreakdown,
+        perKeyUsage,
+        recentErrors,
+      };
     }),
   }),
 

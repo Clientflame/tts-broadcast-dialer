@@ -1322,3 +1322,11 @@
 - [x] Feature: REST API — Interactive API documentation page at /api-docs with Try It feature
 - [x] Feature: REST API — API Keys management UI — already existed at /api-keys
 - [x] Test: rest-api.test.ts — 24 tests passing (input validation, CSV parsing, phone normalization, permissions)
+- [x] Feature: API usage analytics dashboard — overview metrics (total requests, error rate, avg response time)
+- [x] Feature: API usage analytics — request volume trend chart (hourly/daily bar charts)
+- [x] Feature: API usage analytics — endpoint breakdown (top endpoints by volume with share bars)
+- [x] Feature: API usage analytics — error rate tracking and breakdown by status code badges
+- [x] Feature: API usage analytics — per-API-key usage comparison with share bars
+- [x] Feature: API usage analytics — backend aggregation endpoint from api_request_logs (admin-only)
+- [x] Feature: API usage analytics — recent errors tab, time range filter, auto-refresh
+- [x] Test: api-analytics.test.ts — 10 tests passing (structure, types, admin-only access)

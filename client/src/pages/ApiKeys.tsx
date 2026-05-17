@@ -8,7 +8,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { Key, Plus, Copy, Trash2, ShieldOff, Clock, Activity, AlertTriangle } from "lucide-react";
+import { Key, Plus, Copy, Trash2, ShieldOff, Clock, Activity, AlertTriangle, BarChart3 } from "lucide-react";
+import ApiUsageAnalytics from "@/components/ApiUsageAnalytics";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -354,6 +355,22 @@ export default function ApiKeys() {
                 </table>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* API Usage Analytics Dashboard */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-blue-400" />
+              <div>
+                <CardTitle>API Usage Analytics</CardTitle>
+                <CardDescription>Request volume, error rates, endpoint breakdown, and usage trends</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ApiUsageAnalytics />
           </CardContent>
         </Card>
       </div>
