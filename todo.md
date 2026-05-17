@@ -1281,3 +1281,7 @@
 - [x] Mobile: Responsive tables (horizontal scroll or card layout on mobile) — added overflow-x-auto + min-w to all tables
 - [x] Mobile: Quick Test accessible from mobile (already works in responsive grid)
 - [x] Cleanup: PBX agent debug logging already clean — debug at DEBUG level, info at INFO level, no changes needed
+- [x] Feature: Mobile quick-action floating bottom nav — one-tap access to Quick Test, Campaigns, Audio from mobile
+- [x] Feature: Voice memo recording — record TTS audio scripts directly from phone microphone
+- [x] Feature: Voice memo backend — upload recorded audio to S3, create audio file entry
+- [x] Test: voice-recording.test.ts — 6 tests passing (input validation, schema, defaults)

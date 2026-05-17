@@ -186,6 +186,11 @@
     }
   }
 }
+/* Safe area bottom for iPhone home indicator */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* Print styles for System Architecture page */
 @media print {
   /* Hide sidebar, header, footer, and non-essential UI */

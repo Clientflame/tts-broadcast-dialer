@@ -17,6 +17,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic, Pencil, XCircle, Clock, Tag, CheckSquare } from "lucide-react";
 import { ImportExportButtons } from "@/components/ImportExportButtons";
+import VoiceRecorder from "@/components/VoiceRecorder";
 
 const OPENAI_VOICE_OPTIONS = [
   { id: "alloy", name: "Alloy", desc: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
@@ -207,6 +208,7 @@ function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor, prov
 export default function Audio() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [quickTestOpen, setQuickTestOpen] = useState(false);
+  const [voiceRecorderOpen, setVoiceRecorderOpen] = useState(false);
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [voice, setVoice] = useState<string>("alloy");
@@ -215,6 +217,13 @@ export default function Audio() {
   const [testPhone, setTestPhone] = useState("");
   const [testAudioId, setTestAudioId] = useState<number | null>(null);
   const [testCallerId, setTestCallerId] = useState<number | undefined>(undefined);
+
+  // Listen for mobile quick nav "Record" button
+  useEffect(() => {
+    const handler = () => setVoiceRecorderOpen(true);
+    window.addEventListener("open-voice-recorder", handler);
+    return () => window.removeEventListener("open-voice-recorder", handler);
+  }, []);
 
   const speedLabel = useMemo(() => {
     if (speed === 1.0) return "Normal";
@@ -424,6 +433,12 @@ export default function Audio() {
             <Button variant="outline" size="sm" onClick={() => utils.audio.list.invalidate()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1" />Refresh
             </Button>
+
+            {/* Voice Recorder */}
+            <Button variant="outline" size="sm" onClick={() => setVoiceRecorderOpen(true)}>
+              <Mic className="h-3.5 w-3.5 mr-1" />Record
+            </Button>
+            <VoiceRecorder open={voiceRecorderOpen} onOpenChange={setVoiceRecorderOpen} />
 
             {/* Quick Test Dialog */}
             <Dialog open={quickTestOpen} onOpenChange={setQuickTestOpen}>

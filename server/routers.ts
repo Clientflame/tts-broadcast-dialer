@@ -732,6 +732,50 @@ export const appRouter = router({
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "audio.bulkRegenerate", resource: "audioFile", details: { ids: input.ids, queued, skipped } });
       return { success: true, queued, skipped };
     }),
+    // ─── Voice Memo Upload (record from microphone) ──────────────────
+    uploadRecording: protectedProcedure.input(z.object({
+      name: z.string().min(1).max(255),
+      audioBase64: z.string().min(1), // base64-encoded audio data
+      mimeType: z.string().default("audio/webm"),
+      duration: z.number().optional(), // duration in seconds
+    })).mutation(async ({ ctx, input }) => {
+      const { storagePut } = await import("./storage");
+      // Decode base64 audio
+      const audioBuffer = Buffer.from(input.audioBase64, "base64");
+      const fileSize = audioBuffer.length;
+      // 16MB limit
+      if (fileSize > 16 * 1024 * 1024) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Recording exceeds 16MB limit" });
+      }
+      // Determine file extension from mime type
+      const ext = input.mimeType.includes("webm") ? "webm" : input.mimeType.includes("mp4") ? "m4a" : input.mimeType.includes("ogg") ? "ogg" : "wav";
+      const suffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `voice-memos/${ctx.user.id}/${Date.now()}-${suffix}.${ext}`;
+      // Upload to S3
+      const { url: s3Url, key: s3Key } = await storagePut(fileKey, audioBuffer, input.mimeType);
+      // Create audio file record
+      const record = await db.createAudioFile({
+        userId: ctx.user.id,
+        name: input.name,
+        text: "[Voice Recording]",
+        voice: "recording",
+        s3Url,
+        s3Key,
+        fileSize,
+        duration: input.duration ? Math.round(input.duration) : null,
+        status: "ready",
+        tag: "voice-memo",
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        userName: ctx.user.name || undefined,
+        action: "audio.uploadRecording",
+        resource: "audioFile",
+        resourceId: record.id,
+        details: { name: input.name, fileSize, mimeType: input.mimeType, duration: input.duration },
+      });
+      return { id: record.id, s3Url, fileSize };
+    }),
   }),
 
   campaigns: router({

@@ -36,6 +36,7 @@ import AgentAssist from "./pages/AgentAssist";
 import AgentDashboard from "./pages/AgentDashboard";
 import SystemArchitecture from "./pages/SystemArchitecture";
 import CommandPalette from "./components/CommandPalette";
+import MobileQuickNav from "./components/MobileQuickNav";
 import DeploymentStatus from "./pages/DeploymentStatus";
 import SystemStatus from "./pages/SystemStatus";
 import DatabaseBackups from "./pages/DatabaseBackups";
@@ -125,6 +126,7 @@ function App() {
           <Toaster />
           <CommandPalette />
           <Router />
+          <MobileQuickNav />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
