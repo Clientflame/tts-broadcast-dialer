@@ -1285,3 +1285,9 @@
 - [x] Feature: Voice memo recording — record TTS audio scripts directly from phone microphone
 - [x] Feature: Voice memo backend — upload recorded audio to S3, create audio file entry
 - [x] Test: voice-recording.test.ts — 6 tests passing (input validation, schema, defaults)
+- [x] Feature: Quick Campaign mobile wizard — 3-step streamlined campaign creation from bottom nav
+- [x] Feature: Quick Campaign Step 1 — Select contact list
+- [x] Feature: Quick Campaign Step 2 — Select or record audio
+- [x] Feature: Quick Campaign Step 3 — Configure caller ID, name, and launch
+- [x] Feature: Wire Quick Campaign into mobile bottom nav "Launch" button (green rocket icon)
+- [x] Test: quick-campaign.test.ts — 9 tests passing (create validation, start validation)
