@@ -1255,6 +1255,12 @@
 - [x] Storage: Add S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET, S3_PUBLIC_URL env vars
 - [x] Storage: Install @aws-sdk/client-s3 dependency
 - [x] Storage: Update storage.ts with 'r2' mode (priority: forge → r2 → local)
-- [ ] Deploy: Add R2 credentials to Docker container on 149.28.98.47
-- [ ] Deploy: Deploy updated pbx_agent.py (with retry logic) to 45.77.75.198
-- [ ] Test: Verify test call audio downloads successfully from R2
+- [x] Deploy: Add R2 credentials to Docker container on 149.28.98.47
+- [x] Deploy: Deploy updated pbx_agent.py (with retry logic) to 45.77.75.198
+- [x] Test: Verify test call audio downloads successfully from MinIO (replaced R2)
+- [x] Storage: Replace Cloudflare R2 with self-hosted MinIO on production VPS (privacy-first)
+- [x] Storage: Add MinIO container to docker-compose.yml on 149.28.98.47
+- [x] Storage: Configure Caddy reverse proxy for MinIO (SSL access for PBX agent)
+- [x] Storage: Create MinIO bucket with 7-day lifecycle policy on campaign-audio/script-audio prefixes
+- [x] Storage: Update production env vars to point to local MinIO endpoint
+- [x] Test: Verify PBX agent can download audio from MinIO via Caddy proxy
