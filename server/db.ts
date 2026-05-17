@@ -47,6 +47,7 @@ import {
   disconnectedNumbers, InsertDisconnectedNumber,
   securityEvents, InsertSecurityEvent,
   ipBlocklist, InsertIpBlocklist,
+  ttsAudioCache,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5852,4 +5853,98 @@ export async function getSecurityTimeline(days: number = 7) {
   if (!db) return [];
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return db.select().from(securityEvents).where(gte(securityEvents.createdAt, since)).orderBy(desc(securityEvents.createdAt)).limit(500);
+}
+
+
+// ─── Usage & Storage Analytics ──────────────────────────────────────────────
+
+export async function getTtsUsageStats(since: Date) {
+  const db = await getDb();
+  if (!db) return { totalGenerations: 0, totalCacheHits: 0, cacheHitRate: 0, byProvider: [], byVoice: [], recentGenerations: [] };
+
+  // Total generations and cache hits
+  const [totals] = await db.select({
+    totalGenerations: count(),
+    totalCacheHits: sql<number>`SUM(${ttsAudioCache.hitCount})`,
+  }).from(ttsAudioCache).where(gte(ttsAudioCache.createdAt, since));
+
+  // By provider
+  const byProvider = await db.select({
+    provider: ttsAudioCache.provider,
+    count: count(),
+    totalHits: sql<number>`SUM(${ttsAudioCache.hitCount})`,
+  }).from(ttsAudioCache).where(gte(ttsAudioCache.createdAt, since)).groupBy(ttsAudioCache.provider);
+
+  // By voice (top 10)
+  const byVoice = await db.select({
+    voice: ttsAudioCache.voice,
+    provider: ttsAudioCache.provider,
+    count: count(),
+  }).from(ttsAudioCache).where(gte(ttsAudioCache.createdAt, since)).groupBy(ttsAudioCache.voice, ttsAudioCache.provider).orderBy(desc(count())).limit(10);
+
+  // Recent generations (last 20)
+  const recentGenerations = await db.select({
+    id: ttsAudioCache.id,
+    voice: ttsAudioCache.voice,
+    provider: ttsAudioCache.provider,
+    hitCount: ttsAudioCache.hitCount,
+    createdAt: ttsAudioCache.createdAt,
+    durationMs: ttsAudioCache.durationMs,
+  }).from(ttsAudioCache).where(gte(ttsAudioCache.createdAt, since)).orderBy(desc(ttsAudioCache.createdAt)).limit(20);
+
+  const totalGens = totals?.totalGenerations || 0;
+  const totalHits = totals?.totalCacheHits || 0;
+  const cacheHitRate = totalGens > 0 ? Math.round((totalHits / (totalGens + totalHits)) * 100) : 0;
+
+  return {
+    totalGenerations: totalGens,
+    totalCacheHits: totalHits,
+    cacheHitRate,
+    byProvider,
+    byVoice,
+    recentGenerations,
+  };
+}
+
+export async function getCallVolumeStats(days: number, groupBy: "day" | "week" | "month") {
+  const db = await getDb();
+  if (!db) return { timeline: [], totals: { total: 0, answered: 0, noAnswer: 0, busy: 0, failed: 0, voicemail: 0 } };
+
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  // Date format for grouping
+  const dateFormat = groupBy === "day" ? "%Y-%m-%d" : groupBy === "week" ? "%Y-%u" : "%Y-%m";
+
+  const timeline = await db.select({
+    period: sql<string>`DATE_FORMAT(${callLogs.createdAt}, ${dateFormat})`,
+    total: count(),
+    answered: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'answered' THEN 1 ELSE 0 END)`,
+    noAnswer: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'no-answer' THEN 1 ELSE 0 END)`,
+    busy: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'busy' THEN 1 ELSE 0 END)`,
+    failed: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'failed' THEN 1 ELSE 0 END)`,
+    voicemail: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'voicemail' THEN 1 ELSE 0 END)`,
+    avgDuration: sql<number>`AVG(CASE WHEN ${callLogs.duration} > 0 THEN ${callLogs.duration} ELSE NULL END)`,
+  }).from(callLogs).where(gte(callLogs.createdAt, since)).groupBy(sql`DATE_FORMAT(${callLogs.createdAt}, ${dateFormat})`).orderBy(sql`period`);
+
+  // Overall totals
+  const [totals] = await db.select({
+    total: count(),
+    answered: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'answered' THEN 1 ELSE 0 END)`,
+    noAnswer: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'no-answer' THEN 1 ELSE 0 END)`,
+    busy: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'busy' THEN 1 ELSE 0 END)`,
+    failed: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'failed' THEN 1 ELSE 0 END)`,
+    voicemail: sql<number>`SUM(CASE WHEN ${callLogs.status} = 'voicemail' THEN 1 ELSE 0 END)`,
+  }).from(callLogs).where(gte(callLogs.createdAt, since));
+
+  return {
+    timeline,
+    totals: {
+      total: totals?.total || 0,
+      answered: totals?.answered || 0,
+      noAnswer: totals?.noAnswer || 0,
+      busy: totals?.busy || 0,
+      failed: totals?.failed || 0,
+      voicemail: totals?.voicemail || 0,
+    },
+  };
 }

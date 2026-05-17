@@ -24,7 +24,7 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
 # ─── Version ────────────────────────────────────────────────────────────────
-AGENT_VERSION = "1.7.0"  # Bump this on every agent update
+AGENT_VERSION = "1.8.0"  # Bump this on every agent update
 AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control", "extension_status"]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
@@ -338,10 +338,10 @@ def prepare_audio(audio_url, audio_name):
 
     wav_path = os.path.join(audio_dir, f"{audio_name}.wav")
 
-    # Skip if already converted
+    # Skip if already converted (24-hour cache — audio doesn't change mid-campaign)
     if os.path.exists(wav_path):
         file_age = time.time() - os.path.getmtime(wav_path)
-        if file_age < 3600:  # Cache for 1 hour
+        if file_age < 86400:  # Cache for 24 hours
             return f"custom/broadcast/{audio_name}"
 
     # Download with retry logic (up to 3 attempts with backoff)
@@ -414,10 +414,10 @@ def prepare_multi_audio(audio_urls, audio_name):
     # Final concatenated WAV path
     concat_wav = os.path.join(audio_dir, f"{audio_name}.wav")
 
-    # Check cache — skip if already concatenated recently
+    # Check cache — skip if already concatenated recently (24-hour cache)
     if os.path.exists(concat_wav):
         file_age = time.time() - os.path.getmtime(concat_wav)
-        if file_age < 3600:  # Cache for 1 hour
+        if file_age < 86400:  # Cache for 24 hours
             log.info(f"Multi-segment audio cached: {concat_wav} ({len(audio_urls)} segments)")
             return f"custom/broadcast/{audio_name}"
 
@@ -1288,6 +1288,50 @@ def heartbeat_loop():
 
 
 # ─── Main Loop ───────────────────────────────────────────────────────────────
+# ─── Audio Cache Cleanup ────────────────────────────────────────────────────
+def cleanup_audio_cache():
+    """
+    Remove cached audio files older than 48 hours to free disk space.
+    Runs periodically in the background (every 6 hours).
+    """
+    audio_dir = CONFIG["audio_dir"]
+    if not os.path.exists(audio_dir):
+        return
+
+    max_age = 48 * 3600  # 48 hours
+    now = time.time()
+    removed = 0
+    freed_bytes = 0
+
+    try:
+        for filename in os.listdir(audio_dir):
+            filepath = os.path.join(audio_dir, filename)
+            if not os.path.isfile(filepath):
+                continue
+            file_age = now - os.path.getmtime(filepath)
+            if file_age > max_age:
+                size = os.path.getsize(filepath)
+                os.remove(filepath)
+                removed += 1
+                freed_bytes += size
+    except Exception as e:
+        log.error(f"Cache cleanup error: {e}")
+
+    if removed > 0:
+        freed_mb = freed_bytes / (1024 * 1024)
+        log.info(f"Cache cleanup: removed {removed} files, freed {freed_mb:.1f} MB")
+
+
+def cache_cleanup_loop():
+    """Background thread that cleans up old audio files every 6 hours."""
+    while True:
+        time.sleep(6 * 3600)  # Every 6 hours
+        try:
+            cleanup_audio_cache()
+        except Exception as e:
+            log.error(f"Cache cleanup loop error: {e}")
+
+
 def main():
     log.info("=" * 60)
     log.info(f"PBX Agent v{AGENT_VERSION} starting")
@@ -1309,6 +1353,12 @@ def main():
     heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
     heartbeat_thread.start()
     log.info("Independent heartbeat thread started (every 10s)")
+
+    # Start audio cache cleanup thread (removes files older than 48h every 6 hours)
+    cleanup_thread = threading.Thread(target=cache_cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    cleanup_audio_cache()  # Run once at startup
+    log.info("Audio cache cleanup thread started (every 6h, max age 48h)")
 
     ami = AMIConnection()
     global global_ami

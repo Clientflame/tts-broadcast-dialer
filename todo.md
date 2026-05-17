@@ -1264,3 +1264,8 @@
 - [x] Storage: Create MinIO bucket with 7-day lifecycle policy on campaign-audio/script-audio prefixes
 - [x] Storage: Update production env vars to point to local MinIO endpoint
 - [x] Test: Verify PBX agent can download audio from MinIO via Caddy proxy
+- [x] Security: Rotate MinIO credentials (root password + S3 secret key)
+- [x] Security: Rotate Caddy basic auth password for MinIO console
+- [x] Feature: Pre-generate campaign audio in batches when campaign starts (lookahead prefetch)
+- [x] Feature: PBX agent audio caching — 24h cache + disk cleanup (48h max age, every 6h)
+- [x] Feature: Usage dashboard — storage breakdown, TTS stats, call volume timeline in Analytics tab

@@ -1,5 +1,6 @@
 import { generatePersonalizedTTS, generateGooglePersonalizedTTS, type GoogleTTSVoice } from "./tts";
 import { generateScriptAudio, preGenerateStaticSegments } from "./script-audio";
+import { startPrefetch, stopPrefetch, getPrefetchStats, getAllPrefetchStats } from "./audio-prefetch";
 import { notifyOwner } from "../_core/notification";
 import { dispatchNotification } from "./notification-dispatcher";
 import { initPacing, getCurrentConcurrent, getPacingStats, cleanupPacing, type PacingConfig } from "./pacing";
@@ -282,6 +283,21 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   // Trigger first batch immediately
   processCampaignCalls(campaignId, userId).catch(console.error);
+
+  // Start lookahead audio pre-generation (generates audio for next batch of contacts ahead of dialer)
+  if (active.usePersonalizedTTS || (scriptSegments && scriptSegments.length > 0)) {
+    startPrefetch({
+      campaignId,
+      userId,
+      usePersonalizedTTS: active.usePersonalizedTTS,
+      messageText: (campaign as any).messageText,
+      voice: (campaign as any).voice,
+      speed: parseFloat((campaign as any).ttsSpeed || "1.0"),
+      scriptSegments,
+      callbackNumber,
+      useDidCallbackNumber: active.useDidCallbackNumber,
+    });
+  }
 
   await db.createAuditLog({
     userId,
@@ -758,6 +774,7 @@ function stopCampaignInternal(campaignId: number): void {
   }
   cleanupPacing(campaignId);
   unregisterPacingConfig(campaignId);
+  stopPrefetch(campaignId);
   activeCampaigns.delete(campaignId);
 }
 

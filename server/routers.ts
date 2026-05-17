@@ -9,6 +9,7 @@ import { generateTTS, TTS_VOICES, generateVoiceSample, GOOGLE_TTS_VOICES, genera
 // AMI is now handled by the PBX agent on the FreePBX server
 // import { getAMIStatus, getAMIClient } from "./services/ami";
 import { startCampaign, pauseCampaign, cancelCampaign, isCampaignActive, getActiveCampaignIds, getDialerLiveStats, resumeCampaignAfterRestart } from "./services/dialer";
+import { getAllPrefetchStats } from "./services/audio-prefetch";
 import { invokeLLM } from "./_core/llm";
 import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
@@ -233,6 +234,9 @@ export const appRouter = router({
     }),
     dialerLive: protectedProcedure.query(async ({ ctx }) => {
       return getDialerLiveStats();
+    }),
+    prefetchStats: protectedProcedure.query(async () => {
+      return getAllPrefetchStats();
     }),
     callActivity: protectedProcedure.input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional()).query(async ({ ctx, input }) => {
       return db.getRecentCallActivity(input?.limit ?? 50);
@@ -6326,6 +6330,45 @@ Return ONLY the message text, nothing else.`;
         details: { ids: input.ids, count },
       });
       return { released: count };
+    }),
+  }),
+
+  // ─── Usage & Storage Analytics ─────────────────────────────────────────
+  usage: router({
+    /** Get storage usage breakdown from MinIO/S3 */
+    storage: protectedProcedure.query(async () => {
+      const { getStorageStats } = await import("./storage");
+      return getStorageStats();
+    }),
+
+    /** Get TTS generation stats from the cache table */
+    ttsStats: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(365).default(30),
+    }).optional()).query(async ({ input }) => {
+      const days = input?.days ?? 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      return db.getTtsUsageStats(since);
+    }),
+
+    /** Get call volume stats over time */
+    callVolume: protectedProcedure.input(z.object({
+      days: z.number().min(1).max(365).default(30),
+      groupBy: z.enum(["day", "week", "month"]).default("day"),
+    }).optional()).query(async ({ input }) => {
+      const days = input?.days ?? 30;
+      const groupBy = input?.groupBy ?? "day";
+      return db.getCallVolumeStats(days, groupBy);
+    }),
+
+    /** Get combined usage summary */
+    summary: protectedProcedure.query(async () => {
+      const { getStorageStats } = await import("./storage");
+      const [storage, tts, calls] = await Promise.all([
+        getStorageStats(),
+        db.getTtsUsageStats(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+        db.getCallVolumeStats(30, "day"),
+      ]);
+      return { storage, tts, calls };
     }),
   }),
 

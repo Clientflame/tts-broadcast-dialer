@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
-import { Phone, PhoneCall, PhoneOff, Clock, TrendingUp, Timer, DollarSign, CreditCard, Search as SearchIcon, ArrowUpDown } from "lucide-react";
+import { Phone, PhoneCall, PhoneOff, Clock, TrendingUp, Timer, DollarSign, CreditCard, Search as SearchIcon, ArrowUpDown, HardDrive, Volume2, Activity } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,181 @@ function formatCurrency(amount: number): string {
 }
 
 // ─── DID Cost Dashboard Tab ──────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+const STORAGE_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#22c55e', '#ef4444', '#06b6d4', '#ec4899'];
+
+function UsageDashboard() {
+  const { data: summary, isLoading } = trpc.usage.summary.useQuery();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <Card key={i}><CardContent className="p-6"><div className="h-20 bg-muted animate-pulse rounded" /></CardContent></Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const storage = summary?.storage;
+  const tts = summary?.tts;
+  const calls = summary?.calls;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><HardDrive className="h-3 w-3" /> Storage Used</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatBytes(storage?.totalSizeBytes || 0)}</div>
+            <p className="text-xs text-muted-foreground">{storage?.totalFiles || 0} files • Mode: {storage?.mode || 'unknown'}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><Volume2 className="h-3 w-3" /> TTS Generations</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{tts?.totalGenerations || 0}</div>
+            <p className="text-xs text-muted-foreground">Cache hits: {tts?.totalCacheHits || 0} ({tts?.cacheHitRate || 0}% hit rate)</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><Activity className="h-3 w-3" /> Calls (30d)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{calls?.totals?.total || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {calls?.totals?.answered || 0} answered • {calls?.totals?.noAnswer || 0} no-answer
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Answer Rate</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {calls?.totals?.total ? Math.round(((calls.totals.answered || 0) / calls.totals.total) * 100) : 0}%
+            </div>
+            <p className="text-xs text-muted-foreground">Last 30 days</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Storage Breakdown */}
+      {storage && storage.breakdown && storage.breakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Storage Breakdown</CardTitle>
+            <CardDescription>Audio file storage by category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={storage.breakdown.map((b: any) => ({ name: b.prefix, value: b.sizeBytes, files: b.files }))}
+                    cx="50%" cy="50%" outerRadius={80} dataKey="value"
+                    label={({ name, value }: any) => `${name} (${formatBytes(value)})`}
+                  >
+                    {storage.breakdown.map((_: any, idx: number) => (
+                      <Cell key={idx} fill={STORAGE_COLORS[idx % STORAGE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: any) => formatBytes(value)} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-4 space-y-2">
+              {storage.breakdown.map((b: any, idx: number) => (
+                <div key={b.prefix} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STORAGE_COLORS[idx % STORAGE_COLORS.length] }} />
+                    <span className="font-medium">{b.prefix}</span>
+                  </div>
+                  <div className="text-muted-foreground">
+                    {b.files} files • {formatBytes(b.sizeBytes)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Call Volume Timeline */}
+      {calls && calls.timeline && calls.timeline.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Call Volume (30 Days)</CardTitle>
+            <CardDescription>Daily call volume breakdown by status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={calls.timeline}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" fontSize={12} />
+                  <YAxis fontSize={12} />
+                  <Tooltip />
+                  <Bar dataKey="answered" stackId="a" fill="#22c55e" name="Answered" />
+                  <Bar dataKey="noAnswer" stackId="a" fill="#ef4444" name="No Answer" />
+                  <Bar dataKey="busy" stackId="a" fill="#f59e0b" name="Busy" />
+                  <Bar dataKey="voicemail" stackId="a" fill="#8b5cf6" name="Voicemail" />
+                  <Bar dataKey="failed" stackId="a" fill="#6b7280" name="Failed" />
+                  <Legend />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* TTS Provider Breakdown */}
+      {tts && tts.byProvider && tts.byProvider.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">TTS Provider Usage</CardTitle>
+            <CardDescription>Audio generations by provider (last 30 days)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {tts.byProvider.map((p: any) => (
+                <div key={p.provider} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{p.provider}</Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {p.count} generations • {p.totalHits || 0} cache hits
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
 
 function DIDCostDashboard() {
   const [days, setDays] = useState(30);
@@ -405,6 +580,9 @@ export default function Analytics() {
             <TabsTrigger value="costs" className="flex items-center gap-1.5">
               <DollarSign className="h-4 w-4" /> DID Costs
             </TabsTrigger>
+            <TabsTrigger value="usage" className="flex items-center gap-1.5">
+              <HardDrive className="h-4 w-4" /> Usage
+            </TabsTrigger>
           </TabsList>
 
           {/* Call Analytics Tab */}
@@ -562,6 +740,11 @@ export default function Analytics() {
           {/* DID Cost Tracking Tab */}
           <TabsContent value="costs">
             <DIDCostDashboard />
+          </TabsContent>
+
+          {/* Usage & Storage Tab */}
+          <TabsContent value="usage">
+            <UsageDashboard />
           </TabsContent>
         </Tabs>
       </div>

@@ -5,7 +5,7 @@
 import { ENV } from './_core/env';
 import path from 'path';
 import fs from 'fs/promises';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // ─── Storage Mode Detection ─────────────────────────────────────────────────
@@ -369,4 +369,77 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 /** Expose current storage mode for diagnostics */
 export function getActiveStorageMode(): StorageMode {
   return getStorageMode();
+}
+
+/**
+ * List objects in S3 storage with optional prefix filter.
+ * Returns object keys, sizes, and last modified dates.
+ * Only works in 's3' mode — returns empty for forge/local.
+ */
+export async function storageListObjects(prefix?: string): Promise<{ key: string; size: number; lastModified: Date | null }[]> {
+  const mode = getStorageMode();
+  if (mode !== 's3') return [];
+
+  const client = getS3Client();
+  const results: { key: string; size: number; lastModified: Date | null }[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const response = await client.send(new ListObjectsV2Command({
+      Bucket: ENV.s3Bucket,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+      MaxKeys: 1000,
+    }));
+
+    if (response.Contents) {
+      for (const obj of response.Contents) {
+        results.push({
+          key: obj.Key || '',
+          size: obj.Size || 0,
+          lastModified: obj.LastModified || null,
+        });
+      }
+    }
+
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+
+  return results;
+}
+
+/**
+ * Get storage usage statistics grouped by prefix.
+ */
+export async function getStorageStats(): Promise<{
+  mode: StorageMode;
+  totalFiles: number;
+  totalSizeBytes: number;
+  breakdown: { prefix: string; files: number; sizeBytes: number }[];
+}> {
+  const mode = getStorageMode();
+  const objects = await storageListObjects();
+
+  const prefixMap = new Map<string, { files: number; sizeBytes: number }>();
+
+  for (const obj of objects) {
+    // Extract top-level prefix (e.g., "tts-audio", "campaign-audio", "script-audio")
+    const prefix = obj.key.split('/')[0] || 'root';
+    const existing = prefixMap.get(prefix) || { files: 0, sizeBytes: 0 };
+    existing.files++;
+    existing.sizeBytes += obj.size;
+    prefixMap.set(prefix, existing);
+  }
+
+  const breakdown = Array.from(prefixMap.entries()).map(([prefix, stats]) => ({
+    prefix,
+    ...stats,
+  })).sort((a, b) => b.sizeBytes - a.sizeBytes);
+
+  return {
+    mode,
+    totalFiles: objects.length,
+    totalSizeBytes: objects.reduce((sum, o) => sum + o.size, 0),
+    breakdown,
+  };
 }
