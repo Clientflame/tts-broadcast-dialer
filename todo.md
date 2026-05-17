@@ -1330,3 +1330,4 @@
 - [x] Feature: API usage analytics — backend aggregation endpoint from api_request_logs (admin-only)
 - [x] Feature: API usage analytics — recent errors tab, time range filter, auto-refresh
 - [x] Test: api-analytics.test.ts — 10 tests passing (structure, types, admin-only access)
+- [x] Fix: DashboardLayout named import build error in ApiDocs.tsx — changed to default import to fix production build/deployment
