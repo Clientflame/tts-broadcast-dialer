@@ -1,20 +1,110 @@
 // Storage abstraction layer
-// Uses Manus Forge storage proxy when credentials are available,
-// falls back to local filesystem storage for self-hosted deployments.
+// Priority: Manus Forge → S3-compatible (Cloudflare R2, AWS S3, MinIO) → Local filesystem
+// For multi-install deployments, use S3-compatible storage (Cloudflare R2 recommended for zero egress fees).
 
 import { ENV } from './_core/env';
 import path from 'path';
 import fs from 'fs/promises';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // ─── Storage Mode Detection ─────────────────────────────────────────────────
 
-type StorageMode = 'forge' | 'local';
+type StorageMode = 'forge' | 's3' | 'local';
 
 function getStorageMode(): StorageMode {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-  if (baseUrl && apiKey) return 'forge';
+  // Priority 1: Manus Forge (platform-managed S3)
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) return 'forge';
+  // Priority 2: Generic S3-compatible (Cloudflare R2, AWS S3, MinIO, etc.)
+  if (ENV.s3Endpoint && ENV.s3AccessKey && ENV.s3SecretKey && ENV.s3Bucket) return 's3';
+  // Fallback: Local filesystem (not recommended for production with remote PBX)
   return 'local';
+}
+
+// Log storage mode on module load
+const _storageMode = getStorageMode();
+console.log(`[Storage] Mode: ${_storageMode}${_storageMode === 's3' ? ` (endpoint: ${ENV.s3Endpoint})` : ''}`);
+
+// ─── S3-Compatible Storage (Cloudflare R2, AWS S3, MinIO) ──────────────────
+
+let _s3Client: S3Client | null = null;
+
+function getS3Client(): S3Client {
+  if (!_s3Client) {
+    if (!ENV.s3Endpoint || !ENV.s3AccessKey || !ENV.s3SecretKey) {
+      throw new Error('S3 credentials not configured (S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY required)');
+    }
+    _s3Client = new S3Client({
+      region: 'auto', // Cloudflare R2 uses 'auto'
+      endpoint: ENV.s3Endpoint,
+      credentials: {
+        accessKeyId: ENV.s3AccessKey,
+        secretAccessKey: ENV.s3SecretKey,
+      },
+      // Force path-style for R2 compatibility
+      forcePathStyle: true,
+    });
+  }
+  return _s3Client;
+}
+
+async function s3Put(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType: string
+): Promise<{ key: string; url: string }> {
+  const client = getS3Client();
+  const key = normalizeKey(relKey);
+
+  const body = typeof data === 'string' ? Buffer.from(data, 'utf-8') : data;
+
+  await client.send(new PutObjectCommand({
+    Bucket: ENV.s3Bucket,
+    Key: key,
+    Body: body,
+    ContentType: contentType,
+    // R2 doesn't support ACL, but this is harmless for AWS S3
+    // ACL: 'public-read',
+  }));
+
+  // Build the public URL
+  const url = getS3PublicUrl(key);
+  return { key, url };
+}
+
+async function s3Get(relKey: string): Promise<{ key: string; url: string }> {
+  const key = normalizeKey(relKey);
+
+  // If we have a public URL configured, use it directly (no signing needed)
+  if (ENV.s3PublicUrl) {
+    return { key, url: getS3PublicUrl(key) };
+  }
+
+  // Otherwise generate a presigned URL (valid for 1 hour)
+  const client = getS3Client();
+  const command = new GetObjectCommand({
+    Bucket: ENV.s3Bucket,
+    Key: key,
+  });
+  const url = await getSignedUrl(client, command, { expiresIn: 3600 });
+  return { key, url };
+}
+
+/**
+ * Build the public URL for an S3 object.
+ * Uses S3_PUBLIC_URL if configured (e.g., custom domain or R2 public bucket URL).
+ * Falls back to constructing from the endpoint.
+ */
+function getS3PublicUrl(key: string): string {
+  if (ENV.s3PublicUrl) {
+    const base = ENV.s3PublicUrl.replace(/\/+$/, '');
+    return `${base}/${key}`;
+  }
+  // Fallback: construct from endpoint (works for R2 public buckets)
+  // R2 public URL format: https://pub-{hash}.r2.dev/{key}
+  // or custom domain: https://storage.yourdomain.com/{key}
+  const endpoint = ENV.s3Endpoint.replace(/\/+$/, '');
+  return `${endpoint}/${ENV.s3Bucket}/${key}`;
 }
 
 // ─── Forge Storage (Manus Platform) ─────────────────────────────────────────
@@ -219,13 +309,13 @@ export function mountLocalStorageRoute(app: Express): void {
 
 /**
  * Resolve a storage URL for server-side fetch.
- * - Forge URLs are already absolute (https://...) — returned as-is.
+ * - Forge/S3 URLs are already absolute (https://...) — returned as-is.
  * - Local storage URLs are relative (/api/storage/...) — prepend localhost.
  * Use this whenever server code needs to fetch() a stored file.
  */
 export function resolveStorageUrl(url: string): string {
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url; // Already absolute (Forge or external)
+    return url; // Already absolute (Forge, S3, or external)
   }
   // Relative URL from local storage — resolve against localhost
   const port = process.env.PORT || '3000';
@@ -259,6 +349,9 @@ export async function storagePut(
   if (mode === 'forge') {
     return forgePut(relKey, data, contentType);
   }
+  if (mode === 's3') {
+    return s3Put(relKey, data, contentType);
+  }
   return localPut(relKey, data, contentType);
 }
 
@@ -267,5 +360,13 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
   if (mode === 'forge') {
     return forgeGet(relKey);
   }
+  if (mode === 's3') {
+    return s3Get(relKey);
+  }
   return localGet(relKey);
+}
+
+/** Expose current storage mode for diagnostics */
+export function getActiveStorageMode(): StorageMode {
+  return getStorageMode();
 }

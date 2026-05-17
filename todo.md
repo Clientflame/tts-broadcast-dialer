@@ -1250,3 +1250,11 @@
 - [x] Security: Build Security Logs admin page with ban reports and login history
 - [x] Security: fail2ban sync script deployed with 5-min cron job (47 bans synced)
 - [x] Security: Internal API endpoint for fail2ban event ingestion (localhost only)
+- [ ] Bug: Test call still failing with 'Audio preparation failed' — need to debug on PBX server directly
+- [x] Storage: Integrate Cloudflare R2 as S3-compatible storage backend (fix audio download failures)
+- [x] Storage: Add S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_BUCKET, S3_PUBLIC_URL env vars
+- [x] Storage: Install @aws-sdk/client-s3 dependency
+- [x] Storage: Update storage.ts with 'r2' mode (priority: forge → r2 → local)
+- [ ] Deploy: Add R2 credentials to Docker container on 149.28.98.47
+- [ ] Deploy: Deploy updated pbx_agent.py (with retry logic) to 45.77.75.198
+- [ ] Test: Verify test call audio downloads successfully from R2
