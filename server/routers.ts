@@ -13,6 +13,8 @@ import { getAllPrefetchStats } from "./services/audio-prefetch";
 import { invokeLLM } from "./_core/llm";
 import { generateScriptPreview } from "./services/script-audio";
 import type { ScriptSegment } from "../drizzle/schema";
+import { callLogs, campaigns, contacts, callQueue, contactScores } from "../drizzle/schema";
+import { eq, and, sql, count } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { sdk } from "./_core/sdk";
 import { sendPasswordResetEmail, sendVerificationEmail, testSmtpConnection, getSmtpConfig } from "./services/email";
@@ -1065,14 +1067,81 @@ export const appRouter = router({
       const stats = await db.getCampaignStats(input.id);
       return { ...stats, isActive: isCampaignActive(input.id) };
     }),
-    // Campaign Cloning
+    // Real-Time Campaign Dashboard
+    liveStats: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      const stats = await db.getCampaignStats(input.id);
+      const isActive = isCampaignActive(input.id);
+      // Get answer rate trend (last 10 minutes in 1-minute buckets)
+      const dbInst = await (await import("./db")).getDb();
+      let answerRateTrend: { minute: string; answered: number; total: number; rate: number }[] = [];
+      let callsPerMinute = 0;
+      let etaMinutes: number | null = null;
+      if (dbInst) {
+        const tenMinAgo = Date.now() - 10 * 60 * 1000;
+        const trendRows = await dbInst.select({
+          minute: sql<string>`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%H:%i')`,
+          total: count(),
+          answered: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END)`,
+        }).from(callLogs)
+          .where(and(
+            eq(callLogs.campaignId, input.id),
+            sql`${callLogs.startedAt} >= ${tenMinAgo}`
+          ))
+          .groupBy(sql`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%H:%i')`)
+          .orderBy(sql`DATE_FORMAT(FROM_UNIXTIME(${callLogs.startedAt} / 1000), '%H:%i')`);
+        answerRateTrend = trendRows.map(r => ({
+          minute: r.minute,
+          total: Number(r.total),
+          answered: Number(r.answered),
+          rate: r.total ? Math.round((Number(r.answered) / Number(r.total)) * 100) : 0,
+        }));
+        // Calculate calls per minute from the last 5 minutes
+        const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+        const [recentRate] = await dbInst.select({ cnt: count() }).from(callLogs)
+          .where(and(eq(callLogs.campaignId, input.id), sql`${callLogs.startedAt} >= ${fiveMinAgo}`));
+        callsPerMinute = Math.round((Number(recentRate?.cnt ?? 0) / 5) * 10) / 10;
+        // ETA: remaining contacts / calls per minute
+        if (callsPerMinute > 0 && stats.remaining > 0) {
+          etaMinutes = Math.round(stats.remaining / callsPerMinute);
+        }
+      }
+      const dialed = stats.completed + stats.failed + (stats.busy || 0) + (stats.noAnswer || 0);
+      const answerRate = dialed > 0 ? Math.round((stats.answered / dialed) * 100) : 0;
+      return {
+        ...stats,
+        isActive,
+        campaignName: campaign.name,
+        campaignStatus: campaign.status,
+        startedAt: campaign.startedAt,
+        answerRate,
+        callsPerMinute,
+        etaMinutes,
+        answerRateTrend,
+        dialed,
+      };
+    }),
+    // Campaign Cloning with optional Schedule Offset
     clone: protectedProcedure.input(z.object({
       id: z.number(),
       name: z.string().min(1).max(255),
+      scheduleOffsetMs: z.number().optional(), // offset in ms from now to schedule the clone
+      scheduleAt: z.number().optional(), // absolute timestamp to schedule the clone
     })).mutation(async ({ ctx, input }) => {
       const result = await db.cloneCampaign(input.id, input.name);
-      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clone", resource: "campaign", resourceId: result.id, details: { clonedFrom: input.id } });
-      return result;
+      await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clone", resource: "campaign", resourceId: result.id, details: { clonedFrom: input.id, scheduleOffset: input.scheduleOffsetMs, scheduleAt: input.scheduleAt } });
+      // If schedule offset or absolute time provided, create a schedule for the clone
+      const scheduledAt = input.scheduleAt || (input.scheduleOffsetMs ? Date.now() + input.scheduleOffsetMs : null);
+      if (scheduledAt && scheduledAt > Date.now()) {
+        await db.createCampaignSchedule({
+          campaignId: result.id,
+          scheduledAt,
+          userId: ctx.user.id,
+          status: "pending",
+        });
+      }
+      return { ...result, scheduledAt: scheduledAt || null };
     }),
     // ─── Campaign Scheduling ──────────────────────────────────────────
     schedule: protectedProcedure.input(z.object({
@@ -2997,6 +3066,78 @@ export const appRouter = router({
     abTest: protectedProcedure.input(z.object({ group: z.string() })).query(async ({ ctx, input }) => {
       return db.getABTestResults(input.group);
     }),
+    // Best Time to Call — analyze historical answer rates by hour and area code
+    bestTimeToCall: protectedProcedure.input(z.object({
+      days: z.number().min(7).max(90).default(30),
+    }).optional()).query(async ({ ctx, input }) => {
+      const days = input?.days ?? 30;
+      const dbInst = await (await import("./db")).getDb();
+      if (!dbInst) return { byHour: [], byAreaCode: [], recommendations: [] };
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      // Answer rate by hour of day (local server time)
+      const byHour = await dbInst.select({
+        hour: sql<number>`HOUR(FROM_UNIXTIME(${callLogs.startedAt} / 1000))`,
+        total: count(),
+        answered: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END)`,
+        avgDuration: sql<number>`COALESCE(AVG(CASE WHEN ${callLogs.duration} > 0 THEN ${callLogs.duration} END), 0)`,
+      }).from(callLogs)
+        .where(sql`${callLogs.startedAt} >= ${cutoff}`)
+        .groupBy(sql`HOUR(FROM_UNIXTIME(${callLogs.startedAt} / 1000))`)
+        .orderBy(sql`HOUR(FROM_UNIXTIME(${callLogs.startedAt} / 1000))`);
+      const hourData = byHour.map(r => ({
+        hour: Number(r.hour),
+        total: Number(r.total),
+        answered: Number(r.answered),
+        answerRate: r.total ? Math.round((Number(r.answered) / Number(r.total)) * 100) : 0,
+        avgDuration: Math.round(Number(r.avgDuration)),
+      }));
+      // Answer rate by area code (first 3 digits of phone)
+      const byAreaCode = await dbInst.select({
+        areaCode: sql<string>`SUBSTRING(${callLogs.phoneNumber}, 1, 3)`,
+        total: count(),
+        answered: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END)`,
+        avgDuration: sql<number>`COALESCE(AVG(CASE WHEN ${callLogs.duration} > 0 THEN ${callLogs.duration} END), 0)`,
+      }).from(callLogs)
+        .where(sql`${callLogs.startedAt} >= ${cutoff}`)
+        .groupBy(sql`SUBSTRING(${callLogs.phoneNumber}, 1, 3)`)
+        .having(sql`COUNT(*) >= 5`)
+        .orderBy(sql`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END) / COUNT(*) DESC`)
+        .limit(20);
+      const areaCodeData = byAreaCode.map(r => ({
+        areaCode: r.areaCode,
+        total: Number(r.total),
+        answered: Number(r.answered),
+        answerRate: r.total ? Math.round((Number(r.answered) / Number(r.total)) * 100) : 0,
+        avgDuration: Math.round(Number(r.avgDuration)),
+      }));
+      // Best time by area code (top 3 area codes x best hour)
+      const bestByAreaHour = await dbInst.select({
+        areaCode: sql<string>`SUBSTRING(${callLogs.phoneNumber}, 1, 3)`,
+        hour: sql<number>`HOUR(FROM_UNIXTIME(${callLogs.startedAt} / 1000))`,
+        total: count(),
+        answered: sql<number>`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END)`,
+      }).from(callLogs)
+        .where(sql`${callLogs.startedAt} >= ${cutoff}`)
+        .groupBy(sql`SUBSTRING(${callLogs.phoneNumber}, 1, 3)`, sql`HOUR(FROM_UNIXTIME(${callLogs.startedAt} / 1000))`)
+        .having(sql`COUNT(*) >= 3`)
+        .orderBy(sql`SUM(CASE WHEN ${callLogs.status} IN ('answered', 'completed') THEN 1 ELSE 0 END) / COUNT(*) DESC`)
+        .limit(30);
+      // Generate recommendations
+      const recommendations: { areaCode: string; bestHour: number; answerRate: number; sampleSize: number }[] = [];
+      const seenAreas = new Set<string>();
+      for (const r of bestByAreaHour) {
+        if (seenAreas.has(r.areaCode)) continue;
+        seenAreas.add(r.areaCode);
+        const rate = Number(r.total) > 0 ? Math.round((Number(r.answered) / Number(r.total)) * 100) : 0;
+        if (rate > 0) {
+          recommendations.push({ areaCode: r.areaCode, bestHour: Number(r.hour), answerRate: rate, sampleSize: Number(r.total) });
+        }
+        if (recommendations.length >= 15) break;
+      }
+      // Overall best hours (top 3)
+      const topHours = [...hourData].sort((a, b) => b.answerRate - a.answerRate).slice(0, 3);
+      return { byHour: hourData, byAreaCode: areaCodeData, recommendations, topHours };
+    }),
   }),
 
   // Contact Scoring
@@ -3995,6 +4136,241 @@ Return ONLY the message text, nothing else.`;
       await db.updateCallScript(input.id, { segments: updatedSegments as any });
       await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.preGenerate", resource: "callScript", resourceId: input.id, details: { generated, skipped } });
       return { success: true, generated, skipped, total: segments.length };
+    }),
+    // ─── Script Library / Templates ──────────────────────────────────────
+    libraryTemplates: publicProcedure.query(async () => {
+      return [
+        {
+          id: "collections-past-due",
+          name: "Past Due Account Reminder",
+          industry: "collections",
+          description: "Polite reminder about a past-due balance with callback option.",
+          tone: "professional",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is an important message regarding your account.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Our records show a balance that requires your attention. We would like to help you resolve this matter.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "Please call us back at {{callback_number}} at your earliest convenience. Thank you and have a good day.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "collections-payment-plan",
+          name: "Payment Plan Offer",
+          industry: "collections",
+          description: "Offer flexible payment arrangements for outstanding balances.",
+          tone: "empathetic",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is a courtesy call about your account.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "We understand that circumstances can be challenging. We are reaching out to offer flexible payment options that may work for your situation.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To discuss your options, please call us at {{callback_number}}. We are here to help.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "healthcare-appointment",
+          name: "Appointment Reminder",
+          industry: "healthcare",
+          description: "Remind patients about upcoming appointments with rescheduling option.",
+          tone: "friendly",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is a friendly reminder from your healthcare provider.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "You have an upcoming appointment scheduled. Please remember to arrive 15 minutes early and bring your insurance card.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "If you need to reschedule, please call us at {{callback_number}}. We look forward to seeing you.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "healthcare-followup",
+          name: "Post-Visit Follow-Up",
+          industry: "healthcare",
+          description: "Check in with patients after their visit and remind about prescriptions.",
+          tone: "empathetic",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is a follow-up call from your healthcare provider.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "We hope you are feeling well after your recent visit. Please remember to take any prescribed medications as directed.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "If you have any questions or concerns, please do not hesitate to call us at {{callback_number}}. Take care.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "political-gotv",
+          name: "Get Out The Vote",
+          industry: "political",
+          description: "Encourage voters to get to the polls on election day.",
+          tone: "urgent",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is an important message about the upcoming election.", voice: "onyx", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Election day is approaching and your vote matters. Make sure you know your polling location and have a plan to vote.", voice: "onyx", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "For information about your polling place or to request a ride to the polls, call {{callback_number}}. Every vote counts.", voice: "onyx", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "political-survey",
+          name: "Voter Opinion Survey",
+          industry: "political",
+          description: "Brief survey to gauge voter sentiment on key issues.",
+          tone: "professional",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, we are conducting a brief community survey and would value your opinion.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Your feedback helps shape the priorities for our community. This will only take a moment of your time.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To participate in this short survey, please call us back at {{callback_number}}. Thank you for your time.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "real-estate-listing",
+          name: "New Listing Announcement",
+          industry: "real_estate",
+          description: "Notify potential buyers about a new property listing.",
+          tone: "friendly",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is an exciting update from your real estate agent.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "A new property has just been listed that matches your preferences. This home won't last long in today's market.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To schedule a private showing or learn more details, call me at {{callback_number}}. I look forward to hearing from you.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "insurance-renewal",
+          name: "Policy Renewal Reminder",
+          industry: "insurance",
+          description: "Remind policyholders about upcoming renewal and potential savings.",
+          tone: "professional",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is an important notice about your insurance policy.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Your policy is coming up for renewal. We may have new options that could save you money while maintaining your coverage.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To review your renewal options, please call us at {{callback_number}} before your policy expires. Thank you.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "nonprofit-donation",
+          name: "Donation Drive Appeal",
+          industry: "nonprofit",
+          description: "Appeal for donations during a fundraising campaign.",
+          tone: "empathetic",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, thank you for being a valued supporter of our organization.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Your past generosity has made a real difference. Right now, we have an opportunity to double our impact with a matching gift campaign.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To make a contribution or learn more, please call {{callback_number}}. Every dollar counts. Thank you.", voice: "shimmer", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "education-enrollment",
+          name: "Enrollment Deadline Reminder",
+          industry: "education",
+          description: "Remind prospective students about enrollment deadlines.",
+          tone: "friendly",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is a reminder from the admissions office.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "The enrollment deadline is approaching. Don't miss your chance to secure your spot for the upcoming semester.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "If you have questions about the enrollment process or need assistance, call us at {{callback_number}}. We are here to help.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "automotive-service",
+          name: "Service Appointment Reminder",
+          industry: "automotive",
+          description: "Remind customers about scheduled vehicle service appointments.",
+          tone: "professional",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, this is a reminder from your auto service center.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Your vehicle is due for scheduled maintenance. Regular service helps keep your car running safely and efficiently.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To schedule your appointment or ask about current service specials, call us at {{callback_number}}. Thank you.", voice: "alloy", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+        {
+          id: "general-event",
+          name: "Event Invitation",
+          industry: "general",
+          description: "Invite contacts to an upcoming event or webinar.",
+          tone: "friendly",
+          segments: [
+            { id: "1", type: "tts" as const, position: 0, text: "Hello {{first_name}}, you are invited to a special upcoming event.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "2", type: "tts" as const, position: 1, text: "Join us for an exclusive gathering where you will learn about exciting new opportunities. Space is limited so act fast.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+            { id: "3", type: "tts" as const, position: 2, text: "To reserve your spot or get more details, call {{callback_number}} today. We hope to see you there.", voice: "nova", provider: "openai" as const, speed: "1.0" },
+          ],
+        },
+      ];
+    }),
+    // ─── AI Script Writer ──────────────────────────────────────────────
+    aiGenerate: protectedProcedure.input(z.object({
+      prompt: z.string().min(5).max(1000),
+      industry: z.enum(["general", "collections", "healthcare", "political", "real_estate", "insurance", "automotive", "telecom", "nonprofit", "education", "legal", "retail"]).default("general"),
+      tone: z.enum(["professional", "friendly", "urgent", "empathetic", "authoritative", "casual"]).default("professional"),
+      segmentCount: z.number().min(1).max(10).default(3),
+      includeCallbackNumber: z.boolean().default(false),
+      includePersonalization: z.boolean().default(true),
+    })).mutation(async ({ ctx, input }) => {
+      const systemPrompt = `You are an expert call script writer for outbound voice broadcast campaigns. Generate call scripts that sound natural when read by text-to-speech.
+
+Rules:
+- Write conversational, natural-sounding text optimized for TTS playback
+- Keep each segment concise (1-3 sentences, under 200 characters each)
+- Use short sentences and simple words for clarity over the phone
+- Avoid abbreviations, special characters, or complex punctuation
+- ${input.includePersonalization ? 'Include merge fields like {{first_name}}, {{last_name}}, {{company_name}}, {{callback_number}} where appropriate' : 'Do NOT use any merge fields or personalization variables'}
+- ${input.includeCallbackNumber ? 'Include a segment that mentions the callback number using {{callback_number}}' : 'Do not reference a callback number'}
+- Industry context: ${input.industry}
+- Tone: ${input.tone}
+- Generate exactly ${input.segmentCount} segments
+
+Respond with a JSON object matching this exact schema.`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Generate a call script for: ${input.prompt}` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "call_script",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "A short descriptive name for the script" },
+                description: { type: "string", description: "Brief description of the script purpose" },
+                segments: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      text: { type: "string", description: "The TTS text for this segment" },
+                      voice_suggestion: { type: "string", description: "Suggested voice: alloy, echo, fable, onyx, nova, or shimmer" },
+                    },
+                    required: ["text", "voice_suggestion"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["name", "description", "segments"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content;
+      if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI generation failed - no response" });
+
+      try {
+        const parsed = JSON.parse(content);
+        // Convert to ScriptSegment format
+        const segments = (parsed.segments || []).map((seg: any, i: number) => ({
+          id: crypto.randomUUID(),
+          type: "tts" as const,
+          position: i,
+          text: seg.text,
+          voice: seg.voice_suggestion || "alloy",
+          provider: "openai" as const,
+          speed: "1.0",
+        }));
+
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "script.aiGenerate", resource: "callScript", details: { prompt: input.prompt, industry: input.industry, tone: input.tone, segmentCount: segments.length } });
+
+        return {
+          name: parsed.name || "AI Generated Script",
+          description: parsed.description || input.prompt,
+          segments,
+        };
+      } catch (err) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to parse AI response" });
+      }
     }),
   }),
 

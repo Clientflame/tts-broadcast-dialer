@@ -1291,3 +1291,22 @@
 - [x] Feature: Quick Campaign Step 3 — Configure caller ID, name, and launch
 - [x] Feature: Wire Quick Campaign into mobile bottom nav "Launch" button (green rocket icon)
 - [x] Test: quick-campaign.test.ts — 9 tests passing (create validation, start validation)
+- [x] Feature: AI Script Writer — one-click AI generation of script text from a brief prompt using LLM
+- [x] Feature: AI Script Writer — backend tRPC endpoint with structured JSON output
+- [x] Feature: AI Script Writer — frontend UI with prompt input, tone/industry selectors, and generated preview
+- [x] Feature: Script Performance Scoring — automatic A/B/C/D/F effectiveness scoring based on call metrics
+- [x] Feature: Script Performance Scoring — frontend badge + tooltip with score breakdown on scripts list
+- [x] Feature: Script Performance Scoring — weighted scoring: 60% answer rate, 30% duration, 10% volume
+- [x] Feature: Script Library / Marketplace — pre-built script templates organized by industry
+- [x] Feature: Script Library — 12 templates across 8 industries (Healthcare, Real Estate, Insurance, etc.)
+- [x] Feature: Script Library — frontend tabbed UI with browse, preview, and one-click import
+- [x] Feature: Campaign Cloning with Schedule Offset — clone campaign with configurable time offset
+- [x] Feature: Campaign Cloning — backend enhanced with scheduleOffsetMs and scheduleAt params
+- [x] Feature: Campaign Cloning — frontend dialog with none/offset/absolute schedule picker
+- [x] Feature: Real-Time Campaign Dashboard — live-updating calls in progress, answer rate trends, ETA
+- [x] Feature: Real-Time Campaign Dashboard — backend liveStats endpoint with 5s polling
+- [x] Feature: Real-Time Campaign Dashboard — frontend dashboard with progress ring, metrics, trend chart
+- [x] Feature: Automatic Best-Time-to-Call — track answer rates by hour/day/area code
+- [x] Feature: Best-Time-to-Call — backend analytics aggregation from call logs with area code breakdown
+- [x] Feature: Best-Time-to-Call — frontend heatmap visualization on Analytics > Best Time tab
+- [x] Test: features-v2.test.ts — 28 tests passing (all 6 features validated)

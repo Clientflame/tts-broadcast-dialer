@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { BestTimeToCall } from "@/components/BestTimeToCall";
 
 const STATUS_COLORS: Record<string, string> = {
   answered: "#22c55e",
@@ -583,6 +584,9 @@ export default function Analytics() {
             <TabsTrigger value="usage" className="flex items-center gap-1.5">
               <HardDrive className="h-4 w-4" /> Usage
             </TabsTrigger>
+            <TabsTrigger value="besttime" className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4" /> Best Time
+            </TabsTrigger>
           </TabsList>
 
           {/* Call Analytics Tab */}
@@ -745,6 +749,11 @@ export default function Analytics() {
           {/* Usage & Storage Tab */}
           <TabsContent value="usage">
             <UsageDashboard />
+          </TabsContent>
+
+          {/* Best Time to Call Tab */}
+          <TabsContent value="besttime">
+            <BestTimeToCall />
           </TabsContent>
         </Tabs>
       </div>

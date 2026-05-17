@@ -16,9 +16,26 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Play, Pause, Loader2, ScrollText, GripVertical,
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
-  History, BarChart3, RotateCcw, Eye, Zap,
+  History, BarChart3, RotateCcw, Eye, Zap, Award,
 } from "lucide-react";
+
+// Script Performance Scoring
+function getScriptGrade(metrics: { answerRate: number; avgDuration: number; totalCalls: number } | undefined): { grade: string; color: string; label: string } {
+  if (!metrics || metrics.totalCalls < 10) return { grade: "—", color: "text-muted-foreground", label: "Not enough data (min 10 calls)" };
+  // Weighted score: answer rate (60%), avg duration (30%), volume bonus (10%)
+  const answerScore = Math.min(metrics.answerRate / 60, 1) * 60; // 60% answer rate = max score
+  const durationScore = Math.min(metrics.avgDuration / 30, 1) * 30; // 30s avg = max score
+  const volumeScore = Math.min(metrics.totalCalls / 500, 1) * 10; // 500 calls = max bonus
+  const total = answerScore + durationScore + volumeScore;
+  if (total >= 80) return { grade: "A", color: "text-green-600 bg-green-50 border-green-200", label: `Score: ${Math.round(total)} — Excellent` };
+  if (total >= 65) return { grade: "B", color: "text-blue-600 bg-blue-50 border-blue-200", label: `Score: ${Math.round(total)} — Good` };
+  if (total >= 50) return { grade: "C", color: "text-yellow-600 bg-yellow-50 border-yellow-200", label: `Score: ${Math.round(total)} — Average` };
+  if (total >= 35) return { grade: "D", color: "text-orange-600 bg-orange-50 border-orange-200", label: `Score: ${Math.round(total)} — Below Average` };
+  return { grade: "F", color: "text-red-600 bg-red-50 border-red-200", label: `Score: ${Math.round(total)} — Poor` };
+}
 import { ImportExportButtons } from "@/components/ImportExportButtons";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Library } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Segment = {
@@ -285,9 +302,32 @@ export default function Scripts() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [versionHistoryScriptId, setVersionHistoryScriptId] = useState<number | null>(null);
   const [metricsScriptId, setMetricsScriptId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState("scripts");
+  const [libraryFilter, setLibraryFilter] = useState("all");
+  // AI Script Writer state
+  const [showAiWriter, setShowAiWriter] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiIndustry, setAiIndustry] = useState<string>("general");
+  const [aiTone, setAiTone] = useState<string>("professional");
+  const [aiSegmentCount, setAiSegmentCount] = useState(3);
+  const [aiIncludeCallback, setAiIncludeCallback] = useState(false);
+  const [aiIncludePersonalization, setAiIncludePersonalization] = useState(true);
 
   const utils = trpc.useUtils();
   const importScriptsMut = trpc.callScripts.importAll.useMutation();
+  const libraryTemplates = trpc.callScripts.libraryTemplates.useQuery(undefined, { enabled: activeTab === "library" });
+  const aiGenerateMut = trpc.callScripts.aiGenerate.useMutation({
+    onSuccess: (data) => {
+      // Populate the create form with AI-generated content
+      setName(data.name);
+      setDescription(data.description);
+      setSegments(data.segments);
+      setShowAiWriter(false);
+      setShowCreate(true);
+      toast.success("AI script generated! Review and save.");
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   const scripts = trpc.callScripts.list.useQuery();
   const scriptMetrics = trpc.callScripts.metrics.useQuery();
@@ -511,12 +551,26 @@ export default function Scripts() {
               <Trash2 className="h-4 w-4 mr-1" /> Delete {selectedIds.length}
             </Button>
           )}
+          <Button variant="outline" onClick={() => {
+            setAiPrompt(""); setAiIndustry("general"); setAiTone("professional");
+            setAiSegmentCount(3); setAiIncludeCallback(false); setAiIncludePersonalization(true);
+            setShowAiWriter(true);
+          }}>
+            <Zap className="h-4 w-4 mr-2" /> AI Writer
+          </Button>
           <Button onClick={() => { resetForm(); setShowCreate(true); }}>
             <Plus className="h-4 w-4 mr-2" /> New Script
           </Button>
           </div>
         </div>
 
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="scripts"><ScrollText className="h-4 w-4 mr-1.5" /> My Scripts</TabsTrigger>
+            <TabsTrigger value="library"><Library className="h-4 w-4 mr-1.5" /> Template Library</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="scripts" className="mt-4">
         {/* Scripts Table */}
         <Card>
           <CardHeader>
@@ -557,6 +611,7 @@ export default function Scripts() {
                     <TableHead>Name</TableHead>
                     <TableHead>Segments</TableHead>
                     <TableHead>Callback #</TableHead>
+                    <TableHead>Grade</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Updated</TableHead>
@@ -623,6 +678,31 @@ export default function Scripts() {
                           )}
                         </TableCell>
                         <TableCell>
+                          {(() => {
+                            const m = scriptMetrics.data?.find((x: any) => x.scriptId === script.id);
+                            const g = getScriptGrade(m);
+                            return (
+                              <TooltipProvider delayDuration={200}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className={`inline-flex items-center justify-center w-8 h-8 rounded-md border font-bold text-sm ${g.color}`}>
+                                      {g.grade}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    <p className="text-xs">{g.label}</p>
+                                    {m && m.totalCalls >= 10 && (
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        {m.answerRate}% answer rate · {m.avgDuration}s avg · {m.totalCalls} calls
+                                      </p>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>
                           <Badge variant={script.status === "active" ? "default" : "secondary"}>
                             {script.status}
                           </Badge>
@@ -672,6 +752,67 @@ export default function Scripts() {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="library" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Library className="h-5 w-5" /> Script Template Library</CardTitle>
+                <CardDescription>Browse pre-built script templates by industry. Click "Use Template" to import into your scripts.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {["all", "collections", "healthcare", "political", "real_estate", "insurance", "nonprofit", "education", "automotive", "general"].map(ind => (
+                    <Button key={ind} variant={libraryFilter === ind ? "default" : "outline"} size="sm" onClick={() => setLibraryFilter(ind)}>
+                      {ind === "all" ? "All" : ind.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())}
+                    </Button>
+                  ))}
+                </div>
+                {libraryTemplates.isLoading ? (
+                  <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {(libraryTemplates.data || []).filter((t: any) => libraryFilter === "all" || t.industry === libraryFilter).map((template: any) => (
+                      <Card key={template.id} className="flex flex-col">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <Badge variant="outline" className="text-xs capitalize">{template.industry.replace("_", " ")}</Badge>
+                            <Badge variant="secondary" className="text-xs capitalize">{template.tone}</Badge>
+                          </div>
+                          <CardTitle className="text-base mt-2">{template.name}</CardTitle>
+                          <CardDescription className="text-xs">{template.description}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="flex-1">
+                          <div className="space-y-1.5">
+                            {template.segments.map((seg: any, i: number) => (
+                              <div key={i} className="text-xs text-muted-foreground border-l-2 border-primary/20 pl-2">
+                                <span className="font-mono text-[10px] text-primary/60">#{i + 1}</span>{" "}
+                                {seg.text.length > 80 ? seg.text.slice(0, 80) + "..." : seg.text}
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                        <div className="px-6 pb-4">
+                          <Button className="w-full" size="sm" onClick={() => {
+                            resetForm();
+                            setName(template.name);
+                            setDescription(template.description);
+                            setSegments(template.segments.map((s: any) => ({ ...s, id: newId() })));
+                            setShowCreate(true);
+                            setActiveTab("scripts");
+                            toast.success("Template loaded! Review and save.");
+                          }}>
+                            <Plus className="h-4 w-4 mr-1" /> Use Template
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={v => {
@@ -968,6 +1109,107 @@ export default function Scripts() {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+        {/* AI Script Writer Dialog */}
+        <Dialog open={showAiWriter} onOpenChange={setShowAiWriter}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5 text-yellow-500" /> AI Script Writer
+              </DialogTitle>
+              <DialogDescription>
+                Describe your campaign and let AI generate a professional call script.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>What is this call about? *</Label>
+                <Textarea
+                  placeholder="e.g., Remind patients about upcoming dental appointments and offer rescheduling options..."
+                  value={aiPrompt}
+                  onChange={e => setAiPrompt(e.target.value)}
+                  className="mt-1.5 min-h-[80px]"
+                  maxLength={1000}
+                />
+                <p className="text-xs text-muted-foreground mt-1">{aiPrompt.length}/1000</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Industry</Label>
+                  <Select value={aiIndustry} onValueChange={setAiIndustry}>
+                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="general">General</SelectItem>
+                      <SelectItem value="collections">Collections</SelectItem>
+                      <SelectItem value="healthcare">Healthcare</SelectItem>
+                      <SelectItem value="political">Political</SelectItem>
+                      <SelectItem value="real_estate">Real Estate</SelectItem>
+                      <SelectItem value="insurance">Insurance</SelectItem>
+                      <SelectItem value="automotive">Automotive</SelectItem>
+                      <SelectItem value="telecom">Telecom</SelectItem>
+                      <SelectItem value="nonprofit">Nonprofit</SelectItem>
+                      <SelectItem value="education">Education</SelectItem>
+                      <SelectItem value="legal">Legal</SelectItem>
+                      <SelectItem value="retail">Retail</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Tone</Label>
+                  <Select value={aiTone} onValueChange={setAiTone}>
+                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="professional">Professional</SelectItem>
+                      <SelectItem value="friendly">Friendly</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="empathetic">Empathetic</SelectItem>
+                      <SelectItem value="authoritative">Authoritative</SelectItem>
+                      <SelectItem value="casual">Casual</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div>
+                <Label>Number of Segments: {aiSegmentCount}</Label>
+                <input
+                  type="range" min={1} max={10} value={aiSegmentCount}
+                  onChange={e => setAiSegmentCount(Number(e.target.value))}
+                  className="w-full mt-1.5 accent-primary"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground"><span>1</span><span>10</span></div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox checked={aiIncludePersonalization} onCheckedChange={(v: boolean) => setAiIncludePersonalization(v)} />
+                  Include personalization (merge fields like {"{{first_name}}"})
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <Checkbox checked={aiIncludeCallback} onCheckedChange={(v: boolean) => setAiIncludeCallback(v)} />
+                  Include callback number segment
+                </label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAiWriter(false)}>Cancel</Button>
+              <Button
+                onClick={() => aiGenerateMut.mutate({
+                  prompt: aiPrompt,
+                  industry: aiIndustry as any,
+                  tone: aiTone as any,
+                  segmentCount: aiSegmentCount,
+                  includeCallbackNumber: aiIncludeCallback,
+                  includePersonalization: aiIncludePersonalization,
+                })}
+                disabled={aiPrompt.length < 5 || aiGenerateMut.isPending}
+              >
+                {aiGenerateMut.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating...</>
+                ) : (
+                  <><Zap className="h-4 w-4 mr-2" /> Generate Script</>
+                )}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

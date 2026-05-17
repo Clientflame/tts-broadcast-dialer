@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
@@ -20,8 +20,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, Activity,
 } from "lucide-react";
+import { LiveCampaignDashboard } from "@/components/LiveCampaignDashboard";
 
 const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   draft: "outline", scheduled: "secondary", running: "default",
@@ -1096,7 +1097,12 @@ export default function Campaigns() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [cloneId, setCloneId] = useState<number | null>(null);
   const [cloneName, setCloneName] = useState("");
+  const [cloneScheduleMode, setCloneScheduleMode] = useState<"none" | "offset" | "absolute">("none");
+  const [cloneOffsetHours, setCloneOffsetHours] = useState(24);
+  const [cloneScheduleDate, setCloneScheduleDate] = useState("");
+  const [cloneScheduleTime, setCloneScheduleTime] = useState("");
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [liveDashboardId, setLiveDashboardId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM });
   const [editForm, setEditForm] = useState<FormState>({ ...DEFAULT_FORM });
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
@@ -2071,7 +2077,12 @@ export default function Campaigns() {
                     <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(campaign.createdAt).toLocaleDateString()}</span>
                   </div>
                   {campaign.status === "running" && campaign.totalContacts > 0 && (
-                    <Progress value={(campaign.completedCalls / campaign.totalContacts) * 100} className="h-1.5 mt-2" />
+                    <>
+                      <Progress value={(campaign.completedCalls / campaign.totalContacts) * 100} className="h-1.5 mt-2" />
+                      <Button size="sm" variant="outline" className="w-full mt-2 text-xs h-7 border-green-300 text-green-700 hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-950" onClick={(e) => { e.stopPropagation(); setLiveDashboardId(campaign.id); }}>
+                        <Activity className="h-3 w-3 mr-1 animate-pulse" /> Live Dashboard
+                      </Button>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -2080,18 +2091,56 @@ export default function Campaigns() {
         )}
       </div>
 
-      {/* Clone Dialog */}
-      <Dialog open={cloneOpen} onOpenChange={setCloneOpen}>
+      {/* Clone Dialog with Schedule Offset */}
+      <Dialog open={cloneOpen} onOpenChange={v => { setCloneOpen(v); if (!v) { setCloneScheduleMode("none"); setCloneOffsetHours(24); setCloneScheduleDate(""); setCloneScheduleTime(""); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Clone Campaign</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Clone Campaign</DialogTitle>
+            <DialogDescription>Copy all settings and optionally schedule the clone to run later.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div><Label>New Campaign Name</Label><Input value={cloneName} onChange={e => setCloneName(e.target.value)} /></div>
-            <p className="text-sm text-muted-foreground">All settings from the original campaign will be copied. The new campaign will start in "draft" status.</p>
+            <div>
+              <Label className="mb-2 block">Schedule Clone</Label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="cloneSchedule" checked={cloneScheduleMode === "none"} onChange={() => setCloneScheduleMode("none")} className="accent-primary" />
+                  Draft only (no schedule)
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="cloneSchedule" checked={cloneScheduleMode === "offset"} onChange={() => setCloneScheduleMode("offset")} className="accent-primary" />
+                  Schedule with offset from now
+                </label>
+                {cloneScheduleMode === "offset" && (
+                  <div className="ml-6 flex items-center gap-2">
+                    <Input type="number" min={1} max={720} value={cloneOffsetHours} onChange={e => setCloneOffsetHours(Number(e.target.value))} className="w-20" />
+                    <span className="text-sm text-muted-foreground">hours from now</span>
+                    <span className="text-xs text-muted-foreground">({new Date(Date.now() + cloneOffsetHours * 3600000).toLocaleString()})</span>
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="radio" name="cloneSchedule" checked={cloneScheduleMode === "absolute"} onChange={() => setCloneScheduleMode("absolute")} className="accent-primary" />
+                  Schedule at specific date/time
+                </label>
+                {cloneScheduleMode === "absolute" && (
+                  <div className="ml-6 flex items-center gap-2">
+                    <Input type="date" value={cloneScheduleDate} onChange={e => setCloneScheduleDate(e.target.value)} className="w-40" />
+                    <Input type="time" value={cloneScheduleTime} onChange={e => setCloneScheduleTime(e.target.value)} className="w-32" />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCloneOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (cloneId) cloneCampaign.mutate({ id: cloneId, name: cloneName }); }} disabled={!cloneName || cloneCampaign.isPending}>
-              {cloneCampaign.isPending ? "Cloning..." : "Clone Campaign"}
+            <Button onClick={() => {
+              if (!cloneId) return;
+              const params: any = { id: cloneId, name: cloneName };
+              if (cloneScheduleMode === "offset") params.scheduleOffsetMs = cloneOffsetHours * 3600000;
+              if (cloneScheduleMode === "absolute" && cloneScheduleDate && cloneScheduleTime) params.scheduleAt = new Date(`${cloneScheduleDate}T${cloneScheduleTime}`).getTime();
+              cloneCampaign.mutate(params);
+            }} disabled={!cloneName || cloneCampaign.isPending}>
+              {cloneCampaign.isPending ? "Cloning..." : cloneScheduleMode !== "none" ? "Clone & Schedule" : "Clone Campaign"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2188,6 +2237,13 @@ export default function Campaigns() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Live Campaign Dashboard */}
+      <LiveCampaignDashboard
+        campaignId={liveDashboardId ?? 0}
+        open={liveDashboardId !== null}
+        onClose={() => setLiveDashboardId(null)}
+      />
 
       {/* Campaign Templates List */}
       {campaignTemplatesList.data && campaignTemplatesList.data.length > 0 && !detailId && (
