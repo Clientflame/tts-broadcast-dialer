@@ -304,9 +304,9 @@ export const appRouter = router({
       const sshPass = await db.getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
       const sshConfigured = !!(sshHost && sshUser && sshPass);
 
-      // 3. TTS API key status
-      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
-      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+      // 3. TTS API key status (only from database Settings, never env vars)
+      const openaiKey = await db.getAppSetting("openai_api_key");
+      const googleKey = await db.getAppSetting("google_tts_api_key");
 
       // 4. Database connectivity (if we got here, DB is working)
       const dbOk = true;
@@ -4694,8 +4694,8 @@ Respond with a JSON object matching this exact schema.`;
 
     /** Get TTS configuration status (which providers have keys) */
     ttsStatus: protectedProcedure.query(async () => {
-      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
-      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+      const openaiKey = await db.getAppSetting("openai_api_key");
+      const googleKey = await db.getAppSetting("google_tts_api_key");
       return {
         openaiConfigured: !!openaiKey,
         googleConfigured: !!googleKey,
@@ -5168,9 +5168,9 @@ Respond with a JSON object matching this exact schema.`;
       const contactLists = await db.getContactLists();
       const hasContacts = contactLists.some((l: any) => (l.contactCount ?? 0) > 0);
 
-      // Step 5: API Keys configured (at least OpenAI or Google TTS)
-      const hasOpenAI = !!process.env.OPENAI_API_KEY;
-      const hasGoogleTTS = !!process.env.GOOGLE_TTS_API_KEY;
+      // Step 5: API Keys configured (at least OpenAI or Google TTS) — check database only
+      const hasOpenAI = !!(await db.getAppSetting("openai_api_key"));
+      const hasGoogleTTS = !!(await db.getAppSetting("google_tts_api_key"));
       const hasApiKeys = hasOpenAI || hasGoogleTTS;
       const apiKeyDetail = hasApiKeys
         ? [hasOpenAI && "OpenAI", hasGoogleTTS && "Google TTS"].filter(Boolean).join(" + ")
@@ -6204,16 +6204,16 @@ Respond with a JSON object matching this exact schema.`;
         }
       }
 
-      // 4. OpenAI API Key
-      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      // 4. OpenAI API Key (database only)
+      const openaiKey = await db.getAppSetting("openai_api_key");
       if (!openaiKey) {
         checks.push({ name: "OpenAI API", status: "unconfigured", message: "API key not set", fixUrl: "/settings" });
       } else {
         checks.push({ name: "OpenAI API", status: "ok", message: "API key configured" });
       }
 
-      // 5. Google TTS API Key
-      const googleKey = await db.getAppSetting("google_tts_api_key") || process.env.GOOGLE_TTS_API_KEY;
+      // 5. Google TTS API Key (database only)
+      const googleKey = await db.getAppSetting("google_tts_api_key");
       if (!googleKey) {
         checks.push({ name: "Google TTS", status: "unconfigured", message: "API key not set (optional)", fixUrl: "/settings" });
       } else {

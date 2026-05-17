@@ -2,7 +2,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { storagePut } from "../storage";
-import { getOpenAIApiKey, getGoogleTTSApiKey, TTS_VOICES, GOOGLE_TTS_VOICES, type TTSVoice, type GoogleTTSVoice, transferAudioToFreePBX } from "../services/tts";
+import { getOpenAIApiKey, getGoogleTTSApiKey, TTS_VOICES, GOOGLE_TTS_VOICES, type TTSVoice, type GoogleTTSVoice, transferAudioToFreePBX, sanitizeTTSError } from "../services/tts";
 import * as db from "../db";
 import { resolveStorageUrl } from "../storage";
 
@@ -54,7 +54,7 @@ async function generateTTSAudio(params: {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+      throw new Error(`Google TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
     }
 
     const data = await response.json() as { audioContent: string };
@@ -91,7 +91,7 @@ async function generateTTSAudio(params: {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`OpenAI TTS failed (${response.status}): ${errText}`);
+      throw new Error(`OpenAI TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
     }
 
     audioBuffer = Buffer.from(await response.arrayBuffer());

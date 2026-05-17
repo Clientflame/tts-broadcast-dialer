@@ -3,6 +3,22 @@ import { nanoid } from "nanoid";
 import { Client as SSHClient } from "ssh2";
 import { getAppSetting } from "../db";
 
+/**
+ * Sanitize error messages from TTS providers to strip API keys and sensitive data.
+ * OpenAI/Google error responses often echo back the API key used.
+ */
+export function sanitizeTTSError(errText: string): string {
+  // Strip OpenAI-style key references: "sk-...XXXX"
+  let sanitized = errText.replace(/sk-[a-zA-Z0-9_-]{5,}/g, "[REDACTED]");
+  // Strip Google-style key references: "key=AIza..."
+  sanitized = sanitized.replace(/AIza[a-zA-Z0-9_-]{30,}/g, "[REDACTED]");
+  // Strip any Bearer token references
+  sanitized = sanitized.replace(/Bearer\s+[a-zA-Z0-9_.-]+/gi, "Bearer [REDACTED]");
+  // Strip generic API key patterns
+  sanitized = sanitized.replace(/api[_-]?key["']?\s*[:=]\s*["']?[a-zA-Z0-9_.-]{10,}["']?/gi, "api_key: [REDACTED]");
+  return sanitized;
+}
+
 export type TTSProvider = "openai" | "google";
 
 // Resolve TTS API keys: always use keys stored in Settings (database) only
@@ -83,7 +99,7 @@ export async function generateTTS(params: {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`OpenAI TTS failed (${response.status}): ${errText}`);
+    throw new Error(`OpenAI TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
@@ -122,7 +138,7 @@ export async function generateVoiceSample(voice: TTSVoice, speed: number = 1.0):
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Voice sample generation failed (${response.status}): ${errText}`);
+    throw new Error(`Voice sample generation failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
@@ -224,7 +240,7 @@ export async function generatePersonalizedTTS(params: {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`OpenAI TTS failed (${response.status}): ${errText}`);
+    throw new Error(`OpenAI TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
@@ -264,7 +280,7 @@ export async function generateGoogleTTS(params: {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+    throw new Error(`Google TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const data = await response.json();
@@ -297,7 +313,7 @@ export async function generateGoogleVoiceSample(voice: GoogleTTSVoice, speed: nu
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Google voice sample generation failed (${response.status}): ${errText}`);
+    throw new Error(`Google voice sample generation failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const data = await response.json();
@@ -383,7 +399,7 @@ export async function generateGooglePersonalizedTTS(params: {
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+    throw new Error(`Google TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
   }
 
   const data = await response.json();

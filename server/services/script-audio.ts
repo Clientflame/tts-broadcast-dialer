@@ -29,6 +29,7 @@ import {
   type GoogleTTSVoice,
   getOpenAIApiKey,
   getGoogleTTSApiKey,
+  sanitizeTTSError,
 } from "./tts";
 
 export interface ContactData {
@@ -222,7 +223,7 @@ async function generateTTSSegment(params: {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Google TTS failed (${response.status}): ${errText}`);
+      throw new Error(`Google TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
     }
 
     const data = await response.json();
@@ -250,7 +251,7 @@ async function generateTTSSegment(params: {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`OpenAI TTS failed (${response.status}): ${errText}`);
+      throw new Error(`OpenAI TTS failed (${response.status}): ${sanitizeTTSError(errText)}`);
     }
 
     const audioBuffer = Buffer.from(await response.arrayBuffer());

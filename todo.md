@@ -1333,3 +1333,5 @@
 - [x] Fix: DashboardLayout named import build error in ApiDocs.tsx — changed to default import to fix production build/deployment
 - [x] Fix: Call Scripts audio preview not working when editing scripts (removed env var fallback, now only uses Settings page keys)
 - [x] Feature: Live Agents - pull active SIP extensions/groups from FreePBX for selection in UI
+- [x] Security: Sanitize all TTS error messages to strip API keys before logging/returning to client
+- [x] Security: Remove ALL process.env.OPENAI_API_KEY and process.env.GOOGLE_TTS_API_KEY fallbacks across entire codebase (routers.ts, voice-ai.ts, voice-ai-installer.ts, script-audio.ts, voicemail-creator.ts)

@@ -334,9 +334,9 @@ QUESTIONS:
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "SSH credentials not configured. Go to Settings > FreePBX to configure SSH access." });
       }
 
-      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      const openaiKey = await db.getAppSetting("openai_api_key");
       if (!openaiKey) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OpenAI API key not configured. Go to Settings to add your API key." });
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OpenAI API key not configured. Go to Settings → TTS API Keys to add your API key." });
       }
 
       const agents = await db.getPbxAgents();
@@ -472,7 +472,7 @@ QUESTIONS:
   /** Check deployment prerequisites */
   getDeployStatus: protectedProcedure.query(async () => {
     const host = await db.getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
-    const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+    const openaiKey = await db.getAppSetting("openai_api_key");
     // Check if any PBX agent is registered (needed for API key)
     const agents = await db.getPbxAgents();
     const hasAgent = agents.length > 0;
@@ -489,14 +489,14 @@ QUESTIONS:
   getInstallCommand: protectedProcedure
     .input(z.object({ origin: z.string().url() }))
     .query(async ({ input }) => {
-      const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY;
+      const openaiKey = await db.getAppSetting("openai_api_key");
       const agents = await db.getPbxAgents();
       const activeAgent = agents.find((a: any) => a.lastHeartbeat) || agents[0];
       if (!activeAgent) {
         return { command: null, error: "No PBX agent registered. Register a PBX agent first on the FreePBX Integration page." };
       }
       if (!openaiKey) {
-        return { command: null, error: "OpenAI API key not configured. Go to Settings to add your API key." };
+        return { command: null, error: "OpenAI API key not configured. Go to Settings → TTS API Keys to add your API key." };
       }
       const installUrl = `${input.origin}/api/voice-ai/install?key=${activeAgent.apiKey}`;
       return {

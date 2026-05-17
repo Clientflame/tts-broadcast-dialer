@@ -300,8 +300,8 @@ export function createVoiceAiInstallerRouter(): Router {
     // Point the bridge at the voice-ai API endpoints (not /api/pbx)
     const dashboardApiUrl = `${dashboardUrl}/api/voice-ai`;
 
-    // Get OpenAI key
-    const openaiKey = await db.getAppSetting("openai_api_key") || process.env.OPENAI_API_KEY || "";
+    // Get OpenAI key (only from database Settings, never env vars)
+    const openaiKey = await db.getAppSetting("openai_api_key") || "";
 
     // Read the bridge Python script and config files
     const path = await import("path");

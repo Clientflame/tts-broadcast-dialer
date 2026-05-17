@@ -88,6 +88,41 @@ describe("TTS API key resolution", () => {
   });
 });
 
+// ─── API Key Sanitization Tests ───
+describe("sanitizeTTSError", () => {
+  it("strips OpenAI API keys from error messages", async () => {
+    const { sanitizeTTSError } = await import("./services/tts");
+    const errorMsg = 'Incorrect API key provided: sk-test-abc12345678. You can find your API key at https://platform.openai.com/account/api-keys.';
+    const sanitized = sanitizeTTSError(errorMsg);
+    expect(sanitized).not.toContain("sk-test-abc12345678");
+    expect(sanitized).toContain("[REDACTED]");
+    expect(sanitized).toContain("Incorrect API key provided");
+  });
+
+  it("strips Google API keys from error messages", async () => {
+    const { sanitizeTTSError } = await import("./services/tts");
+    const errorMsg = 'API key not valid. Please pass a valid API key. key=AIzaSyD1234567890abcdefghijklmnopqrst';
+    const sanitized = sanitizeTTSError(errorMsg);
+    expect(sanitized).not.toContain("AIzaSyD1234567890abcdefghijklmnopqrst");
+    expect(sanitized).toContain("[REDACTED]");
+  });
+
+  it("strips Bearer token references", async () => {
+    const { sanitizeTTSError } = await import("./services/tts");
+    const errorMsg = 'Authorization: Bearer sk-proj-abcdef123456789';
+    const sanitized = sanitizeTTSError(errorMsg);
+    expect(sanitized).not.toContain("sk-proj-abcdef123456789");
+    expect(sanitized).toContain("[REDACTED]");
+  });
+
+  it("passes through safe error messages unchanged", async () => {
+    const { sanitizeTTSError } = await import("./services/tts");
+    const errorMsg = 'Rate limit exceeded. Please try again later.';
+    const sanitized = sanitizeTTSError(errorMsg);
+    expect(sanitized).toBe(errorMsg);
+  });
+});
+
 // ─── Live Agents PBX Extensions Tests ───
 describe("liveAgents.getPbxExtensions", () => {
   it("endpoint exists on the router", async () => {
