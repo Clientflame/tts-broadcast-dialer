@@ -138,8 +138,8 @@ function FilterRulesTab() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
+        <Card className="overflow-x-auto">
+          <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
@@ -597,8 +597,8 @@ function PhoneListTab({ type }: { type: "whitelist" | "blacklist" }) {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
+        <Card className="overflow-x-auto">
+          <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Phone Number</TableHead>
@@ -912,8 +912,8 @@ function LogsTab() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
+        <Card className="overflow-x-auto">
+          <Table className="min-w-[700px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>

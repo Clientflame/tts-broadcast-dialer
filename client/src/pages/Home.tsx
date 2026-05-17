@@ -719,7 +719,7 @@ function SecurityStatusWidget() {
   return (
     <Card className={borderColor}>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center gap-2">
             <Shield className={`h-5 w-5 ${summary.error > 0 ? "text-red-500" : summary.warning > 0 ? "text-amber-500" : "text-green-500"}`} />
             <CardTitle className="text-lg">
@@ -728,7 +728,7 @@ function SecurityStatusWidget() {
               </button>
             </CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className={gradeColor + " font-bold cursor-pointer hover:opacity-80"} onClick={() => setLocation("/security")}>
               Grade: {summary.grade}
             </Badge>
@@ -822,12 +822,12 @@ function CallActivityFeed() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center gap-2">
             <Activity className={`h-5 w-5 ${activeCount > 0 ? "text-blue-500 animate-pulse" : "text-muted-foreground"}`} />
             <CardTitle className="text-lg">Call Activity Feed</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {activeCount > 0 && (
               <Badge variant="outline" className="text-blue-500 border-blue-500/30">
                 <PhoneOutgoing className="h-3 w-3 mr-1" />{activeCount} active
@@ -841,7 +841,7 @@ function CallActivityFeed() {
                 <XCircle className="h-3 w-3 mr-1" />{failedCount} failed
               </Badge>
             )}
-            <span className="text-xs text-muted-foreground">Auto-refresh 3s</span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">Auto-refresh 3s</span>
           </div>
         </div>
         <CardDescription>Latest {items.length} call events across all campaigns</CardDescription>
@@ -1234,26 +1234,26 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">Dashboard <span className="text-sm font-normal text-muted-foreground ml-2">v{APP_VERSION}</span>{serverInfo.data?.ip && serverInfo.data.ip !== "Unknown" && (<button onClick={() => { navigator.clipboard.writeText(serverInfo.data!.ip); setIpCopied(true); setTimeout(() => setIpCopied(false), 2000); toast.success("IP copied to clipboard"); }} className="text-xs font-mono text-muted-foreground ml-2 bg-muted/50 px-2 py-0.5 rounded inline-flex items-center gap-1 hover:bg-muted transition-colors cursor-pointer border-0" title="Click to copy IP"><Globe className="h-3 w-3" />{serverInfo.data.ip}{ipCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 opacity-50" />}</button>)}</h1>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex flex-wrap items-center gap-2 mt-1">
               <p className="text-muted-foreground text-sm">{import.meta.env.VITE_APP_TITLE || "AI TTS Broadcast Dialer"} Overview</p>
               <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded">
                 <Clock className="h-3 w-3" />
                 {estClock}
               </span>
               {serverInfo.data?.uptimeSeconds != null && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server uptime">
+                <span className="text-xs text-muted-foreground hidden sm:flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server uptime">
                   <ArrowUp className="h-3 w-3" />
                   {formatUptime(serverInfo.data.uptimeSeconds)}
                 </span>
               )}
               {serverInfo.data?.hostname && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server hostname">
+                <span className="text-xs text-muted-foreground hidden md:flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Server hostname">
                   <Server className="h-3 w-3" />
                   {serverInfo.data.hostname}
                 </span>
               )}
               {serverInfo.data?.startedAt && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Last restarted">
+                <span className="text-xs text-muted-foreground hidden md:flex items-center gap-1 font-mono bg-muted/50 px-2 py-0.5 rounded" title="Last restarted">
                   <RotateCcw className="h-3 w-3" />
                   {new Date(serverInfo.data.startedAt).toLocaleString()}
                 </span>
@@ -1349,14 +1349,14 @@ export default function Home() {
                     <div key={c.id} className="text-sm p-3 rounded bg-muted/30 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-medium">{c.name}</span>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-muted-foreground">
                           <span><PhoneCall className="h-3 w-3 inline mr-1" />{c.activeCalls} calling</span>
                           <span><Timer className="h-3 w-3 inline mr-1" />{c.pending} pending</span>
                           <span><Zap className="h-3 w-3 inline mr-1" />{c.maxConcurrent} max</span>
                         </div>
                       </div>
                       {c.pacing && c.pacing.mode !== "fixed" && (
-                        <div className="flex items-center gap-3 text-xs border-t pt-2">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs border-t pt-2">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 font-medium capitalize">
                             {c.pacing.mode} Pacing
                           </span>

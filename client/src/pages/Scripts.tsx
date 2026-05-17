@@ -541,7 +541,8 @@ export default function Scripts() {
                 </Button>
               </div>
             ) : (
-              <Table>
+              <div className="overflow-x-auto">
+              <Table className="min-w-[800px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
@@ -667,6 +668,7 @@ export default function Scripts() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -783,8 +785,8 @@ export default function Scripts() {
               <CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" /> Script Performance Overview</CardTitle>
               <CardDescription>Aggregated call metrics for each script across all campaigns.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Table>
+            <CardContent className="overflow-x-auto">
+              <Table className="min-w-[700px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Script</TableHead>

@@ -119,6 +119,17 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Ensure minimum touch target size on mobile */
+  @media (pointer: coarse) {
+    button:not([class*="h-"]):not([class*="w-"]),
+    [role="button"],
+    a[href] {
+      min-height: 44px;
+      min-width: 44px;
+    }
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),

@@ -401,7 +401,7 @@ export default function SystemStatus() {
                       {agent.hasMultiSegment && (
                         <Badge variant="outline" className="text-xs">Multi-Segment</Badge>
                       )}
-                      <Badge variant={agent.version === amiQuery.data?.requiredVersion ? "default" : "destructive"} className="font-mono text-xs">
+                      <Badge variant={agent.version >= (amiQuery.data?.requiredVersion || "0.0.0") ? "default" : "destructive"} className="font-mono text-xs">
                         v{agent.version}
                       </Badge>
                     </div>

@@ -1683,10 +1683,10 @@ export default function CallerIds() {
                   onChange={e => setDidSearch(e.target.value)}
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <Select value={labelFilter} onValueChange={setLabelFilter}>
-                  <SelectTrigger className="w-[180px]">
+                  <SelectTrigger className="w-full sm:w-[180px]">
                     <SelectValue placeholder="Filter by label" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1716,7 +1716,7 @@ export default function CallerIds() {
                   <Tag className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <div className="ml-auto">
+              <div className="sm:ml-auto">
                 <Button variant="outline" size="sm" onClick={() => {
                   const rows = filteredCallerIds.map(c => ({
                     phoneNumber: c.phoneNumber,
@@ -2011,7 +2011,7 @@ export default function CallerIds() {
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    className="pl-9 w-64"
+                    className="pl-9 w-full sm:w-64"
                     placeholder="Search routes..."
                     value={routeSearch}
                     onChange={e => setRouteSearch(e.target.value)}

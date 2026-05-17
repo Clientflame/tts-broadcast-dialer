@@ -1707,9 +1707,9 @@ export default function Campaigns() {
           {/* Call History Table */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle className="text-base">Call History</CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                     <Input
@@ -1717,11 +1717,11 @@ export default function Campaigns() {
                       value={callHistorySearchInput}
                       onChange={(e) => setCallHistorySearchInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") { setCallHistorySearch(callHistorySearchInput); setCallHistoryPage(0); } }}
-                      className="h-8 w-[200px] pl-8 text-xs"
+                      className="h-8 w-full sm:w-[200px] pl-8 text-xs"
                     />
                   </div>
                   <Select value={callHistoryFilter} onValueChange={(v) => { setCallHistoryFilter(v); setCallHistoryPage(0); }}>
-                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                    <SelectTrigger className="h-8 w-full sm:w-[130px] text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1751,7 +1751,8 @@ export default function Campaigns() {
                 </div>
               ) : (
                 <>
-                  <Table>
+                  <div className="overflow-x-auto">
+                  <Table className="min-w-[800px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[140px]">Phone Number</TableHead>
@@ -1804,9 +1805,10 @@ export default function Campaigns() {
                       })}
                     </TableBody>
                   </Table>
+                  </div>
 
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between pt-4">
+                   {/* Pagination */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4">
                     <span className="text-xs text-muted-foreground">
                       Showing {callHistoryPage * CALL_HISTORY_PAGE_SIZE + 1}–{Math.min((callHistoryPage + 1) * CALL_HISTORY_PAGE_SIZE, callHistory.data.total)} of {callHistory.data.total}
                     </span>

@@ -404,7 +404,8 @@ export default function AgentAssist() {
                   No coaching sessions recorded yet. Start an assist session from the Wallboard to begin tracking.
                 </div>
               ) : (
-                <Table>
+                <div className="overflow-x-auto">
+                <Table className="min-w-[700px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Agent</TableHead>
@@ -439,6 +440,7 @@ export default function AgentAssist() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -624,7 +626,7 @@ export default function AgentAssist() {
                 <div className="text-center py-8 text-muted-foreground text-sm">No trend data available yet</div>
               ) : (
                 <div className="overflow-x-auto">
-                  <Table>
+                  <Table className="min-w-[600px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Date</TableHead>

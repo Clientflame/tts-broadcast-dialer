@@ -276,7 +276,8 @@ export default function LiveAgents() {
                     </Button>
                   </div>
                 ) : (
-                  <Table>
+                  <div className="overflow-x-auto">
+                  <Table className="min-w-[700px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Status</TableHead>
@@ -345,6 +346,7 @@ export default function LiveAgents() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -367,7 +369,8 @@ export default function LiveAgents() {
                     <p>No performance data yet. Agents need to handle calls first.</p>
                   </div>
                 ) : (
-                  <Table>
+                  <div className="overflow-x-auto">
+                  <Table className="min-w-[700px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Agent</TableHead>
@@ -393,6 +396,7 @@ export default function LiveAgents() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>

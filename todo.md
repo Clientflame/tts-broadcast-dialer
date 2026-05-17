@@ -1269,3 +1269,15 @@
 - [x] Feature: Pre-generate campaign audio in batches when campaign starts (lookahead prefetch)
 - [x] Feature: PBX agent audio caching — 24h cache + disk cleanup (48h max age, every 6h)
 - [x] Feature: Usage dashboard — storage breakdown, TTS stats, call volume timeline in Analytics tab
+- [x] Bug: Test call connects but no audio plays — fixed by correcting S3_PUBLIC_URL and restarting PBX agent
+- [x] Bug: PBX agent version shows red — updated requiredVersion to 1.8.0 and added semver >= comparison
+- [x] Bug: Audio URLs still use old /api/storage/ path — fixed S3_PUBLIC_URL for MinIO via Caddy
+- [x] Bug: Audio 404 — fixed S3_PUBLIC_URL to include bucket name for correct MinIO path resolution
+- [x] Bug: Caller ID shows +1 prefix on phone screen — this is iOS/carrier formatting, not controllable from our app
+- [x] Bug: 3-8 second delay after audio finishes before call hangs up — fixed dialplan Wait(0.5) instead of WaitExten(10)
+- [x] Mobile: Make web app mobile-friendly for iPhone/iPad use
+- [x] Mobile: Responsive sidebar/navigation for small screens (already built into DashboardLayout)
+- [x] Mobile: Touch-friendly buttons and controls (added min-h-[44px] touch targets in CSS)
+- [x] Mobile: Responsive tables (horizontal scroll or card layout on mobile) — added overflow-x-auto + min-w to all tables
+- [x] Mobile: Quick Test accessible from mobile (already works in responsive grid)
+- [x] Cleanup: PBX agent debug logging already clean — debug at DEBUG level, info at INFO level, no changes needed

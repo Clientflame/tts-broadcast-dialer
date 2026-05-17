@@ -457,7 +457,7 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
     // Drain any pending call control commands for this agent
     const commands = drainCommandsForAgent(agent.agentId);
-    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.5.0", pendingCommands: commands.length > 0 ? commands : undefined });
+    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.8.0", pendingCommands: commands.length > 0 ? commands : undefined });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }
