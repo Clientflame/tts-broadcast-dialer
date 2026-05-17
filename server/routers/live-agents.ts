@@ -259,6 +259,24 @@ export const liveAgentRouter = router({
       };
     }),
 
+  /** Fetch active SIP extensions and ring groups from FreePBX for selection */
+  getPbxExtensions: protectedProcedure.query(async () => {
+    try {
+      const { fetchFreePBXDestinations } = await import("../services/freepbx-routes");
+      const allDests = await fetchFreePBXDestinations();
+      // Filter to only extensions, queues, and ring groups (relevant for agent assignment)
+      const extensions = allDests.filter(d => d.type === "extension");
+      const queues = allDests.filter(d => d.type === "queue");
+      const ringGroups = allDests.filter(d => d.type === "ring_group");
+      return { extensions, queues, ringGroups };
+    } catch (e: any) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `Failed to fetch PBX extensions: ${e.message}`,
+      });
+    }
+  }),
+
   /** Agent performance report */
   performanceReport: protectedProcedure
     .input(z.object({

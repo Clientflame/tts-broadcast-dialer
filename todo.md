@@ -1331,3 +1331,5 @@
 - [x] Feature: API usage analytics — recent errors tab, time range filter, auto-refresh
 - [x] Test: api-analytics.test.ts — 10 tests passing (structure, types, admin-only access)
 - [x] Fix: DashboardLayout named import build error in ApiDocs.tsx — changed to default import to fix production build/deployment
+- [x] Fix: Call Scripts audio preview not working when editing scripts (removed env var fallback, now only uses Settings page keys)
+- [x] Feature: Live Agents - pull active SIP extensions/groups from FreePBX for selection in UI

@@ -10,8 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { Headset, Plus, MoreHorizontal, Pencil, Trash2, Phone, PhoneOff, Coffee, Power, Users, BarChart3, Clock } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Headset, Plus, MoreHorizontal, Pencil, Trash2, Phone, PhoneOff, Coffee, Power, Users, BarChart3, Clock, RefreshCw, Loader2 } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
 import { toast } from "sonner";
 
 // ─── Status helpers ───
@@ -45,6 +45,24 @@ function AgentDialog({ open, onOpenChange, agent, onSave }: {
   const [email, setEmail] = useState(agent?.email || "");
   const [priority, setPriority] = useState(String(agent?.priority || 5));
   const [maxConcurrent, setMaxConcurrent] = useState(String(agent?.maxConcurrentCalls || 1));
+  const [useManualEntry, setUseManualEntry] = useState(false);
+
+  // Fetch PBX extensions
+  const { data: pbxData, isLoading: pbxLoading, refetch: refetchPbx } = trpc.liveAgents.getPbxExtensions.useQuery(undefined, {
+    enabled: open,
+    staleTime: 60000, // Cache for 1 minute
+  });
+
+  // Reset form when agent changes
+  useEffect(() => {
+    setName(agent?.name || "");
+    setSipExtension(agent?.sipExtension || "");
+    setSipPassword("");
+    setEmail(agent?.email || "");
+    setPriority(String(agent?.priority || 5));
+    setMaxConcurrent(String(agent?.maxConcurrentCalls || 1));
+    setUseManualEntry(false);
+  }, [agent, open]);
 
   const handleSave = () => {
     if (!name.trim() || !sipExtension.trim()) {
@@ -62,6 +80,21 @@ function AgentDialog({ open, onOpenChange, agent, onSave }: {
     });
   };
 
+  // When user selects a PBX extension, auto-fill name if empty
+  const handleExtensionSelect = (extId: string) => {
+    setSipExtension(extId);
+    if (!name.trim() && pbxData) {
+      const ext = pbxData.extensions.find(e => e.id === extId);
+      if (ext) {
+        // Extract name part (format is "1001 - John Smith")
+        const namePart = ext.name.includes(" - ") ? ext.name.split(" - ").slice(1).join(" - ") : "";
+        if (namePart) setName(namePart);
+      }
+    }
+  };
+
+  const hasExtensions = pbxData && pbxData.extensions.length > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -76,16 +109,79 @@ function AgentDialog({ open, onOpenChange, agent, onSave }: {
             <Label htmlFor="name">Agent Name</Label>
             <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="John Smith" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sip">SIP Extension</Label>
-              <Input id="sip" value={sipExtension} onChange={e => setSipExtension(e.target.value)} placeholder="1001" />
+
+          {/* SIP Extension - PBX dropdown or manual entry */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>SIP Extension</Label>
+              <div className="flex items-center gap-1">
+                {!useManualEntry && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => refetchPbx()}
+                    disabled={pbxLoading}
+                  >
+                    {pbxLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs text-muted-foreground"
+                  onClick={() => setUseManualEntry(!useManualEntry)}
+                >
+                  {useManualEntry ? "Select from PBX" : "Manual entry"}
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="sipPass">SIP Password</Label>
-              <Input id="sipPass" type="password" value={sipPassword} onChange={e => setSipPassword(e.target.value)} placeholder={agent ? "Leave blank to keep" : "Optional"} />
-            </div>
+
+            {useManualEntry ? (
+              <Input
+                value={sipExtension}
+                onChange={e => setSipExtension(e.target.value)}
+                placeholder="1001"
+              />
+            ) : pbxLoading ? (
+              <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading extensions from PBX...
+              </div>
+            ) : hasExtensions ? (
+              <Select value={sipExtension} onValueChange={handleExtensionSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an extension from PBX" />
+                </SelectTrigger>
+                <SelectContent>
+                  {pbxData.extensions.map(ext => (
+                    <SelectItem key={ext.id} value={ext.id}>
+                      {ext.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  value={sipExtension}
+                  onChange={e => setSipExtension(e.target.value)}
+                  placeholder="1001"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Could not load extensions from PBX. Enter manually or check FreePBX connection in Settings.
+                </p>
+              </div>
+            )}
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="sipPass">SIP Password</Label>
+            <Input id="sipPass" type="password" value={sipPassword} onChange={e => setSipPassword(e.target.value)} placeholder={agent ? "Leave blank to keep" : "Optional"} />
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="email">Email (optional)</Label>
             <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="agent@example.com" />

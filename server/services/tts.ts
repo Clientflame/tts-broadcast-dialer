@@ -5,18 +5,16 @@ import { getAppSetting } from "../db";
 
 export type TTSProvider = "openai" | "google";
 
-// Resolve TTS API keys: database setting takes priority, then env var fallback
+// Resolve TTS API keys: always use keys stored in Settings (database) only
 export async function getOpenAIApiKey(): Promise<string> {
-  const dbKey = await getAppSetting("openai_api_key");
-  const key = dbKey || process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("OpenAI API key not configured. Go to Settings to add your API key.");
+  const key = await getAppSetting("openai_api_key");
+  if (!key) throw new Error("OpenAI API key not configured. Go to Settings → TTS API Keys to add your OpenAI API key.");
   return key;
 }
 
 export async function getGoogleTTSApiKey(): Promise<string> {
-  const dbKey = await getAppSetting("google_tts_api_key");
-  const key = dbKey || process.env.GOOGLE_TTS_API_KEY;
-  if (!key) throw new Error("Google TTS API key not configured. Go to Settings to add your API key.");
+  const key = await getAppSetting("google_tts_api_key");
+  if (!key) throw new Error("Google TTS API key not configured. Go to Settings → TTS API Keys to add your Google TTS API key.");
   return key;
 }
 export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
