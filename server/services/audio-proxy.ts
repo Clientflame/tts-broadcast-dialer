@@ -119,6 +119,11 @@ export function toProxyUrl(storageUrl: string, storageKey: string): string {
  */
 export function toBrowserAudioUrls(urls: string[]): string[] {
   return urls.map((url) => {
+    // Data URIs are already playable directly in the browser
+    if (url.startsWith("data:")) {
+      return url;
+    }
+
     // Already a relative URL (local mode) — browser can access directly
     if (url.startsWith("/api/storage/") || url.startsWith("/api/audio-proxy/")) {
       return url;

@@ -338,6 +338,60 @@ export async function storageReadLocal(relKey: string): Promise<Buffer | null> {
   }
 }
 
+// ─── Direct Byte Fetch (for inline preview) ────────────────────────────────
+
+/**
+ * Fetch raw bytes of a stored file directly from the storage backend.
+ * Unlike storageGet() which returns a URL, this returns the actual file content.
+ * Works for all storage modes (forge, s3, local) without any HTTP proxy.
+ * 
+ * Use this when you need the actual bytes server-side (e.g., to return as base64).
+ */
+export async function storageFetchBytes(relKey: string): Promise<Buffer | null> {
+  const mode = getStorageMode();
+  const key = normalizeKey(relKey);
+
+  if (mode === 'local') {
+    return storageReadLocal(key);
+  }
+
+  if (mode === 's3') {
+    try {
+      const client = getS3Client();
+      const command = new GetObjectCommand({
+        Bucket: ENV.s3Bucket,
+        Key: key,
+      });
+      const response = await client.send(command);
+      if (!response.Body) return null;
+      // Convert readable stream to buffer
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(chunk);
+      }
+      return Buffer.concat(chunks);
+    } catch (err: any) {
+      if (err.name === 'NoSuchKey' || err.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
+      console.error(`[Storage] S3 fetch failed for ${key}:`, err.message);
+      return null;
+    }
+  }
+
+  // Forge mode — fetch via the download URL
+  try {
+    const { baseUrl, apiKey } = getForgeConfig();
+    const url = await buildDownloadUrl(baseUrl, key, apiKey);
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return Buffer.from(await response.arrayBuffer());
+  } catch (err: any) {
+    console.error(`[Storage] Forge fetch failed for ${key}:`, err.message);
+    return null;
+  }
+}
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export async function storagePut(

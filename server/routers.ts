@@ -3974,15 +3974,88 @@ Return ONLY the message text, nothing else.`;
         segments: input.segments as ScriptSegment[],
         callbackNumber: input.callbackNumber,
       });
-      // Convert storage URLs to proxy URLs for reliable browser playback.
-      // On Docker/self-hosted (s3 mode), raw S3 URLs may point to internal endpoints
-      // the browser can't reach. The proxy serves audio through Express (same origin).
+
+      // DEFINITIVE FIX: Return audio as base64 data URIs.
+      // This eliminates ALL network dependencies for preview playback.
+      // The browser plays data:audio/mpeg;base64,... directly — no fetch needed.
+      const { storageFetchBytes } = await import("./storage");
       const { toBrowserAudioUrls } = await import("./services/audio-proxy");
-      const browserUrls = toBrowserAudioUrls(result.audioUrls);
+      const { resolveStorageUrl } = await import("./storage");
+
+      const dataUris: string[] = [];
+      for (const url of result.audioUrls) {
+        try {
+          let buffer: Buffer | null = null;
+
+          // Try to extract storage key from the URL and fetch bytes directly
+          const knownPrefixes = ["script-audio/", "script-stitched/", "tts-audio/", "campaign-audio/", "voicemail/", "recordings/"];
+          for (const prefix of knownPrefixes) {
+            const idx = url.indexOf(prefix);
+            if (idx !== -1) {
+              const key = url.substring(idx).split("?")[0];
+              buffer = await storageFetchBytes(key);
+              break;
+            }
+          }
+
+          // Fallback: if key extraction failed, try fetching the URL directly
+          if (!buffer) {
+            try {
+              const fetchUrl = resolveStorageUrl(url);
+              const resp = await fetch(fetchUrl);
+              if (resp.ok) {
+                buffer = Buffer.from(await resp.arrayBuffer());
+              }
+            } catch (fetchErr) {
+              console.error(`[Preview] Fallback fetch failed for: ${url}`);
+            }
+          }
+
+          if (buffer && buffer.length > 0) {
+            dataUris.push(`data:audio/mpeg;base64,${buffer.toString("base64")}`);
+          } else {
+            // Last resort: return the proxy URL (might work on some setups)
+            const proxyUrls = toBrowserAudioUrls([url]);
+            dataUris.push(proxyUrls[0]);
+          }
+        } catch (err: any) {
+          console.error(`[Preview] Failed to convert audio to base64: ${err.message}`);
+          const proxyUrls = toBrowserAudioUrls([url]);
+          dataUris.push(proxyUrls[0]);
+        }
+      }
+
+      // Also convert the combined URL to base64 if available
+      let combinedDataUri: string | null = null;
+      if (result.combinedUrl) {
+        try {
+          let buffer: Buffer | null = null;
+          const knownPrefixes = ["script-audio/", "script-stitched/", "tts-audio/", "campaign-audio/"];
+          for (const prefix of knownPrefixes) {
+            const idx = result.combinedUrl.indexOf(prefix);
+            if (idx !== -1) {
+              const key = result.combinedUrl.substring(idx).split("?")[0];
+              buffer = await storageFetchBytes(key);
+              break;
+            }
+          }
+          if (!buffer) {
+            const fetchUrl = resolveStorageUrl(result.combinedUrl);
+            const resp = await fetch(fetchUrl);
+            if (resp.ok) buffer = Buffer.from(await resp.arrayBuffer());
+          }
+          if (buffer && buffer.length > 0) {
+            combinedDataUri = `data:audio/mpeg;base64,${buffer.toString("base64")}`;
+          }
+        } catch (err: any) {
+          console.error(`[Preview] Failed to convert combined audio: ${err.message}`);
+        }
+      }
+
       return {
         ...result,
-        audioUrls: browserUrls,
-        combinedUrl: result.combinedUrl ? toBrowserAudioUrls([result.combinedUrl])[0] : null,
+        audioUrls: dataUris,
+        combinedUrl: combinedDataUri,
       };
     }),
     // Version history

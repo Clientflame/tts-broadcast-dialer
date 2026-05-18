@@ -8,7 +8,12 @@ interface AudioWaveformPlayerProps {
 }
 
 /**
- * AudioWaveformPlayer — reliable multi-segment audio player.
+ * AudioWaveformPlayer — bulletproof multi-segment audio player.
+ * 
+ * Supports three source types:
+ * 1. data:audio/mpeg;base64,... — inline audio (most reliable, no network needed)
+ * 2. blob: URLs — converted from data URIs for better browser compatibility
+ * 3. Regular URLs — fallback for proxy/direct URLs
  * 
  * Uses plain HTML5 Audio (no Web Audio API, no crossOrigin) to guarantee
  * playback works regardless of CORS headers on the audio source.
@@ -18,6 +23,7 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const animFrameRef = useRef<number>(0);
+  const blobUrlsRef = useRef<string[]>([]);
 
   const [playing, setPlaying] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -25,6 +31,39 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Convert a data URI to a Blob URL for more reliable browser playback.
+   * Some browsers have issues with very long data URIs in Audio.src,
+   * but handle Blob URLs perfectly.
+   */
+  const toPlayableUrl = useCallback((url: string): string => {
+    if (url.startsWith("data:audio/")) {
+      try {
+        // Extract base64 content
+        const [header, base64Data] = url.split(",");
+        const mimeMatch = header.match(/data:([^;]+)/);
+        const mime = mimeMatch ? mimeMatch[1] : "audio/mpeg";
+        
+        // Decode base64 to binary
+        const binaryStr = atob(base64Data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        
+        // Create blob and URL
+        const blob = new Blob([bytes], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlsRef.current.push(blobUrl);
+        return blobUrl;
+      } catch (err) {
+        console.error("[AudioPlayer] Failed to convert data URI to blob:", err);
+        return url; // Fall back to using data URI directly
+      }
+    }
+    return url;
+  }, []);
 
   // Animated waveform drawing
   const drawWaveform = useCallback(() => {
@@ -65,7 +104,7 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
     }
   }, [playing, progress, duration]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount — revoke all blob URLs
   useEffect(() => {
     return () => {
       cancelAnimationFrame(animFrameRef.current);
@@ -74,6 +113,11 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
         audioRef.current.src = "";
         audioRef.current = null;
       }
+      // Revoke all blob URLs to prevent memory leaks
+      blobUrlsRef.current.forEach((url) => {
+        try { URL.revokeObjectURL(url); } catch {}
+      });
+      blobUrlsRef.current = [];
     };
   }, []);
 
@@ -120,6 +164,9 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
       audioRef.current.oncanplay = null;
     }
 
+    // Convert data URI to blob URL for reliable playback
+    const playableUrl = toPlayableUrl(url);
+
     // Create a fresh Audio element — NO crossOrigin, NO Web Audio API
     const audio = new Audio();
     audioRef.current = audio;
@@ -161,21 +208,22 @@ export default function AudioWaveformPlayer({ urls, compact = false }: AudioWave
     };
 
     audio.onerror = (e) => {
-      console.error("[AudioPlayer] Playback error for URL:", url, e);
+      console.error("[AudioPlayer] Playback error for segment", idx + 1, "URL type:", 
+        url.startsWith("data:") ? "data-uri" : url.startsWith("blob:") ? "blob" : "url",
+        e);
       setLoading(false);
       setPlaying(false);
-      setError(`Failed to play segment ${idx + 1}. The audio file may be unavailable.`);
+      setError(`Failed to play segment ${idx + 1}. The audio file may be corrupted or unavailable.`);
     };
 
     // Set source and play
-    audio.src = url;
+    audio.src = playableUrl;
     audio.play().then(() => {
       setLoading(false);
     }).catch((err) => {
       console.error("[AudioPlayer] play() rejected:", err.message);
       setLoading(false);
       // Don't immediately give up — some browsers need user gesture
-      // The audio might still play after a small delay
       setTimeout(() => {
         if (audio.paused && audioRef.current === audio) {
           setPlaying(false);
