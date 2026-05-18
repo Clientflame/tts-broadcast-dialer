@@ -25,6 +25,10 @@ const SPEED_PRESETS = [
   { label: "3", value: 3 },
   { label: "5", value: 5 },
   { label: "10", value: 10 },
+  { label: "20", value: 20 },
+  { label: "25", value: 25 },
+  { label: "40", value: 40 },
+  { label: "50", value: 50 },
 ];
 
 const PACING_OPTIONS = [
@@ -704,7 +708,7 @@ export default function FreePBX() {
                       <span>Max Concurrent Calls</span>
                       <span className="font-bold text-primary">{maxCalls}</span>
                     </Label>
-                    <Slider min={1} max={10} step={1} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
+                    <Slider min={1} max={50} step={1} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
                     <div className="flex gap-1">
                       {SPEED_PRESETS.map((p) => (
                         <Button
@@ -916,7 +920,7 @@ export default function FreePBX() {
                             </div>
                             <Slider
                               min={1}
-                              max={10}
+                              max={50}
                               step={1}
                               value={[agent.maxCalls ?? 5]}
                               onValueChange={([v]) => {

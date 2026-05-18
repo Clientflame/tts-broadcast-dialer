@@ -4579,7 +4579,7 @@ Respond with a JSON object matching this exact schema.`;
     registerAgent: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
-        maxCalls: z.number().int().min(1).max(10).default(5),
+        maxCalls: z.number().int().min(1).max(50).default(5),
         cpsLimit: z.number().int().min(1).max(10).default(1),
         cpsPacingMs: z.number().int().min(333).max(3000).default(1000),
       }))
@@ -4609,7 +4609,7 @@ Respond with a JSON object matching this exact schema.`;
     updateAgentMaxCalls: protectedProcedure
       .input(z.object({
         agentId: z.string(),
-        maxCalls: z.number().int().min(1).max(10),
+        maxCalls: z.number().int().min(1).max(50),
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentMaxCalls(input.agentId, input.maxCalls);

@@ -1360,4 +1360,5 @@
 - [x] Bug: Queue status incorrectly marking no-answer/busy as 'failed' — server now treats no-answer and busy as terminal (completed) states
 - [ ] Bug: Short answered call durations (0-5s) — AMD detection causes 3-4s silence before audio plays; people hang up during silence. Consider reducing AMD thresholds or disabling AMD for broadcast campaigns.
 - [ ] Bug: Call History page may not be working correctly — needs investigation
-- [ ] Bug: FreePBX SSH access broken (kex_exchange_identification) — Responsive Firewall blocking all IPs. Needs Vultr console access to fix.
+- [x] Bug: FreePBX SSH access broken — was using old IP (187.124.153.234). Correct IP is 45.77.75.198 (pbx26.407hosted.com). Updated FREEPBX_HOST secret and successfully updated PBX agent.
+- [x] Bug: Max Speed slider capped at 10 — expanded to 50 with presets 1,3,5,10,20,25,40,50. Updated both frontend slider and server-side validation.

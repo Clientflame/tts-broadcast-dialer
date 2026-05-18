@@ -13,10 +13,10 @@
   "experiments": null,
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663328121958/QaP68Z2AATogwpccsoDAFH",
-    "access_key_id": "ASIAZV3A2ECZM57ITMTI",
-    "secret_access_key": "BNx3rZxuhZDb/RSwmCPSPE+Xel6bLKhdtOGYz2mj",
-    "session_token": "IQoJb3JpZ2luX2VjEN///////////wEaCXVzLWVhc3QtMSJHMEUCICbQ1F/fiJuCWFMxJb6HIZQJyCpbfqTyFnpRUh3AUFukAiEAgzavONI/aRsDZSCNvvQUzfXcMxFFCL3sBzBX5hUW674q/wMIqP//////////ARAEGgw2NjUzODYwOTg4NjYiDE+dhUZ02zdFrnAF/SrTA6t+vCkBeYSOsv+Y8WDLEQIqCphsH65/TZ1e+e194CwXFtnI823YmrGJy0NFtk6s8xuvJIjqBnDV2kpuI9TiN7cXZXYbwq2C+25BVAOWdrzE6BmzJoOtgnlYLOXrOYJujcuGDupDeb0CbvD2KvsCqrI1tw0LgUZTEKToAdVDisQBnhNmifzC2RE2iG/PV9DKHseUg897cPuBXHeE6WiIMNz122wVntTF0I3qwA4Kel6tU/drbbdAzxuk9NE++ezV/2wynm0ByfTr34dyBPquoVLjK/UOIxmBVr2/z00KGRFePd++x3jVLNVyLI7wekYU8eBwV6gYnrueEo1J/1yY63NElGPgMn7uDKCn22Gt3pcStCb9RqBy/Kp9SpP0nM2lnFRnMRQLYz04bh4gR6KgpX/T45ShXN/FF8n7z+Vgn0wFYYK1nbSBmi/sYyGX9st83weXoz7+CpDfSvxZBjPrXu6OaCpQqPDH2tgNYNvNdKjCmv7NJYcLqPesxOuNgBKgdZ6gRJEnS/gmUsjxxlCUD6b2cMfhHcs8JGpPw9tb47cMUTyKr1jr0NiUnV80icellUxv9JLN9sNljRoFzE2gWBOsSUGZ6pmshXQXxnnFBiQaXsxuMJ+ep9AGOp0B72srFsIAIOKmiQnKlPPo0I56zyu3WKG92U8X3k0txy3+iy0W1eeytfjsPMLG2eMYbZlQ7Jb2DUJksH0EcQjzmo3YlZaOjg5ZQMFZPJPX9LNgn5+eSNIbEdVjpI1h1pIPDMbLMwh5784t9zn9p+EELd+S2isULJQ5XPlK6tvOp4DVF+udGNFW9heKMiTa3y5GJSETzmIjtP6jyp3HqA==",
-    "expiration": "2026-05-18T02:22:23.000Z"
+    "access_key_id": "ASIAZV3A2ECZAWV33OGE",
+    "secret_access_key": "OKQ8XtR6UQ03q1WZFZA76uFLwv6lp8xuYivdOqEg",
+    "session_token": "IQoJb3JpZ2luX2VjEPn//////////wEaCXVzLWVhc3QtMSJIMEYCIQCe/WyCD0OcUwqb9RTM20w7PLdlsiHYLynHg8Rlg2VlPQIhAJcCm929xew8T93hBa6giDA/rQiJ3u5YwZAQWwMzp3Z8Kv8DCML//////////wEQBBoMNjY1Mzg2MDk4ODY2IgwFyzCiVo01WigT4DYq0wPMzYT9Mu3EHDAEf82fZEf/QlxFSz4MSCuGtzn2Pv2BfJ+R5tANVNSIxfMvDe5dIAQsg3hjPTKQgJtbIMEnNAnQPQ9nTdu4SzRUzOg7dMyxGnfLtzfHb6NhXIKYR1l68Ry+HWqipwysuU1/hjJmmISmkYOP4UBnSaiu0TQaRCdk5zV4frtbQiFKcNa7NLUUlrilki/TyOee1WgbY8CQkTbonNg9UtcNaOgj1Ik/Bnmxh4qE1wzFk2Lh0VX7Zn/4bgpswigQPidzOfVpvSV3rhU+wXRcnkBjtBD3I0ZFZfSF9PVLDiqIJukl4g6+ORjvC1OWAOIW1Gnv0bqRd6ECKxLfhLMw8JdFJ5d2IFjiarMqlIBgK2nJld/neetA/crVNvKqUm2lYjNaZdOxIj0JXFNwhzILVasvwmv1SoEkLBkUC3fC8BhUegX5Z3CXmAioDH83HUEvslMME3qP5liNwE6J+gtc1mfD1HsPNvIFX8XZfnRR65dhNBkF5HbX0x/5+BcLTvyYgbqyahBtC0x6TDeeRwyN5aJH6neLdhpRnorJy37fAi/1nY3Ou40bwALOQoJfE6BtcrX+WJmbBxhsa/rj6ddH+Kw7LZ6ufgEVUhR1LN/cKTDsga3QBjqcAeQ40T0l4/2kyDgnEf4ZLrGhvjU938WfarATLp41vPTt6nb/Cxspp7st4OV0iVwZg4Lv/IDOPDSDfOM8nga64Jodpp3JONKRWLP9Ixq+4FOPR3bSqKniF17kLOWW1Ykya+tgu8YkrJoaQwwzljXtolQGfE313EvuYk5ETnw1IFktP6niMDEryK70ZRpQWp+kZEBERT5rRvZ0DzvuvQ==",
+    "expiration": "2026-05-19T04:40:12.000Z"
   },
   "name": "tts-broadcast-dialer",
   "path": "/home/ubuntu/tts-broadcast-dialer",
@@ -27,7 +27,7 @@
     "FREEPBX_AMI_PASSWORD": "D1al3r@2026!Secure",
     "FREEPBX_AMI_PORT": "5038",
     "FREEPBX_AMI_USER": "dialer",
-    "FREEPBX_HOST": "187.124.153.234",
+    "FREEPBX_HOST": "45.77.75.198",
     "FREEPBX_SSH_PASSWORD": "Rasheen32832@",
     "FREEPBX_SSH_USER": "root",
     "GOOGLE_TTS_API_KEY": "AIzaSyD3gdaMBy9xP4uLjbVkeJRX_IGqIpkla_U",
