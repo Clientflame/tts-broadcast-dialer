@@ -1346,3 +1346,4 @@
 - [x] Fix: Audio preview STILL failing after base64 fix — root cause: extractStorageKey was missing voice-memos/ prefix and had wrong prefix ordering (tts-audio/ bucket name matched before actual file prefixes)
 - [x] Fix: Audio preview Zod validation error — segments[].id expected string got undefined, segments[].speed expected string got number. Preview never executes.
 - [x] Fix: TTS provider not detected from voice ID — Google voices (en-US-Wavenet-C) sent to OpenAI API because provider field missing from older scripts
+- [x] Feature: Voice Test button — plays a short TTS sample of the selected voice next to the voice dropdown in script editor

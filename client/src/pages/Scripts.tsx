@@ -229,14 +229,17 @@ function SegmentEditor({
             </div>
             <div>
               <Label className="text-xs">Voice</Label>
-              <Select value={segment.voice || "alloy"} onValueChange={v => onUpdate({ ...segment, voice: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(segment.provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES).map(v => (
-                    <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-1">
+                <Select value={segment.voice || "alloy"} onValueChange={v => onUpdate({ ...segment, voice: v })}>
+                  <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(segment.provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES).map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <VoiceTestButton voice={segment.voice || "alloy"} provider={segment.provider || "openai"} speed={parseFloat(segment.speed || "1.0")} />
+              </div>
             </div>
             <div>
               <Label className="text-xs">Speed: {segment.speed || "1.0"}x</Label>
@@ -280,6 +283,59 @@ function SegmentEditor({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Voice Test Button ───────────────────────────────────────────────────────
+function VoiceTestButton({ voice, provider, speed }: { voice: string; provider: "openai" | "google"; speed: number }) {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceTest = trpc.callScripts.voiceTest.useMutation({
+    onSuccess: (data) => {
+      // Create audio element and play the base64 data URI
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      const audio = new Audio(data.audioDataUri);
+      audioRef.current = audio;
+      audio.onended = () => setPlaying(false);
+      audio.onerror = () => { setPlaying(false); toast.error("Failed to play voice sample"); };
+      audio.play().catch(() => { setPlaying(false); toast.error("Browser blocked audio playback"); });
+      setPlaying(true);
+    },
+    onError: (err) => {
+      toast.error(`Voice test failed: ${err.message}`);
+      setPlaying(false);
+    },
+  });
+
+  const handleClick = () => {
+    if (playing && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setPlaying(false);
+      return;
+    }
+    voiceTest.mutate({ voice, provider, speed });
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
+          onClick={handleClick}
+          disabled={voiceTest.isPending}
+        >
+          {voiceTest.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : playing ? <Pause className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top"><p className="text-xs">Test voice</p></TooltipContent>
+    </Tooltip>
   );
 }
 

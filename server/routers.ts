@@ -4065,6 +4065,38 @@ Return ONLY the message text, nothing else.`;
         combinedUrl: combinedDataUri,
       };
     }),
+    // Voice Test — generates a short sample and returns base64 for instant playback
+    voiceTest: protectedProcedure.input(z.object({
+      voice: z.string(),
+      provider: z.enum(["openai", "google"]).optional(),
+      speed: z.number().min(0.25).max(4.0).optional().default(1.0),
+    })).mutation(async ({ input }) => {
+      const inferredProvider = input.voice.startsWith("en-") ? "google" : "openai";
+      const provider = input.provider || inferredProvider;
+      const result = provider === "google"
+        ? await generateGoogleVoiceSample(input.voice as GoogleTTSVoice, input.speed)
+        : await generateVoiceSample(input.voice as any, input.speed);
+
+      // Fetch the generated audio bytes and return as base64 data URI
+      const { storageFetchBytes, extractStorageKey } = await import("./storage");
+      const key = extractStorageKey(result.url);
+      let buffer: Buffer | null = null;
+      if (key) {
+        buffer = await storageFetchBytes(key);
+      }
+      if (!buffer) {
+        // Fallback: fetch from URL directly
+        try {
+          const resp = await fetch(result.url, { signal: AbortSignal.timeout(10000) });
+          if (resp.ok) buffer = Buffer.from(await resp.arrayBuffer());
+        } catch (e) { /* ignore */ }
+      }
+      if (buffer && buffer.length > 0) {
+        return { audioDataUri: `data:audio/mpeg;base64,${buffer.toString("base64")}` };
+      }
+      // Last resort: return the URL (may not work on all setups)
+      return { audioDataUri: result.url };
+    }),
     // Version history
     versions: protectedProcedure.input(z.object({ scriptId: z.number() })).query(async ({ input }) => {
       return db.getScriptVersions(input.scriptId);
