@@ -1350,3 +1350,6 @@
 - [x] Feature: Compare Voices mode — play same sample text through multiple voices side by side for quick comparison
 - [x] Feature: Browser-side caching of voice samples — store tested samples in IndexedDB for instant replay without hitting TTS API again
 - [x] Feature: Add Voice Test button to Audio page — same speaker icon pattern for consistency
+- [x] Feature: Apply Voice button in Compare Voices dialog — one click to apply selected voice to current segment
+- [x] Feature: Voice favorites — star preferred voices, starred voices appear at top of dropdown lists (persisted in localStorage)
+

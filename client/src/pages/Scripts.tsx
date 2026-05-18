@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Play, Pause, Loader2, ScrollText, GripVertical,
   Volume2, FileAudio, ArrowUp, ArrowDown, Copy, Pencil, Phone,
-  History, BarChart3, RotateCcw, Eye, Zap, Award,
+  History, BarChart3, RotateCcw, Eye, Zap, Award, Star, Check,
 } from "lucide-react";
 
 // Script Performance Scoring
@@ -233,8 +233,10 @@ function SegmentEditor({
                 <Select value={segment.voice || "alloy"} onValueChange={v => onUpdate({ ...segment, voice: v })}>
                   <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {(segment.provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES).map(v => (
-                      <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                    {sortWithFavorites(segment.provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES, segment.provider || "openai").map(v => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {isFavorite(v.id, segment.provider || "openai") ? `★ ${v.label}` : v.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -288,6 +290,7 @@ function SegmentEditor({
 
 // ─── Voice Test Button (with IndexedDB caching) ─────────────────────────────────────
 import { getCachedSample, setCachedSample } from "@/lib/voiceSampleCache";
+import { isFavorite, toggleFavorite, sortWithFavorites } from "@/lib/voiceFavorites";
 
 function VoiceTestButton({ voice, provider, speed }: { voice: string; provider: "openai" | "google"; speed: number }) {
   const [playing, setPlaying] = useState(false);
@@ -357,18 +360,24 @@ function VoiceTestButton({ voice, provider, speed }: { voice: string; provider: 
   );
 }
 
-// ─── Compare Voices Panel ───────────────────────────────────────────────────
-function CompareVoicesPanel({ provider: initialProvider, speed }: { provider: "openai" | "google"; speed: number }) {
+// ─── Compare Voices Panel (with Apply + Favorites) ─────────────────────────────
+function CompareVoicesPanel({ provider: initialProvider, speed, onApply }: {
+  provider: "openai" | "google";
+  speed: number;
+  onApply?: (voiceId: string, provider: "openai" | "google") => void;
+}) {
   const [provider, setProvider] = useState<"openai" | "google">(initialProvider);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
+  const [, forceUpdate] = useState(0); // For re-rendering after favorite toggle
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceTest = trpc.callScripts.voiceTest.useMutation();
 
-  const voices = provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES;
+  const rawVoices = provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES;
+  const voices = sortWithFavorites(rawVoices, provider);
 
   const playVoice = async (voiceId: string) => {
-    // Stop current playback
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -377,15 +386,13 @@ function CompareVoicesPanel({ provider: initialProvider, speed }: { provider: "o
       setPlayingVoice(null);
       return;
     }
-
     setLoadingVoice(voiceId);
-    // Check cache first
+    setSelectedVoice(voiceId);
     const cached = await getCachedSample(provider, voiceId, speed);
     if (cached) {
       playAudio(cached, voiceId);
       return;
     }
-    // Generate via API
     voiceTest.mutate({ voice: voiceId, provider, speed }, {
       onSuccess: async (data) => {
         await setCachedSample(provider, voiceId, speed, data.audioDataUri);
@@ -408,52 +415,76 @@ function CompareVoicesPanel({ provider: initialProvider, speed }: { provider: "o
     setLoadingVoice(null);
   };
 
+  const handleToggleFavorite = (e: React.MouseEvent, voiceId: string) => {
+    e.stopPropagation();
+    toggleFavorite(voiceId, provider);
+    forceUpdate(n => n + 1);
+  };
+
   return (
     <div className="space-y-4">
       {/* Provider toggle */}
       <div className="flex gap-2">
         <Button variant={provider === "openai" ? "default" : "outline"} size="sm"
-          onClick={() => { setProvider("openai"); setPlayingVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
+          onClick={() => { setProvider("openai"); setPlayingVoice(null); setSelectedVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
           OpenAI
         </Button>
         <Button variant={provider === "google" ? "default" : "outline"} size="sm"
-          onClick={() => { setProvider("google"); setPlayingVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
+          onClick={() => { setProvider("google"); setPlayingVoice(null); setSelectedVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
           Google
         </Button>
       </div>
 
       {/* Voice grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {voices.map(v => (
-          <button
-            key={v.id}
-            onClick={() => playVoice(v.id)}
-            disabled={loadingVoice === v.id}
-            className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
-              playingVoice === v.id
-                ? "border-primary bg-primary/10 ring-1 ring-primary"
-                : "border-border hover:border-primary/50 hover:bg-muted/50"
-            }`}
-          >
-            <div className="shrink-0">
-              {loadingVoice === v.id ? (
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              ) : playingVoice === v.id ? (
-                <Pause className="h-5 w-5 text-primary" />
-              ) : (
-                <Play className="h-5 w-5 text-muted-foreground" />
-              )}
+        {voices.map(v => {
+          const fav = isFavorite(v.id, provider);
+          return (
+            <div
+              key={v.id}
+              className={`flex items-center gap-2 p-3 rounded-lg border text-left transition-all cursor-pointer ${
+                selectedVoice === v.id
+                  ? "border-primary bg-primary/10 ring-1 ring-primary"
+                  : "border-border hover:border-primary/50 hover:bg-muted/50"
+              }`}
+              onClick={() => playVoice(v.id)}
+            >
+              <div className="shrink-0">
+                {loadingVoice === v.id ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                ) : playingVoice === v.id ? (
+                  <Pause className="h-5 w-5 text-primary" />
+                ) : (
+                  <Play className="h-5 w-5 text-muted-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{v.label}</p>
+                {"type" in v && <p className="text-xs text-muted-foreground">{(v as any).type}</p>}
+              </div>
+              <button
+                onClick={(e) => handleToggleFavorite(e, v.id)}
+                className="shrink-0 p-1 rounded hover:bg-muted/80 transition-colors"
+                title={fav ? "Remove from favorites" : "Add to favorites"}
+              >
+                <Star className={`h-4 w-4 ${fav ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground"}`} />
+              </button>
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{v.label}</p>
-              {"type" in v && <p className="text-xs text-muted-foreground">{(v as any).type}</p>}
-            </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
 
+      {/* Apply button */}
+      {onApply && selectedVoice && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => { onApply(selectedVoice, provider); toast.success(`Applied ${selectedVoice} to all TTS segments`); }}>
+            <Check className="h-3.5 w-3.5 mr-1" /> Apply to All TTS Segments
+          </Button>
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground text-center">
-        Samples are cached locally for instant replay. Click any voice to hear it.
+        Click to preview • ★ to favorite • Cached locally for instant replay
       </p>
     </div>
   );
@@ -1122,6 +1153,12 @@ export default function Scripts() {
             <CompareVoicesPanel
               provider={segments[0]?.provider || "openai"}
               speed={parseFloat(segments[0]?.speed || "1.0")}
+              onApply={(voiceId, prov) => {
+                setSegments(prev => prev.map(seg =>
+                  seg.type === "tts" ? { ...seg, voice: voiceId, provider: prov } : seg
+                ));
+                setShowCompareVoices(false);
+              }}
             />
           </DialogContent>
         </Dialog>
