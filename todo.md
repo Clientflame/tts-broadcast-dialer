@@ -1353,3 +1353,5 @@
 - [x] Feature: Apply Voice button in Compare Voices dialog — one click to apply selected voice to current segment
 - [x] Feature: Voice favorites — star preferred voices, starred voices appear at top of dropdown lists (persisted in localStorage)
 
+- [x] Bug: CPS (Calls Per Second) setting not persisting when editing campaign — cpsLimit was missing from submitEdit mutation
+- [x] Bug: Numbers being called multiple times in same campaign — added campaign-level dedup (getContactIdsAlreadyInCampaign) to prevent duplicates on restart

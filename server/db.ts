@@ -840,6 +840,16 @@ export async function getRecentlyCalledPhoneNumbers(hoursAgo: number = 48): Prom
   return new Set(rows.map(r => r.phoneNumber.replace(/\D/g, "")));
 }
 
+// Get contact IDs that already have call_logs in this specific campaign (any status)
+export async function getContactIdsAlreadyInCampaign(campaignId: number): Promise<Set<number>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db.selectDistinct({ contactId: callLogs.contactId })
+    .from(callLogs)
+    .where(eq(callLogs.campaignId, campaignId));
+  return new Set(rows.map(r => r.contactId).filter((id): id is number => id !== null));
+}
+
 export async function getDncCount(): Promise<number> {
   const db = await getDb();
   if (!db) return 0;

@@ -126,16 +126,20 @@ export async function startCampaign(campaignId: number, userId: number): Promise
     console.log(`[Dialer] Audio ready: ${audioName}`);
   }
 
-  // Get contacts and filter out DNC numbers + 48-hour dedup
+  // Get contacts and filter out DNC numbers + 48-hour dedup + campaign-level dedup
   const allContacts = await db.getActiveContactsForCampaign(campaign.contactListId);
   if (allContacts.length === 0) throw new Error("No active contacts in the list");
 
   const dncNumbers = await db.getDncPhoneNumbers();
   const recentlyCalled = await db.getRecentlyCalledPhoneNumbers(DEDUP_HOURS);
+  const alreadyInCampaign = await db.getContactIdsAlreadyInCampaign(campaignId);
 
   let dncFiltered = 0;
   let dedupSkipped = 0;
+  let campaignDedupSkipped = 0;
   const contactsList = allContacts.filter(c => {
+    // Skip contacts that already have call_logs in this campaign (prevents duplicates on restart)
+    if (alreadyInCampaign.has(c.id)) { campaignDedupSkipped++; return false; }
     const normalized = c.phoneNumber.replace(/\D/g, "");
     if (dncNumbers.has(normalized)) { dncFiltered++; return false; }
     if (recentlyCalled.has(normalized)) { dedupSkipped++; return false; }
@@ -144,12 +148,14 @@ export async function startCampaign(campaignId: number, userId: number): Promise
 
   if (contactsList.length === 0) {
     const reasons = [];
+    if (campaignDedupSkipped > 0) reasons.push(`${campaignDedupSkipped} already in campaign`);
     if (dncFiltered > 0) reasons.push(`${dncFiltered} on DNC`);
     if (dedupSkipped > 0) reasons.push(`${dedupSkipped} called within ${DEDUP_HOURS}h`);
     throw new Error(`No eligible contacts (${reasons.join(", ")})`);
   }
   if (dncFiltered > 0) console.log(`[Dialer] Filtered ${dncFiltered} DNC numbers from campaign ${campaignId}`);
   if (dedupSkipped > 0) console.log(`[Dialer] Skipped ${dedupSkipped} numbers called within ${DEDUP_HOURS}h for campaign ${campaignId}`);
+  if (campaignDedupSkipped > 0) console.log(`[Dialer] Skipped ${campaignDedupSkipped} contacts already in campaign ${campaignId} (prevents duplicates on restart)`);
 
   // Randomize contact order to avoid sequential dialing patterns
   const shuffledContacts = shuffleArray(contactsList);
