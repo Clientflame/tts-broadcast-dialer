@@ -509,11 +509,13 @@ export default function Scripts() {
     setName(script.name);
     setDescription(script.description || "");
     setCallbackNumber(script.callbackNumber || "");
-    // Normalize segments from DB: ensure id is string and speed is string
+    // Normalize segments from DB: ensure id, speed, and provider are correct
     const normalized = (script.segments || []).map((s: any, i: number) => ({
       ...s,
       id: s.id || `seg-${i}-${Date.now()}`,
       speed: s.speed != null ? String(s.speed) : "1.0",
+      // Infer provider from voice if not set (Google voices start with "en-")
+      provider: s.provider || (s.voice && s.voice.startsWith("en-") ? "google" : "openai"),
     }));
     setSegments(normalized);
     setPreviewUrls([]);

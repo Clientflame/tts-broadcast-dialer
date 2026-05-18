@@ -347,7 +347,11 @@ export async function generateScriptAudio(params: {
     try {
       if (segment.type === "tts" && segment.text) {
         const voice = segment.voice || "alloy";
-        const provider = segment.provider || "openai";
+        // Infer provider from voice ID if not explicitly set
+        // Google voices start with "en-US-" (e.g., en-US-Wavenet-C, en-US-Neural2-A, en-US-Studio-M)
+        // OpenAI voices are single words (alloy, echo, fable, onyx, nova, shimmer, ash, sage, coral)
+        const inferredProvider = voice.startsWith("en-") ? "google" : "openai";
+        const provider = segment.provider || inferredProvider;
         const speed = Math.max(0.25, Math.min(4.0, parseFloat(segment.speed || "1.0")));
 
         // Phase 1: Determine if this segment is static or dynamic
@@ -468,10 +472,10 @@ export async function preGenerateStaticSegments(params: {
 
   for (const segment of sortedSegments) {
     if (segment.type !== "tts" || !segment.text) continue;
-    if (hasMergeFields(segment.text)) continue; // Skip dynamic segments
-
+        if (hasMergeFields(segment.text)) continue; // Skip dynamic segments
     const voice = segment.voice || "alloy";
-    const provider = (segment.provider || "openai") as "openai" | "google";
+    const inferredProv = voice.startsWith("en-") ? "google" : "openai";
+    const provider = (segment.provider || inferredProv) as "openai" | "google";
     const speed = Math.max(0.25, Math.min(4.0, parseFloat(segment.speed || "1.0")));
 
     try {
