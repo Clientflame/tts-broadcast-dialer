@@ -1367,3 +1367,6 @@
 - [x] Add CPS warm-up ramp — PBX agent ramps from 1 CPS to target over 30s, resets when idle
 - [x] Implement DID rotation — already existed: round-robin + random modes, per-campaign DID pool selection, usage tracking
 - [x] Match old dialer performance: disable AMD by default (already was), CPS to 7, max concurrent to 200. Updated DB, PBX agent, server validation, and UI sliders.
+- [x] CRITICAL BUG: Duplicate calls — fixed: set status to 'dialing' before enqueue + phone-number-level dedup + callLogId dedup in enqueueCall
+- [ ] Bug: AMD still enabled on campaign despite default being off — campaign was created before default change
+- [x] Bug: Audio playback/player not working in Edit Script page — stale TTS cache had local-mode URLs. Fixed: cleared cache, added URL validation in lookupDbCache, added HTML detection in urlToBase64

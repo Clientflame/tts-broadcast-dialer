@@ -403,7 +403,16 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
 
   // Enqueue next batch into call_queue for PBX agent
   const slotsAvailable = maxConcurrent - activeCount;
-  const callsToDial = pendingCalls.slice(0, slotsAvailable);
+  // Deduplicate by phone number: skip contacts whose number is already dialing/ringing
+  const dialingNumbers = new Set<string>();
+  const activeCallLogs = await db.getActiveDialingNumbers(campaignId);
+  activeCallLogs.forEach(n => dialingNumbers.add(n));
+  const callsToDial = pendingCalls.filter(c => {
+    const normalized = c.phoneNumber.replace(/\D/g, "");
+    if (dialingNumbers.has(normalized)) return false;
+    dialingNumbers.add(normalized);
+    return true;
+  }).slice(0, slotsAvailable);
 
   for (const callLog of callsToDial) {
     try {
@@ -431,9 +440,9 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
 }
 
 async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: number): Promise<void> {
-  // Don't change status here — leave as "pending" until PBX agent claims the call
-  // The agent poll endpoint will set it to "dialing" when claimed
+  // Mark as "dialing" immediately to prevent duplicate enqueue on next loop iteration
   await db.updateCallLog(callLog.id, {
+    status: "dialing",
     startedAt: Date.now(),
   });
 

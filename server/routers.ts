@@ -4007,8 +4007,15 @@ Return ONLY the message text, nothing else.`;
             const fetchUrl = resolveStorageUrl(url);
             const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(10000) });
             if (resp.ok) {
-              buffer = Buffer.from(await resp.arrayBuffer());
-              console.log(`[Preview] Base64 via HTTP fetch: ${url.substring(0, 80)} (${buffer.length} bytes)`);
+              const fetchedBuf = Buffer.from(await resp.arrayBuffer());
+              // Validate it's actually audio, not HTML (SPA fallback)
+              const header = fetchedBuf.slice(0, 15).toString('utf-8').toLowerCase();
+              if (header.includes('<!doctype') || header.includes('<html')) {
+                console.error(`[Preview] HTTP fetch returned HTML instead of audio for: ${url.substring(0, 80)}`);
+              } else {
+                buffer = fetchedBuf;
+                console.log(`[Preview] Base64 via HTTP fetch: ${url.substring(0, 80)} (${buffer.length} bytes)`);
+              }
             } else {
               console.error(`[Preview] HTTP fetch returned ${resp.status} for: ${url.substring(0, 80)}`);
             }

@@ -608,6 +608,15 @@ export async function getActiveCallCount(campaignId: number) {
   return result[0]?.cnt ?? 0;
 }
 
+export async function getActiveDialingNumbers(campaignId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.selectDistinct({ phoneNumber: callLogs.phoneNumber })
+    .from(callLogs)
+    .where(and(eq(callLogs.campaignId, campaignId), inArray(callLogs.status, ["dialing", "ringing"])));
+  return rows.map(r => r.phoneNumber.replace(/\D/g, ""));
+}
+
 export async function getContactListContactCount(listId: number): Promise<number> {
   const db = await getDb();
   if (!db) return 0;
@@ -1700,6 +1709,16 @@ import { lt, lte, isNull, isNotNull, asc } from "drizzle-orm";
 export async function enqueueCall(data: InsertCallQueueItem) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  // Prevent duplicate queue entries for the same callLogId
+  if (data.callLogId) {
+    const existing = await db.select({ id: callQueue.id }).from(callQueue)
+      .where(and(eq(callQueue.callLogId, data.callLogId), inArray(callQueue.status, ["pending", "claimed"])))
+      .limit(1);
+    if (existing.length > 0) {
+      console.warn(`[DB] Skipping duplicate enqueue for callLogId ${data.callLogId} (already in queue)`);
+      return { id: existing[0].id };
+    }
+  }
   const result = await db.insert(callQueue).values(data);
   return { id: result[0].insertId };
 }

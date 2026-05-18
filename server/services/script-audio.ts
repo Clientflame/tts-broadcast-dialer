@@ -149,7 +149,20 @@ async function lookupDbCache(textHash: string): Promise<string | null> {
       await db.update(ttsAudioCache)
         .set({ hitCount: sql`${ttsAudioCache.hitCount} + 1`, lastUsedAt: new Date() })
         .where(eq(ttsAudioCache.id, rows[0].id));
-      return rows[0].s3Url;
+      
+      // If the stored URL is a stale local-mode URL ("/api/storage/..."),
+      // reconstruct a proper URL using the s3Key and current storage config
+      let url = rows[0].s3Url;
+      if (url.startsWith('/api/storage/') && rows[0].s3Key) {
+        const { storageGet } = await import("../storage");
+        const result = await storageGet(rows[0].s3Key);
+        url = result.url;
+        // Update the stale URL in the database
+        await db.update(ttsAudioCache)
+          .set({ s3Url: url })
+          .where(eq(ttsAudioCache.id, rows[0].id));
+      }
+      return url;
     }
     return null;
   } catch (err) {
