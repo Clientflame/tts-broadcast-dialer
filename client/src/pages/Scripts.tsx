@@ -509,7 +509,13 @@ export default function Scripts() {
     setName(script.name);
     setDescription(script.description || "");
     setCallbackNumber(script.callbackNumber || "");
-    setSegments(script.segments || []);
+    // Normalize segments from DB: ensure id is string and speed is string
+    const normalized = (script.segments || []).map((s: any, i: number) => ({
+      ...s,
+      id: s.id || `seg-${i}-${Date.now()}`,
+      speed: s.speed != null ? String(s.speed) : "1.0",
+    }));
+    setSegments(normalized);
     setPreviewUrls([]);
   };
 
