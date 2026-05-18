@@ -1355,3 +1355,6 @@
 
 - [x] Bug: CPS (Calls Per Second) setting not persisting when editing campaign — cpsLimit was missing from submitEdit mutation
 - [x] Bug: Numbers being called multiple times in same campaign — added campaign-level dedup (getContactIdsAlreadyInCampaign) to prevent duplicates on restart
+- [x] Bug: Multi-segment audio preparation failed — 15 calls failed; PBX agent tries to download 5 individual segments instead of using the pre-stitched combined URL. Fix: don't send audioUrls when combinedUrl is available
+- [ ] Bug: Short answered call durations (0-5s) — possible audio playback delay after call answer
+- [ ] Bug: Call History page may not be working correctly — needs investigation

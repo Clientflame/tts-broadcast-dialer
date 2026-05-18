@@ -547,17 +547,22 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
       });
 
       if (scriptResult.success && scriptResult.audioUrls.length > 0) {
-        audioUrls = scriptResult.audioUrls;
-        // Use server-side combined URL as the primary audioUrl
-        // This ensures ALL segments play even on old PBX agents without prepare_multi_audio
+        // When server-side stitching succeeds, use the single combined file.
+        // This avoids the PBX agent having to download 5+ individual segments
+        // (which was causing "Multi-segment audio preparation failed" errors
+        // due to intermittent download failures from FreePBX → MinIO).
+        // Only send audioUrls as fallback when server-side stitching fails.
         if (scriptResult.combinedUrl) {
           variables.AUDIO_URL = scriptResult.combinedUrl;
+          // Don't set audioUrls — PBX agent will use audioUrl (single file) path
+          audioUrls = null;
         } else {
-          // Fallback to first segment if server-side concat failed
+          // Server-side concat failed — let PBX agent download + concatenate individual segments
+          audioUrls = scriptResult.audioUrls;
           variables.AUDIO_URL = scriptResult.audioUrls[0];
         }
         variables.AUDIO_NAME = `script_${callLog.campaignId}_${callLog.contactId}`;
-        console.log(`[Dialer] Script audio generated: ${scriptResult.audioUrls.length} segments, combinedUrl=${!!scriptResult.combinedUrl} for contact ${callLog.contactId}`);
+        console.log(`[Dialer] Script audio generated: ${scriptResult.audioUrls.length} segments, combinedUrl=${!!scriptResult.combinedUrl}, audioUrls=${audioUrls ? 'fallback' : 'none (using combined)'} for contact ${callLog.contactId}`);
       } else {
         console.error(`[Dialer] Script audio generation failed:`, scriptResult.errors);
         // Fall back to static audio if available
