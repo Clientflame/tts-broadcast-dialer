@@ -130,14 +130,20 @@ export function toBrowserAudioUrls(urls: string[]): string[] {
     }
 
     // Extract the storage key from the URL
-    // Known prefixes that our storage uses:
+    // Known prefixes that our storage uses (ordered: specific first, generic last):
     const knownPrefixes = [
       "script-audio/",
       "script-stitched/",
-      "tts-audio/",
       "campaign-audio/",
+      "voice-memos/",
+      "voice-samples/",
+      "voicemail-audio/",
+      "voicemail-preview/",
       "voicemail/",
       "recordings/",
+      "branding/",
+      "backups/",
+      "tts-audio/",  // Last — also a common bucket name
     ];
 
     for (const prefix of knownPrefixes) {

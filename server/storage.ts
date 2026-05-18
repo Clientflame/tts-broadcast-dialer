@@ -338,6 +338,97 @@ export async function storageReadLocal(relKey: string): Promise<Buffer | null> {
   }
 }
 
+// ─── Storage Key Extraction ─────────────────────────────────────────
+
+/**
+ * Extract the S3 storage key from a URL.
+ * Works with all URL formats:
+ * - S3_PUBLIC_URL based: https://app26.407hosted.com/storage/tts-audio/voice-memos/123/file.mp3
+ * - S3 endpoint based: https://minio:9000/bucket/voice-memos/123/file.mp3
+ * - Forge URLs: https://forge.example.com/v1/storage/download?path=voice-memos/123/file.mp3
+ * - Local URLs: /api/storage/voice-memos/123/file.mp3
+ * - Already a key: voice-memos/123/file.mp3
+ *
+ * Returns the key (e.g., "voice-memos/123/file.mp3") or null if extraction fails.
+ */
+export function extractStorageKey(url: string): string | null {
+  if (!url) return null;
+
+  // If it's already a relative key (no protocol, no leading /api/)
+  if (!url.startsWith('http') && !url.startsWith('/') && !url.startsWith('data:')) {
+    return normalizeKey(url.split('?')[0]);
+  }
+
+  // Strategy 1: Strip S3_PUBLIC_URL prefix
+  if (ENV.s3PublicUrl) {
+    const base = ENV.s3PublicUrl.replace(/\/+$/, '');
+    if (url.startsWith(base + '/')) {
+      const key = url.substring(base.length + 1).split('?')[0];
+      if (key) return normalizeKey(key);
+    }
+  }
+
+  // Strategy 2: Strip S3 endpoint + bucket prefix
+  if (ENV.s3Endpoint && ENV.s3Bucket) {
+    const endpoint = ENV.s3Endpoint.replace(/\/+$/, '');
+    const prefix = `${endpoint}/${ENV.s3Bucket}/`;
+    if (url.startsWith(prefix)) {
+      const key = url.substring(prefix.length).split('?')[0];
+      if (key) return normalizeKey(key);
+    }
+  }
+
+  // Strategy 3: Local storage URL (/api/storage/...)
+  if (url.startsWith('/api/storage/')) {
+    const key = url.substring('/api/storage/'.length).split('?')[0];
+    if (key) return normalizeKey(key);
+  }
+
+  // Strategy 4: Forge download URL (extract path param)
+  if (url.includes('/v1/storage/download') || url.includes('path=')) {
+    try {
+      const parsed = new URL(url);
+      const pathParam = parsed.searchParams.get('path');
+      if (pathParam) return normalizeKey(pathParam);
+    } catch {}
+  }
+
+  // Strategy 5: Known prefix matching (catches any URL format)
+  // IMPORTANT: Order matters! More specific prefixes must come before generic ones.
+  // 'tts-audio/' is also a bucket name on some setups, so it must be LAST
+  // to avoid matching the bucket name instead of the actual file prefix.
+  const allKnownPrefixes = [
+    'script-audio/', 'script-stitched/', 'campaign-audio/',
+    'voice-memos/', 'voice-samples/',
+    'voicemail-audio/', 'voicemail-preview/', 'voicemail/',
+    'recordings/', 'branding/', 'backups/',
+    'tts-audio/',  // Last — also a common bucket name
+  ];
+  for (const prefix of allKnownPrefixes) {
+    const idx = url.indexOf(prefix);
+    if (idx !== -1) {
+      const key = url.substring(idx).split('?')[0];
+      if (key) return normalizeKey(key);
+    }
+  }
+
+  // Strategy 6: Try URL path after the bucket name
+  try {
+    const parsed = new URL(url);
+    const pathParts = parsed.pathname.split('/');
+    // Look for bucket name in path and take everything after it
+    if (ENV.s3Bucket) {
+      const bucketIdx = pathParts.indexOf(ENV.s3Bucket);
+      if (bucketIdx !== -1 && bucketIdx < pathParts.length - 1) {
+        const key = pathParts.slice(bucketIdx + 1).join('/');
+        if (key) return normalizeKey(key);
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 // ─── Direct Byte Fetch (for inline preview) ────────────────────────────────
 
 /**

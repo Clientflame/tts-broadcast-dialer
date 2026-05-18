@@ -3978,46 +3978,66 @@ Return ONLY the message text, nothing else.`;
       // DEFINITIVE FIX: Return audio as base64 data URIs.
       // This eliminates ALL network dependencies for preview playback.
       // The browser plays data:audio/mpeg;base64,... directly — no fetch needed.
-      const { storageFetchBytes } = await import("./storage");
+      const { storageFetchBytes, extractStorageKey } = await import("./storage");
       const { toBrowserAudioUrls } = await import("./services/audio-proxy");
       const { resolveStorageUrl } = await import("./storage");
+
+      /**
+       * Convert a storage URL to base64 data URI.
+       * Uses multiple strategies to fetch the actual bytes:
+       * 1. Extract storage key and use S3 SDK directly (most reliable)
+       * 2. Fetch from the URL directly (works if URL is reachable from server)
+       * 3. Fall back to proxy URL (last resort)
+       */
+      async function urlToBase64(url: string): Promise<string> {
+        let buffer: Buffer | null = null;
+
+        // Strategy 1: Extract storage key from URL and fetch bytes via S3 SDK
+        const key = extractStorageKey(url);
+        if (key) {
+          buffer = await storageFetchBytes(key);
+          if (buffer && buffer.length > 0) {
+            console.log(`[Preview] Base64 via SDK for key: ${key} (${buffer.length} bytes)`);
+          }
+        }
+
+        // Strategy 2: Direct HTTP fetch (works for local mode or if URL is reachable)
+        if (!buffer) {
+          try {
+            const fetchUrl = resolveStorageUrl(url);
+            const resp = await fetch(fetchUrl, { signal: AbortSignal.timeout(10000) });
+            if (resp.ok) {
+              buffer = Buffer.from(await resp.arrayBuffer());
+              console.log(`[Preview] Base64 via HTTP fetch: ${url.substring(0, 80)} (${buffer.length} bytes)`);
+            } else {
+              console.error(`[Preview] HTTP fetch returned ${resp.status} for: ${url.substring(0, 80)}`);
+            }
+          } catch (fetchErr: any) {
+            console.error(`[Preview] HTTP fetch failed for: ${url.substring(0, 80)} — ${fetchErr.message}`);
+          }
+        }
+
+        // Success: return base64 data URI
+        if (buffer && buffer.length > 0) {
+          // Detect mime type from content or URL
+          const mime = url.includes(".wav") ? "audio/wav" 
+            : url.includes(".webm") ? "audio/webm" 
+            : url.includes(".ogg") ? "audio/ogg"
+            : url.includes(".m4a") ? "audio/mp4"
+            : "audio/mpeg";
+          return `data:${mime};base64,${buffer.toString("base64")}`;
+        }
+
+        // Last resort: return the proxy URL (might work on some setups)
+        console.error(`[Preview] ALL strategies failed for: ${url.substring(0, 100)}`);
+        const proxyUrls = toBrowserAudioUrls([url]);
+        return proxyUrls[0];
+      }
 
       const dataUris: string[] = [];
       for (const url of result.audioUrls) {
         try {
-          let buffer: Buffer | null = null;
-
-          // Try to extract storage key from the URL and fetch bytes directly
-          const knownPrefixes = ["script-audio/", "script-stitched/", "tts-audio/", "campaign-audio/", "voicemail/", "recordings/"];
-          for (const prefix of knownPrefixes) {
-            const idx = url.indexOf(prefix);
-            if (idx !== -1) {
-              const key = url.substring(idx).split("?")[0];
-              buffer = await storageFetchBytes(key);
-              break;
-            }
-          }
-
-          // Fallback: if key extraction failed, try fetching the URL directly
-          if (!buffer) {
-            try {
-              const fetchUrl = resolveStorageUrl(url);
-              const resp = await fetch(fetchUrl);
-              if (resp.ok) {
-                buffer = Buffer.from(await resp.arrayBuffer());
-              }
-            } catch (fetchErr) {
-              console.error(`[Preview] Fallback fetch failed for: ${url}`);
-            }
-          }
-
-          if (buffer && buffer.length > 0) {
-            dataUris.push(`data:audio/mpeg;base64,${buffer.toString("base64")}`);
-          } else {
-            // Last resort: return the proxy URL (might work on some setups)
-            const proxyUrls = toBrowserAudioUrls([url]);
-            dataUris.push(proxyUrls[0]);
-          }
+          dataUris.push(await urlToBase64(url));
         } catch (err: any) {
           console.error(`[Preview] Failed to convert audio to base64: ${err.message}`);
           const proxyUrls = toBrowserAudioUrls([url]);
@@ -4029,23 +4049,10 @@ Return ONLY the message text, nothing else.`;
       let combinedDataUri: string | null = null;
       if (result.combinedUrl) {
         try {
-          let buffer: Buffer | null = null;
-          const knownPrefixes = ["script-audio/", "script-stitched/", "tts-audio/", "campaign-audio/"];
-          for (const prefix of knownPrefixes) {
-            const idx = result.combinedUrl.indexOf(prefix);
-            if (idx !== -1) {
-              const key = result.combinedUrl.substring(idx).split("?")[0];
-              buffer = await storageFetchBytes(key);
-              break;
-            }
-          }
-          if (!buffer) {
-            const fetchUrl = resolveStorageUrl(result.combinedUrl);
-            const resp = await fetch(fetchUrl);
-            if (resp.ok) buffer = Buffer.from(await resp.arrayBuffer());
-          }
-          if (buffer && buffer.length > 0) {
-            combinedDataUri = `data:audio/mpeg;base64,${buffer.toString("base64")}`;
+          combinedDataUri = await urlToBase64(result.combinedUrl);
+          // If it fell back to a proxy URL (not data:), set to null
+          if (combinedDataUri && !combinedDataUri.startsWith("data:")) {
+            combinedDataUri = null;
           }
         } catch (err: any) {
           console.error(`[Preview] Failed to convert combined audio: ${err.message}`);
