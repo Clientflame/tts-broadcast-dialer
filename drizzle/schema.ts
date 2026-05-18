@@ -90,6 +90,7 @@ export const contacts = mysqlTable("contacts", {
   listId: int("listId").notNull(),
   userId: int("userId").notNull(),
   phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  phoneNumber2: varchar("phoneNumber2", { length: 20 }),
   firstName: varchar("firstName", { length: 100 }),
   lastName: varchar("lastName", { length: 100 }),
   email: varchar("email", { length: 320 }),
@@ -97,7 +98,18 @@ export const contacts = mysqlTable("contacts", {
   state: varchar("state", { length: 50 }),
   databaseName: varchar("databaseName", { length: 255 }),
   customFields: json("customFields").$type<Record<string, string>>(),
-  status: mysqlEnum("status", ["active", "inactive", "dnc"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive", "dnc", "pif", "rtv", "rtp"]).default("active").notNull(),
+  // Debt-specific fields
+  creditorName: varchar("creditorName", { length: 255 }),
+  accountNumber: varchar("accountNumber", { length: 100 }),
+  originalBalance: int("originalBalance"), // cents
+  currentBalance: int("currentBalance"), // cents
+  placementDate: bigint("placementDate", { mode: "number" }), // UTC timestamp
+  debtType: varchar("debtType", { length: 50 }), // medical, credit_card, auto, student, etc.
+  debtorStatus: varchar("debtorStatus", { length: 50 }), // active, pif, rtv, rtp, disputed, etc.
+  lastPaymentDate: bigint("lastPaymentDate", { mode: "number" }),
+  lastPaymentAmount: int("lastPaymentAmount"), // cents
+  skipTraceStatus: varchar("skipTraceStatus", { length: 20 }), // none, pending, completed, failed
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1356,3 +1368,176 @@ export const ipBlocklist = mysqlTable("ip_blocklist", {
 
 export type IpBlocklist = typeof ipBlocklist.$inferSelect;
 export type InsertIpBlocklist = typeof ipBlocklist.$inferInsert;
+
+
+// ─── Skip Trace Requests ────────────────────────────────────────────────────
+export const skipTraceRequests = mysqlTable("skip_trace_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  contactId: int("contactId"),
+  contactListId: int("contactListId"), // for batch skip trace
+  provider: varchar("provider", { length: 50 }).notNull(), // "tlo", "accurint", "skipgenie", "manual"
+  requestType: mysqlEnum("requestType", ["single", "batch"]).default("single").notNull(),
+  // Input data
+  inputFirstName: varchar("inputFirstName", { length: 100 }),
+  inputLastName: varchar("inputLastName", { length: 100 }),
+  inputPhone: varchar("inputPhone", { length: 20 }),
+  inputAddress: text("inputAddress"),
+  inputSsn4: varchar("inputSsn4", { length: 4 }), // last 4 of SSN
+  // Results
+  status: mysqlEnum("status", ["pending", "processing", "completed", "failed", "no_results"]).default("pending").notNull(),
+  resultsCount: int("resultsCount").default(0).notNull(),
+  results: json("results").$type<SkipTraceResult[]>(),
+  // Cost tracking
+  costCents: int("costCents").default(0), // cost in cents per lookup
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+});
+export type SkipTraceRequest = typeof skipTraceRequests.$inferSelect;
+export type InsertSkipTraceRequest = typeof skipTraceRequests.$inferInsert;
+
+export type SkipTraceResult = {
+  phoneNumber: string;
+  phoneType: "mobile" | "landline" | "voip" | "unknown";
+  phoneStatus: "connected" | "disconnected" | "unknown";
+  firstName?: string;
+  lastName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  email?: string;
+  employer?: string;
+  confidence: number; // 0-100
+};
+
+// ─── Skip Trace Phone Results (denormalized for quick lookup) ───────────────
+export const skipTracePhones = mysqlTable("skip_trace_phones", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("requestId").notNull(),
+  contactId: int("contactId"),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  phoneType: varchar("phoneType", { length: 20 }), // mobile, landline, voip
+  phoneStatus: varchar("phoneStatus", { length: 20 }), // connected, disconnected
+  confidence: int("confidence").default(0).notNull(),
+  isApplied: int("isApplied").default(0).notNull(), // 1 = applied to contact record
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SkipTracePhone = typeof skipTracePhones.$inferSelect;
+export type InsertSkipTracePhone = typeof skipTracePhones.$inferInsert;
+
+// ─── Settlement Offer Tiers ─────────────────────────────────────────────────
+export const settlementTiers = mysqlTable("settlement_tiers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Tier conditions
+  minDebtAge: int("minDebtAge"), // days since placement
+  maxDebtAge: int("maxDebtAge"),
+  minBalance: int("minBalance"), // cents
+  maxBalance: int("maxBalance"), // cents
+  // Offer terms
+  discountPercent: int("discountPercent").notNull(), // e.g., 40 = 40% off (pay 60%)
+  paymentDeadlineDays: int("paymentDeadlineDays").default(30).notNull(), // days to pay
+  allowInstallments: int("allowInstallments").default(0).notNull(),
+  maxInstallments: int("maxInstallments").default(1),
+  // TTS script template for this tier
+  scriptTemplate: text("scriptTemplate"), // e.g., "We can settle your {{creditor_name}} account for {{settlement_amount}}..."
+  // Priority (lower = tried first)
+  priority: int("priority").default(1).notNull(),
+  isActive: int("isActive").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SettlementTier = typeof settlementTiers.$inferSelect;
+export type InsertSettlementTier = typeof settlementTiers.$inferInsert;
+
+// ─── Settlement Offers (per-contact offers generated from tiers) ────────────
+export const settlementOffers = mysqlTable("settlement_offers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  contactId: int("contactId").notNull(),
+  tierId: int("tierId").notNull(),
+  campaignId: int("campaignId"),
+  callLogId: int("callLogId"),
+  // Offer details
+  originalBalance: int("originalBalance").notNull(), // cents
+  discountPercent: int("discountPercent").notNull(),
+  settlementAmount: int("settlementAmount").notNull(), // cents
+  paymentDeadline: bigint("paymentDeadline", { mode: "number" }), // UTC timestamp
+  // Status
+  status: mysqlEnum("status", [
+    "pending",     // offer generated, not yet presented
+    "presented",   // played to debtor via TTS
+    "accepted",    // debtor agreed
+    "declined",    // debtor declined
+    "expired",     // deadline passed
+    "paid",        // payment received
+    "partial_paid", // partial payment received
+    "voided",      // cancelled by admin
+  ]).default("pending").notNull(),
+  // Payment tracking
+  amountPaid: int("amountPaid").default(0), // cents
+  paidAt: bigint("paidAt", { mode: "number" }),
+  // Installment tracking
+  installmentPlan: json("installmentPlan").$type<Array<{ amount: number; dueDate: number; status: string }>>(),
+  // Notes
+  notes: text("notes"),
+  declineReason: varchar("declineReason", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SettlementOffer = typeof settlementOffers.$inferSelect;
+export type InsertSettlementOffer = typeof settlementOffers.$inferInsert;
+
+// ─── Collection Import Jobs ─────────────────────────────────────────────────
+export const collectionImportJobs = mysqlTable("collection_import_jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  sourceType: mysqlEnum("sourceType", [
+    "csv",
+    "dakcs",
+    "latitude",
+    "collectbank",
+    "custom",
+  ]).default("csv").notNull(),
+  // File info
+  fileName: varchar("fileName", { length: 255 }),
+  fileSize: int("fileSize"),
+  s3Key: varchar("s3Key", { length: 512 }),
+  s3Url: text("s3Url"),
+  // Field mapping (source column → our field)
+  fieldMapping: json("fieldMapping").$type<Record<string, string>>(),
+  // Import settings
+  targetListId: int("targetListId"), // which contact list to import into
+  createNewList: int("createNewList").default(0).notNull(), // 1 = create new list from import
+  newListName: varchar("newListName", { length: 255 }),
+  skipDuplicates: int("skipDuplicates").default(1).notNull(),
+  updateExisting: int("updateExisting").default(0).notNull(), // update existing contacts if phone matches
+  // Debt-specific fields to import
+  debtFields: json("debtFields").$type<{
+    creditorNameColumn?: string;
+    originalBalanceColumn?: string;
+    currentBalanceColumn?: string;
+    accountNumberColumn?: string;
+    placementDateColumn?: string;
+    debtTypeColumn?: string;
+    debtorStatusColumn?: string;
+  }>(),
+  // Status
+  status: mysqlEnum("status", ["pending", "validating", "importing", "completed", "failed"]).default("pending").notNull(),
+  totalRows: int("totalRows").default(0).notNull(),
+  importedRows: int("importedRows").default(0).notNull(),
+  skippedRows: int("skippedRows").default(0).notNull(),
+  failedRows: int("failedRows").default(0).notNull(),
+  errorLog: json("errorLog").$type<Array<{ row: number; error: string }>>(),
+  errorMessage: text("errorMessage"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CollectionImportJob = typeof collectionImportJobs.$inferSelect;
+export type InsertCollectionImportJob = typeof collectionImportJobs.$inferInsert;

@@ -1337,3 +1337,6 @@
 - [x] Security: Remove ALL process.env.OPENAI_API_KEY and process.env.GOOGLE_TTS_API_KEY fallbacks across entire codebase (routers.ts, voice-ai.ts, voice-ai-installer.ts, script-audio.ts, voicemail-creator.ts)
 - [x] Fix: Update button causes 'page not found' after refresh — rewritten with startupId-based polling, must-see-down gate, and cache-busted reload
 - [x] Fix: Call Scripts audio preview playback — rewrote AudioWaveformPlayer to use plain HTML5 Audio (no Web Audio API, no crossOrigin) for guaranteed playback regardless of CORS
+- [x] Feature #7: Skip Tracing Integration — connect to skip-tracing APIs to find updated phone numbers for debtors
+- [x] Feature #13: Settlement Offer Engine — tiered settlement offers with dynamic TTS, acceptance tracking
+- [x] Feature #16: Batch Import from Collection Software — CSV import with field mapping for debtor lists

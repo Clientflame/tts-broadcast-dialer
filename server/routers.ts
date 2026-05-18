@@ -27,6 +27,7 @@ import { agentAssistRouter } from "./routers/agent-assist";
 import { inboundFilterRouter } from "./routers/inbound-filter";
 import { updaterRouter } from "./routers/updater";
 import { voicemailCreatorRouter } from "./routers/voicemail-creator";
+import { debtCollectionRouter } from "./routers/debt-collection";
 import { fetchFreePBXDestinations, createInboundRoutes, deleteInboundRoutes, listInboundRoutes, checkExistingRoutes, checkExistingRoutesDetailed, updateInboundRoute, bulkUpdateInboundRoutes } from "./services/freepbx-routes";
 
 /** Server-side password strength validation helper */
@@ -5092,6 +5093,7 @@ Respond with a JSON object matching this exact schema.`;
   inboundFilter: inboundFilterRouter,
   updater: updaterRouter,
   voicemailCreator: voicemailCreatorRouter,
+  debtCollection: debtCollectionRouter,
 
   // ─── Agent Dashboard (for agent role users) ────────────────────────────
   agentDashboard: router({

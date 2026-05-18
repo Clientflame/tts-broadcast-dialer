@@ -54,6 +54,9 @@ import QueueMonitor from "./pages/QueueMonitor";
 import CarrierHealth from "./pages/CarrierHealth";
 import SecurityLogs from "./pages/SecurityLogs";
 import ApiDocs from "./pages/ApiDocs";
+import SkipTracing from "./pages/SkipTracing";
+import Settlements from "./pages/Settlements";
+import CollectionImport from "./pages/CollectionImport";
 
 function Router() {
   return (
@@ -103,6 +106,9 @@ function Router() {
       <Route path={"/carrier-health"} component={CarrierHealth} />
       <Route path={"/security-logs"} component={SecurityLogs} />
       <Route path={"/api-docs"} component={ApiDocs} />
+      <Route path={"/skip-tracing"} component={SkipTracing} />
+      <Route path={"/settlements"} component={Settlements} />
+      <Route path={"/collection-import"} component={CollectionImport} />
       <Route path={"/help"} component={Help} />
       <Route path={"/reset-password"} component={ResetPassword} />
       <Route path={"/verify-email"} component={VerifyEmail} />
