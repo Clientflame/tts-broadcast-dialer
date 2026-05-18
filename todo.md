@@ -1366,3 +1366,4 @@
 - [x] Increase default CPS to 3 (safe carrier limit) — updated database to cpsLimit=3, cpsPacingMs=333
 - [x] Add CPS warm-up ramp — PBX agent ramps from 1 CPS to target over 30s, resets when idle
 - [x] Implement DID rotation — already existed: round-robin + random modes, per-campaign DID pool selection, usage tracking
+- [x] Match old dialer performance: disable AMD by default (already was), CPS to 7, max concurrent to 200. Updated DB, PBX agent, server validation, and UI sliders.

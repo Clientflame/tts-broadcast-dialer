@@ -403,10 +403,10 @@ describe("freepbx.registerAgent", () => {
     await expect(caller.freepbx.registerAgent({ name: "", maxCalls: 5 })).rejects.toThrow();
   });
 
-  it("rejects maxCalls above 10", async () => {
+  it("rejects maxCalls above 200", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 11 })).rejects.toThrow();
+    await expect(caller.freepbx.registerAgent({ name: "test", maxCalls: 201 })).rejects.toThrow();
   });
 
   it("rejects maxCalls below 1", async () => {

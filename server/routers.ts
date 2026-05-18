@@ -4579,9 +4579,9 @@ Respond with a JSON object matching this exact schema.`;
     registerAgent: protectedProcedure
       .input(z.object({
         name: z.string().min(1).max(100),
-        maxCalls: z.number().int().min(1).max(50).default(5),
-        cpsLimit: z.number().int().min(1).max(10).default(1),
-        cpsPacingMs: z.number().int().min(333).max(3000).default(1000),
+        maxCalls: z.number().int().min(1).max(200).default(5),
+        cpsLimit: z.number().int().min(1).max(20).default(1),
+        cpsPacingMs: z.number().int().min(100).max(3000).default(1000),
       }))
       .mutation(async ({ input }) => {
         const crypto = await import("crypto");
@@ -4609,7 +4609,7 @@ Respond with a JSON object matching this exact schema.`;
     updateAgentMaxCalls: protectedProcedure
       .input(z.object({
         agentId: z.string(),
-        maxCalls: z.number().int().min(1).max(50),
+        maxCalls: z.number().int().min(1).max(200),
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentMaxCalls(input.agentId, input.maxCalls);
@@ -4629,7 +4629,7 @@ Respond with a JSON object matching this exact schema.`;
     updateAgentCpsPacing: protectedProcedure
       .input(z.object({
         agentId: z.string(),
-        cpsPacingMs: z.number().int().min(333).max(3000),
+        cpsPacingMs: z.number().int().min(100).max(3000),
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentCpsPacing(input.agentId, input.cpsPacingMs);

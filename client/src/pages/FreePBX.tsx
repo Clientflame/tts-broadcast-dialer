@@ -22,16 +22,20 @@ import {
 
 const SPEED_PRESETS = [
   { label: "1", value: 1 },
-  { label: "3", value: 3 },
   { label: "5", value: 5 },
   { label: "10", value: 10 },
-  { label: "20", value: 20 },
   { label: "25", value: 25 },
-  { label: "40", value: 40 },
   { label: "50", value: 50 },
+  { label: "100", value: 100 },
+  { label: "150", value: 150 },
+  { label: "200", value: 200 },
 ];
 
 const PACING_OPTIONS = [
+  { label: "3 CPS", value: 333 },
+  { label: "5 CPS", value: 200 },
+  { label: "7 CPS", value: 143 },
+  { label: "10 CPS", value: 100 },
   { label: "1 call/sec", value: 1000 },
   { label: "1 call/2sec", value: 2000 },
   { label: "1 call/3sec", value: 3000 },
@@ -708,7 +712,7 @@ export default function FreePBX() {
                       <span>Max Concurrent Calls</span>
                       <span className="font-bold text-primary">{maxCalls}</span>
                     </Label>
-                    <Slider min={1} max={50} step={1} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
+                    <Slider min={1} max={200} step={1} value={[maxCalls]} onValueChange={([v]) => setMaxCalls(v)} />
                     <div className="flex gap-1">
                       {SPEED_PRESETS.map((p) => (
                         <Button
@@ -728,16 +732,16 @@ export default function FreePBX() {
                       <span>Calls Per Second</span>
                       <span className="font-bold text-primary">{cpsLimit} CPS</span>
                     </Label>
-                    <Slider min={1} max={10} step={1} value={[cpsLimit]} onValueChange={([v]) => setCpsLimit(v)} />
+                    <Slider min={1} max={20} step={1} value={[cpsLimit]} onValueChange={([v]) => setCpsLimit(v)} />
                     <div className="flex justify-between">
                       <span className="text-[10px] text-muted-foreground">1 (safe)</span>
-                      <span className="text-[10px] text-muted-foreground">10 (max)</span>
+                      <span className="text-[10px] text-muted-foreground">20 (max)</span>
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs flex items-center justify-between">
                       <span>Call Pacing</span>
-                      <span className="font-bold text-primary">{cpsPacingMs === 1000 ? "1/sec" : cpsPacingMs === 2000 ? "1/2sec" : "1/3sec"}</span>
+                      <span className="font-bold text-primary">{PACING_OPTIONS.find(p => p.value === cpsPacingMs)?.label ?? `${Math.round(1000/cpsPacingMs)} CPS`}</span>
                     </Label>
                     <div className="flex gap-1 mt-1">
                       {PACING_OPTIONS.map((p) => (
@@ -920,7 +924,7 @@ export default function FreePBX() {
                             </div>
                             <Slider
                               min={1}
-                              max={50}
+                              max={200}
                               step={1}
                               value={[agent.maxCalls ?? 5]}
                               onValueChange={([v]) => {
@@ -957,7 +961,7 @@ export default function FreePBX() {
                             </div>
                             <Slider
                               min={1}
-                              max={10}
+                              max={20}
                               step={1}
                               value={[(agent as any).cpsLimit ?? 1]}
                               onValueChange={([v]) => {
@@ -966,7 +970,7 @@ export default function FreePBX() {
                             />
                             <div className="flex justify-between mt-1">
                               <span className="text-[10px] text-muted-foreground">1 (safe)</span>
-                              <span className="text-[10px] text-muted-foreground">10 (max)</span>
+                              <span className="text-[10px] text-muted-foreground">20 (max)</span>
                             </div>
                           </div>
                         </div>
@@ -980,7 +984,7 @@ export default function FreePBX() {
                                 Call Pacing (delay between calls)
                               </span>
                               <span className="text-sm font-bold text-primary">
-                                {((agent as any).cpsPacingMs ?? 1000) === 1000 ? "1/sec" : ((agent as any).cpsPacingMs ?? 1000) === 2000 ? "1/2sec" : "1/3sec"}
+                                {PACING_OPTIONS.find(p => p.value === ((agent as any).cpsPacingMs ?? 1000))?.label ?? `${Math.round(1000/((agent as any).cpsPacingMs ?? 1000))} CPS`}
                               </span>
                             </div>
                             <div className="flex gap-1">
