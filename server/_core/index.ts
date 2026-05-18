@@ -15,6 +15,7 @@ import { pbxRouter, installerRouter } from "../services/pbx-api";
 import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
 import { mountLocalStorageRoute } from "../storage";
 import { restApiRouter } from "../services/rest-api";
+import { audioProxyRouter } from "../services/audio-proxy";
 
 // Rate limiter for auth endpoints — 10 attempts per 15 minutes per IP
 const authRateLimiter = rateLimit({
@@ -68,6 +69,9 @@ async function startServer() {
   app.use("/api/voice-ai", createVoiceAiInstallerRouter());
   // Local filesystem storage route (self-hosted only, no-op when Forge is configured)
   mountLocalStorageRoute(app);
+  // Audio proxy — serves stored audio through Express regardless of storage mode
+  // This ensures browser can always play audio even when S3 URLs are not publicly accessible
+  app.use("/api/audio-proxy", audioProxyRouter);
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
   // External REST API (authenticated with API keys)

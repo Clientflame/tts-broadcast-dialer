@@ -3974,7 +3974,16 @@ Return ONLY the message text, nothing else.`;
         segments: input.segments as ScriptSegment[],
         callbackNumber: input.callbackNumber,
       });
-      return result;
+      // Convert storage URLs to proxy URLs for reliable browser playback.
+      // On Docker/self-hosted (s3 mode), raw S3 URLs may point to internal endpoints
+      // the browser can't reach. The proxy serves audio through Express (same origin).
+      const { toBrowserAudioUrls } = await import("./services/audio-proxy");
+      const browserUrls = toBrowserAudioUrls(result.audioUrls);
+      return {
+        ...result,
+        audioUrls: browserUrls,
+        combinedUrl: result.combinedUrl ? toBrowserAudioUrls([result.combinedUrl])[0] : null,
+      };
     }),
     // Version history
     versions: protectedProcedure.input(z.object({ scriptId: z.number() })).query(async ({ input }) => {

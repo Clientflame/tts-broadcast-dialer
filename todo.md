@@ -1340,3 +1340,5 @@
 - [x] Feature #7: Skip Tracing Integration — connect to skip-tracing APIs to find updated phone numbers for debtors
 - [x] Feature #13: Settlement Offer Engine — tiered settlement offers with dynamic TTS, acceptance tracking
 - [x] Feature #16: Batch Import from Collection Software — CSV import with field mapping for debtor lists
+- [x] Fix: Audio preview playback fails with "Failed to play segment" — TTS generates but URLs are unplayable
+- [x] Fix: Add server-side audio proxy endpoint (/api/audio-proxy/) so preview playback works on all storage modes (forge, s3, local)
