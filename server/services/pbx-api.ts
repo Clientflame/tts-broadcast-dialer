@@ -250,8 +250,11 @@ pbxRouter.post("/report", async (req: Request, res: Response) => {
     }
 
     // Update queue item
+    // Queue status: "completed" for calls that reached a terminal state (answered, no-answer, busy)
+    // "failed" only for actual failures (network error, audio prep failure, timeout)
+    const terminalResults = ["answered", "completed", "no-answer", "busy"];
     const queueUpdate: any = {
-      status: result === "answered" || result === "completed" ? "completed" : "failed",
+      status: terminalResults.includes(result) ? "completed" : "failed",
       result,
       resultDetails: {
         ...(details || {}),

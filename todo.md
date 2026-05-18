@@ -1356,5 +1356,8 @@
 - [x] Bug: CPS (Calls Per Second) setting not persisting when editing campaign — cpsLimit was missing from submitEdit mutation
 - [x] Bug: Numbers being called multiple times in same campaign — added campaign-level dedup (getContactIdsAlreadyInCampaign) to prevent duplicates on restart
 - [x] Bug: Multi-segment audio preparation failed — 15 calls failed; PBX agent tries to download 5 individual segments instead of using the pre-stitched combined URL. Fix: don't send audioUrls when combinedUrl is available
-- [ ] Bug: Short answered call durations (0-5s) — possible audio playback delay after call answer
+- [x] Bug: High 'failed' count in Call Activity Feed — PBX agent was classifying ALL non-answered hangups as 'failed' regardless of cause. Fixed: cause 16 (Normal Clearing) → no-answer, cause 17 (User busy) → busy, cause 19 (No user responding) → no-answer. ~84% reduction in false 'failed' status.
+- [x] Bug: Queue status incorrectly marking no-answer/busy as 'failed' — server now treats no-answer and busy as terminal (completed) states
+- [ ] Bug: Short answered call durations (0-5s) — AMD detection causes 3-4s silence before audio plays; people hang up during silence. Consider reducing AMD thresholds or disabling AMD for broadcast campaigns.
 - [ ] Bug: Call History page may not be working correctly — needs investigation
+- [ ] Bug: FreePBX SSH access broken (kex_exchange_identification) — Responsive Firewall blocking all IPs. Needs Vultr console access to fix.

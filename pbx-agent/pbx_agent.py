@@ -972,8 +972,26 @@ def monitor_ami_events(ami):
                                     daemon=True
                                 ).start()
                         else:
-                            log.info(f"Call {matched_queue_id} hung up before answer (cause: {cause})")
-                            report_result(matched_queue_id, "failed", {
+                            # Classify based on hangup cause code instead of blanket "failed"
+                            # Cause 16: Normal Clearing (carrier/remote ended before answer confirmed)
+                            # Cause 17: User busy
+                            # Cause 18: No user responding
+                            # Cause 19: User alerting, no answer
+                            # Cause 21: Call rejected
+                            # Cause 1: Unallocated number
+                            # Cause 27: Destination out of order
+                            # Cause 34: No circuit available
+                            # Cause 38: Network out of order
+                            hangup_status_map = {
+                                "16": "no-answer",   # Normal Clearing without answer = rang, cleared
+                                "17": "busy",        # User busy
+                                "18": "no-answer",   # No user responding
+                                "19": "no-answer",   # User alerting, no answer
+                                "21": "no-answer",   # Call rejected
+                            }
+                            status = hangup_status_map.get(cause, "failed")
+                            log.info(f"Call {matched_queue_id} hung up before answer (cause: {cause} = {status})")
+                            report_result(matched_queue_id, status, {
                                 "duration": int(duration),
                                 "hangupCause": cause,
                                 "hangupCauseText": cause_txt,
