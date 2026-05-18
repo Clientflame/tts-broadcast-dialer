@@ -54,6 +54,87 @@ function useESTClock() {
 }
 
 // ─── Update Button Component ────────────────────────────────────────────────
+/**
+ * Robust update polling:
+ * 1. Before triggering update, snapshot the current server's startupId via /api/version
+ * 2. After triggering, poll /api/version every 3s
+ * 3. Wait until we see the server go DOWN (poll fails) — this confirms the old container stopped
+ * 4. Then wait until the server comes BACK with a DIFFERENT startupId — this confirms the new container started
+ * 5. Hard-reload the page (bypass cache) so stale JS chunks don't cause "page not found"
+ */
+function startUpdatePolling(
+  preUpdateStartupId: string,
+  setIsRestarting: (v: boolean) => void,
+  setRestartCountdown: (v: number | ((p: number) => number)) => void,
+  setRestartPhase: (v: string) => void,
+) {
+  setIsRestarting(true);
+  setRestartCountdown(30);
+  setRestartPhase("stopping");
+
+  const countdownId = setInterval(() => {
+    setRestartCountdown((prev: number) => {
+      if (prev <= 1) { clearInterval(countdownId); return 0; }
+      return prev - 1;
+    });
+  }, 1000);
+
+  let sawDown = false; // Gate: must see server go down before accepting "back up"
+
+  const pollId = setInterval(async () => {
+    try {
+      const res = await fetch('/api/version', {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        // Server returned error — treat as down
+        sawDown = true;
+        setRestartPhase("restarting");
+        return;
+      }
+      const data = await res.json();
+      const newStartupId = data.startupId || "";
+
+      if (!sawDown && newStartupId === preUpdateStartupId) {
+        // Old server is still running — wait for it to stop
+        return;
+      }
+
+      if (!sawDown && newStartupId !== preUpdateStartupId) {
+        // Server restarted so fast we missed the downtime — that's fine, it's a new instance
+        sawDown = true;
+      }
+
+      // Server is back with a new startupId — update is complete
+      if (sawDown && newStartupId !== preUpdateStartupId) {
+        clearInterval(pollId);
+        clearInterval(countdownId);
+        setRestartPhase("reloading");
+        toast.success('Update complete! Reloading...', { duration: 3000 });
+        // Hard reload: navigate to a cache-busted URL to force fresh assets
+        setTimeout(() => {
+          window.location.href = window.location.pathname + '?_updated=' + Date.now();
+        }, 1500);
+        return;
+      }
+    } catch {
+      // Server unreachable — it's going down or still down
+      sawDown = true;
+      setRestartPhase("restarting");
+    }
+  }, 3000);
+
+  // Safety timeout: stop polling after 3 minutes
+  setTimeout(() => {
+    clearInterval(pollId);
+    clearInterval(countdownId);
+    setIsRestarting(false);
+    toast.info('Server may still be restarting. Please refresh the page manually.', { duration: 10000 });
+  }, 180000);
+}
+
 function UpdateButton() {
   const updateCheck = trpc.updater.checkForUpdate.useQuery(undefined, {
     refetchInterval: 300000, // Check every 5 minutes
@@ -61,75 +142,43 @@ function UpdateButton() {
   });
   const [isRestarting, setIsRestarting] = useState(false);
   const [restartCountdown, setRestartCountdown] = useState(0);
+  const [restartPhase, setRestartPhase] = useState<string>("stopping");
 
   const triggerUpdate = trpc.updater.triggerUpdate.useMutation({
-    onSuccess: (data) => {
+    onMutate: async () => {
+      // Snapshot the current server's startupId BEFORE the update
+      try {
+        const res = await fetch('/api/version', { signal: AbortSignal.timeout(3000), cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          return { preUpdateStartupId: data.startupId || "" };
+        }
+      } catch { /* ignore */ }
+      return { preUpdateStartupId: "" };
+    },
+    onSuccess: (data, _vars, context) => {
       if (data.success) {
         toast.success(data.message, { duration: 5000 });
-        // Show restarting overlay and start polling for server to come back
-        setIsRestarting(true);
-        setRestartCountdown(15);
-        const countdownId = setInterval(() => {
-          setRestartCountdown(prev => {
-            if (prev <= 1) { clearInterval(countdownId); return 0; }
-            return prev - 1;
-          });
-        }, 1000);
-        // Poll the server every 3 seconds until it's back
-        const pollId = setInterval(async () => {
-          try {
-            const res = await fetch('/api/trpc/updater.checkForUpdate', { method: 'GET', signal: AbortSignal.timeout(3000) });
-            if (res.ok) {
-              clearInterval(pollId);
-              clearInterval(countdownId);
-              setIsRestarting(false);
-              toast.success('Update complete! Reloading...', { duration: 3000 });
-              setTimeout(() => window.location.reload(), 1500);
-            }
-          } catch {
-            // Server still restarting, keep polling
-          }
-        }, 3000);
-        // Safety timeout: stop polling after 2 minutes
-        setTimeout(() => {
-          clearInterval(pollId);
-          clearInterval(countdownId);
-          if (isRestarting) {
-            setIsRestarting(false);
-            toast.info('Server may still be restarting. Please refresh the page manually.', { duration: 10000 });
-          }
-        }, 120000);
+        startUpdatePolling(
+          context?.preUpdateStartupId || "",
+          setIsRestarting,
+          setRestartCountdown,
+          setRestartPhase,
+        );
       } else {
         toast.error(data.message, { duration: 8000 });
       }
     },
-    onError: (err) => {
+    onError: (err, _vars, context) => {
       // If the error is due to connection loss (server restarted mid-request), treat as success
       if (err.message.includes('Unexpected end of JSON input') || err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
         toast.info('Update triggered — server is restarting...', { duration: 5000 });
-        setIsRestarting(true);
-        setRestartCountdown(15);
-        const countdownId = setInterval(() => {
-          setRestartCountdown(prev => {
-            if (prev <= 1) { clearInterval(countdownId); return 0; }
-            return prev - 1;
-          });
-        }, 1000);
-        const pollId = setInterval(async () => {
-          try {
-            const res = await fetch('/api/trpc/updater.checkForUpdate', { method: 'GET', signal: AbortSignal.timeout(3000) });
-            if (res.ok) {
-              clearInterval(pollId);
-              clearInterval(countdownId);
-              setIsRestarting(false);
-              toast.success('Update complete! Reloading...', { duration: 3000 });
-              setTimeout(() => window.location.reload(), 1500);
-            }
-          } catch {
-            // Still restarting
-          }
-        }, 3000);
-        setTimeout(() => { clearInterval(pollId); clearInterval(countdownId); setIsRestarting(false); }, 120000);
+        startUpdatePolling(
+          context?.preUpdateStartupId || "",
+          setIsRestarting,
+          setRestartCountdown,
+          setRestartPhase,
+        );
       } else {
         toast.error(`Update failed: ${err.message}`);
       }
@@ -170,6 +219,10 @@ function UpdateButton() {
 
   // Show restarting overlay if update was triggered
   if (isRestarting) {
+    const phaseLabel = restartPhase === "stopping" ? "Stopping old container..."
+      : restartPhase === "restarting" ? "Waiting for new container to start..."
+      : restartPhase === "reloading" ? "Loading updated app..."
+      : "Updating...";
     return (
       <>
         <Badge
@@ -190,18 +243,21 @@ function UpdateButton() {
               <h3 className="text-xl font-semibold mb-2">Updating & Restarting</h3>
               <p className="text-muted-foreground text-sm">
                 The server is pulling the latest version and restarting.
-                This page will automatically reload when the server is back online.
+                This page will automatically reload when the new server is confirmed online.
               </p>
+            </div>
+            <div className="text-sm font-medium text-blue-400">
+              {phaseLabel}
             </div>
             {restartCountdown > 0 && (
               <div className="text-sm text-muted-foreground">
                 Estimated time: <span className="font-mono font-semibold text-foreground">{restartCountdown}s</span>
               </div>
             )}
-            {restartCountdown === 0 && (
+            {restartCountdown === 0 && restartPhase !== "reloading" && (
               <div className="text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin inline mr-1" />
-                Waiting for server to come back online...
+                Waiting for new server instance...
               </div>
             )}
             <div className="pt-2">
@@ -209,7 +265,10 @@ function UpdateButton() {
                 variant="ghost"
                 size="sm"
                 className="text-xs text-muted-foreground"
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  // Force hard reload bypassing cache
+                  window.location.href = window.location.pathname + '?_updated=' + Date.now();
+                }}
               >
                 Refresh manually
               </Button>

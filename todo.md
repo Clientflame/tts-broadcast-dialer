@@ -1335,3 +1335,4 @@
 - [x] Feature: Live Agents - pull active SIP extensions/groups from FreePBX for selection in UI
 - [x] Security: Sanitize all TTS error messages to strip API keys before logging/returning to client
 - [x] Security: Remove ALL process.env.OPENAI_API_KEY and process.env.GOOGLE_TTS_API_KEY fallbacks across entire codebase (routers.ts, voice-ai.ts, voice-ai-installer.ts, script-audio.ts, voicemail-creator.ts)
+- [x] Fix: Update button causes 'page not found' after refresh — rewritten with startupId-based polling, must-see-down gate, and cache-busted reload

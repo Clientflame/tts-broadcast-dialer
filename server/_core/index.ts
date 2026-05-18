@@ -77,11 +77,32 @@ async function startServer() {
     res.json({ ok: true });
   });
   // Version endpoint for external monitoring and health checks
+  // The startupId changes every time the process starts, so the frontend
+  // can detect a genuine restart even when the commit SHA hasn't changed.
+  const STARTUP_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  // In production, __APP_COMMIT_SHA__ is injected by esbuild at build time.
+  // In dev, it's injected by Vite's define config. Use globalThis to avoid TS errors.
+  const commitSha = (() => {
+    try { return (globalThis as any).__APP_COMMIT_SHA__ || ""; } catch { return ""; }
+  })();
+  // Read package.json once at startup (ESM-safe, no require)
+  let pkgVersion = "0.0.0";
+  let pkgName = "tts-broadcast-dialer";
+  try {
+    const fs = await import("fs");
+    const path = await import("path");
+    const pkgPath = path.resolve(import.meta.dirname || ".", "..", "..", "package.json");
+    const pkgJson = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    pkgVersion = pkgJson.version || pkgVersion;
+    pkgName = pkgJson.name || pkgName;
+  } catch { /* fallback to defaults */ }
+
   app.get("/api/version", (_req, res) => {
-    const pkg = require("../../package.json");
     res.json({
-      version: pkg.version,
-      name: pkg.name,
+      version: pkgVersion,
+      name: pkgName,
+      commitSha,
+      startupId: STARTUP_ID,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
     });
