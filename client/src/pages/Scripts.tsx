@@ -286,37 +286,55 @@ function SegmentEditor({
   );
 }
 
-// ─── Voice Test Button ───────────────────────────────────────────────────────
+// ─── Voice Test Button (with IndexedDB caching) ─────────────────────────────────────
+import { getCachedSample, setCachedSample } from "@/lib/voiceSampleCache";
+
 function VoiceTestButton({ voice, provider, speed }: { voice: string; provider: "openai" | "google"; speed: number }) {
   const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceTest = trpc.callScripts.voiceTest.useMutation({
-    onSuccess: (data) => {
-      // Create audio element and play the base64 data URI
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      const audio = new Audio(data.audioDataUri);
-      audioRef.current = audio;
-      audio.onended = () => setPlaying(false);
-      audio.onerror = () => { setPlaying(false); toast.error("Failed to play voice sample"); };
-      audio.play().catch(() => { setPlaying(false); toast.error("Browser blocked audio playback"); });
-      setPlaying(true);
+    onSuccess: async (data) => {
+      // Cache the result for instant replay
+      await setCachedSample(provider, voice, speed, data.audioDataUri);
+      playDataUri(data.audioDataUri);
     },
     onError: (err) => {
       toast.error(`Voice test failed: ${err.message}`);
       setPlaying(false);
+      setLoading(false);
     },
   });
 
-  const handleClick = () => {
+  const playDataUri = (dataUri: string) => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    const audio = new Audio(dataUri);
+    audioRef.current = audio;
+    audio.onended = () => setPlaying(false);
+    audio.onerror = () => { setPlaying(false); toast.error("Failed to play voice sample"); };
+    audio.play().catch(() => { setPlaying(false); toast.error("Browser blocked audio playback"); });
+    setPlaying(true);
+    setLoading(false);
+  };
+
+  const handleClick = async () => {
     if (playing && audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
       setPlaying(false);
       return;
     }
+    setLoading(true);
+    // Check cache first
+    const cached = await getCachedSample(provider, voice, speed);
+    if (cached) {
+      playDataUri(cached);
+      return;
+    }
+    // Not cached — generate via API
     voiceTest.mutate({ voice, provider, speed });
   };
 
@@ -329,13 +347,115 @@ function VoiceTestButton({ voice, provider, speed }: { voice: string; provider: 
           size="icon"
           className="h-8 w-8 shrink-0"
           onClick={handleClick}
-          disabled={voiceTest.isPending}
+          disabled={loading || voiceTest.isPending}
         >
-          {voiceTest.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : playing ? <Pause className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+          {(loading || voiceTest.isPending) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : playing ? <Pause className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="top"><p className="text-xs">Test voice</p></TooltipContent>
+      <TooltipContent side="top"><p className="text-xs">Test voice{loading || voiceTest.isPending ? '' : ' (cached)'}</p></TooltipContent>
     </Tooltip>
+  );
+}
+
+// ─── Compare Voices Panel ───────────────────────────────────────────────────
+function CompareVoicesPanel({ provider: initialProvider, speed }: { provider: "openai" | "google"; speed: number }) {
+  const [provider, setProvider] = useState<"openai" | "google">(initialProvider);
+  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceTest = trpc.callScripts.voiceTest.useMutation();
+
+  const voices = provider === "google" ? GOOGLE_VOICES : OPENAI_VOICES;
+
+  const playVoice = async (voiceId: string) => {
+    // Stop current playback
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (playingVoice === voiceId) {
+      setPlayingVoice(null);
+      return;
+    }
+
+    setLoadingVoice(voiceId);
+    // Check cache first
+    const cached = await getCachedSample(provider, voiceId, speed);
+    if (cached) {
+      playAudio(cached, voiceId);
+      return;
+    }
+    // Generate via API
+    voiceTest.mutate({ voice: voiceId, provider, speed }, {
+      onSuccess: async (data) => {
+        await setCachedSample(provider, voiceId, speed, data.audioDataUri);
+        playAudio(data.audioDataUri, voiceId);
+      },
+      onError: (err) => {
+        toast.error(`Failed: ${err.message}`);
+        setLoadingVoice(null);
+      },
+    });
+  };
+
+  const playAudio = (dataUri: string, voiceId: string) => {
+    const audio = new Audio(dataUri);
+    audioRef.current = audio;
+    audio.onended = () => { setPlayingVoice(null); };
+    audio.onerror = () => { setPlayingVoice(null); toast.error("Playback failed"); };
+    audio.play().catch(() => { setPlayingVoice(null); });
+    setPlayingVoice(voiceId);
+    setLoadingVoice(null);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Provider toggle */}
+      <div className="flex gap-2">
+        <Button variant={provider === "openai" ? "default" : "outline"} size="sm"
+          onClick={() => { setProvider("openai"); setPlayingVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
+          OpenAI
+        </Button>
+        <Button variant={provider === "google" ? "default" : "outline"} size="sm"
+          onClick={() => { setProvider("google"); setPlayingVoice(null); if (audioRef.current) audioRef.current.pause(); }}>
+          Google
+        </Button>
+      </div>
+
+      {/* Voice grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {voices.map(v => (
+          <button
+            key={v.id}
+            onClick={() => playVoice(v.id)}
+            disabled={loadingVoice === v.id}
+            className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+              playingVoice === v.id
+                ? "border-primary bg-primary/10 ring-1 ring-primary"
+                : "border-border hover:border-primary/50 hover:bg-muted/50"
+            }`}
+          >
+            <div className="shrink-0">
+              {loadingVoice === v.id ? (
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              ) : playingVoice === v.id ? (
+                <Pause className="h-5 w-5 text-primary" />
+              ) : (
+                <Play className="h-5 w-5 text-muted-foreground" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{v.label}</p>
+              {"type" in v && <p className="text-xs text-muted-foreground">{(v as any).type}</p>}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center">
+        Samples are cached locally for instant replay. Click any voice to hear it.
+      </p>
+    </div>
   );
 }
 
@@ -355,6 +475,7 @@ export default function Scripts() {
   const [callbackNumber, setCallbackNumber] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [showCompareVoices, setShowCompareVoices] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [versionHistoryScriptId, setVersionHistoryScriptId] = useState<number | null>(null);
   const [metricsScriptId, setMetricsScriptId] = useState<number | null>(null);
@@ -967,10 +1088,16 @@ export default function Scripts() {
             </div>
 
             <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
-              <Button variant="outline" onClick={handlePreview} disabled={previewScript.isPending || segments.length === 0}>
-                {previewScript.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
-                Generate Preview
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handlePreview} disabled={previewScript.isPending || segments.length === 0}>
+                  {previewScript.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />}
+                  Generate Preview
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowCompareVoices(true)}
+                  disabled={segments.filter(s => s.type === "tts" && s.text).length === 0}>
+                  <BarChart3 className="h-3.5 w-3.5 mr-1" /> Compare Voices
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => { setShowCreate(false); setEditingScript(null); resetForm(); }}>
                   Cancel
@@ -983,6 +1110,22 @@ export default function Scripts() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {/* Compare Voices Dialog */}
+        <Dialog open={showCompareVoices} onOpenChange={setShowCompareVoices}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Compare Voices</DialogTitle>
+              <DialogDescription>
+                Listen to the same sample text in different voices to find the best fit for your campaign.
+              </DialogDescription>
+            </DialogHeader>
+            <CompareVoicesPanel
+              provider={segments[0]?.provider || "openai"}
+              speed={parseFloat(segments[0]?.speed || "1.0")}
+            />
+          </DialogContent>
+        </Dialog>
+
         {/* Performance Metrics Summary Card */}
         {scriptMetrics.data && scriptMetrics.data.length > 0 && (
           <Card>

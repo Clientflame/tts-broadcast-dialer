@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Volume2, Plus, Trash2, Play, Pause, Loader2, RefreshCw, FileAudio, PhoneCall, Square, Mic, Pencil, XCircle, Clock, Tag, CheckSquare } from "lucide-react";
 import { ImportExportButtons } from "@/components/ImportExportButtons";
 import VoiceRecorder from "@/components/VoiceRecorder";
+import { getCachedSample, setCachedSample } from "@/lib/voiceSampleCache";
 
 const OPENAI_VOICE_OPTIONS = [
   { id: "alloy", name: "Alloy", desc: "Versatile and well-rounded", gender: "Neutral", tone: "Professional, composed", bestFor: "General announcements, business communications", color: "bg-blue-500/10 border-blue-500/20 text-blue-700" },
@@ -104,23 +105,28 @@ function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor, prov
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  const voiceSample = trpc.audio.voiceSample.useMutation({
-    onSuccess: (data) => {
-      setSampleUrl(data.url);
+  const voiceTestMut = trpc.callScripts.voiceTest.useMutation({
+    onSuccess: async (data) => {
+      await setCachedSample(provider, voice, 1.0, data.audioDataUri);
+      setSampleUrl(data.audioDataUri);
       setLoading(false);
-      const audio = new window.Audio(data.url);
-      audioRef.current = audio;
-      audio.onloadedmetadata = () => setDuration(audio.duration || 0);
-      audio.ontimeupdate = () => {
-        if (audio.duration) setProgress((audio.currentTime / audio.duration) * 100);
-      };
-      audio.onended = () => { setPlaying(false); setProgress(0); };
-      audio.onerror = () => { setPlaying(false); toast.error("Failed to play sample"); };
-      audio.play();
-      setPlaying(true);
+      playFromDataUri(data.audioDataUri);
     },
     onError: (e) => { setLoading(false); toast.error(e.message); },
   });
+
+  const playFromDataUri = (dataUri: string) => {
+    const audio = new window.Audio(dataUri);
+    audioRef.current = audio;
+    audio.onloadedmetadata = () => setDuration(audio.duration || 0);
+    audio.ontimeupdate = () => {
+      if (audio.duration) setProgress((audio.currentTime / audio.duration) * 100);
+    };
+    audio.onended = () => { setPlaying(false); setProgress(0); };
+    audio.onerror = () => { setPlaying(false); toast.error("Failed to play sample"); };
+    audio.play();
+    setPlaying(true);
+  };
 
   useEffect(() => {
     return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
@@ -145,7 +151,16 @@ function VoiceSampleCard({ voice, color, name, desc, gender, tone, bestFor, prov
       return;
     }
     setLoading(true);
-    voiceSample.mutate({ voice: voice as any, speed: 1.0, ttsProvider: provider });
+    // Check cache first
+    getCachedSample(provider, voice, 1.0).then(cached => {
+      if (cached) {
+        setSampleUrl(cached);
+        setLoading(false);
+        playFromDataUri(cached);
+      } else {
+        voiceTestMut.mutate({ voice, provider, speed: 1.0 });
+      }
+    });
   };
 
   return (
