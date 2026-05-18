@@ -1382,6 +1382,8 @@ def main():
     global global_ami
     global_ami = ami  # Make AMI available to heartbeat thread for call control commands
     poll_failures = 0  # Track consecutive poll failures
+    warmup_start_time = None  # Track when first call batch is received for CPS warm-up
+    WARMUP_DURATION = 30  # Seconds to ramp from 1 CPS to target CPS
 
     while True:
         # Connect to AMI if not connected
@@ -1438,11 +1440,26 @@ def main():
                 if server_pacing and isinstance(server_pacing, (int, float)) and server_pacing > 0:
                     CONFIG["cps_pacing_ms"] = int(server_pacing)
 
+                # CPS warm-up ramp: start at 1 CPS, ramp to target over WARMUP_DURATION seconds
+                if warmup_start_time is None:
+                    warmup_start_time = time.time()
+                    log.info(f"CPS warm-up started: ramping from 1 to {CONFIG['cps_limit']} CPS over {WARMUP_DURATION}s")
+
+                elapsed_since_start = time.time() - warmup_start_time
+                target_cps = max(1, CONFIG["cps_limit"])
+
+                if elapsed_since_start < WARMUP_DURATION and target_cps > 1:
+                    # Linear ramp from 1 to target_cps over WARMUP_DURATION seconds
+                    ramp_progress = min(1.0, elapsed_since_start / WARMUP_DURATION)
+                    effective_cps = 1.0 + (target_cps - 1.0) * ramp_progress
+                    log.debug(f"CPS warm-up: {elapsed_since_start:.0f}s elapsed, effective CPS={effective_cps:.1f}")
+                else:
+                    effective_cps = target_cps
+
                 # CPS rate limiting: use pacing interval (ms between calls)
                 # cpsPacingMs takes priority - it's the actual delay between calls
                 pacing_ms = CONFIG["cps_pacing_ms"]
-                cps = max(1, CONFIG["cps_limit"])
-                cps_delay = 1.0 / cps  # e.g., 1 CPS = 1.0s between calls
+                cps_delay = 1.0 / effective_cps  # Apply warm-up adjusted CPS
                 pacing_delay = pacing_ms / 1000.0  # e.g., 2000ms = 2.0s between calls
                 delay_between_calls = max(cps_delay, pacing_delay)  # use the slower of the two
 
@@ -1489,6 +1506,14 @@ def main():
                             report_health_check_result(hc_cid, "failed", "Health check timed out")
                     report_result(qid, "failed", {"error": "Call timed out"})
                     del active_calls[qid]
+
+        # Reset warm-up if agent is idle (no active calls) for fresh ramp on next campaign
+        with active_calls_lock:
+            if len(active_calls) == 0 and warmup_start_time is not None:
+                elapsed = time.time() - warmup_start_time
+                if elapsed > WARMUP_DURATION + 10:  # 10s grace after warmup completes
+                    warmup_start_time = None
+                    log.info("CPS warm-up reset (agent idle)")
 
         time.sleep(CONFIG["poll_interval"])
 

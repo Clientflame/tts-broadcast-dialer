@@ -1362,3 +1362,7 @@
 - [ ] Bug: Call History page may not be working correctly — needs investigation
 - [x] Bug: FreePBX SSH access broken — was using old IP (187.124.153.234). Correct IP is 45.77.75.198 (pbx26.407hosted.com). Updated FREEPBX_HOST secret and successfully updated PBX agent.
 - [x] Bug: Max Speed slider capped at 10 — expanded to 50 with presets 1,3,5,10,20,25,40,50. Updated both frontend slider and server-side validation.
+- [x] Fix misleading 'dialing' UI — calls stay 'pending' until agent claims them, then set to 'dialing'. Accurate real-time state.
+- [x] Increase default CPS to 3 (safe carrier limit) — updated database to cpsLimit=3, cpsPacingMs=333
+- [x] Add CPS warm-up ramp — PBX agent ramps from 1 CPS to target over 30s, resets when idle
+- [x] Implement DID rotation — already existed: round-robin + random modes, per-campaign DID pool selection, usage tracking

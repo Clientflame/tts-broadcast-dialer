@@ -431,9 +431,9 @@ async function processCampaignCalls(campaignId: number, userId: number): Promise
 }
 
 async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: number): Promise<void> {
-  // Update status to dialing
+  // Don't change status here — leave as "pending" until PBX agent claims the call
+  // The agent poll endpoint will set it to "dialing" when claimed
   await db.updateCallLog(callLog.id, {
-    status: "dialing",
     startedAt: Date.now(),
   });
 
