@@ -1374,3 +1374,4 @@
 - [x] Campaign Call History: show live data with phone, contact name, and status info only
 - [x] Live call control: Hangup button on active calls in Campaign Call History table
 - [x] Inline call recording playback in Campaign Call History table
+- [x] PBX agent version display and one-click update button in FreePBX Connection section

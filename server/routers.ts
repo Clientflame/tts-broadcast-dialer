@@ -211,7 +211,7 @@ export const appRouter = router({
         return Date.now() - new Date(a.lastHeartbeat).getTime() < HEARTBEAT_THRESHOLD;
       });
       // Check agent versions
-      const REQUIRED_VERSION = "1.5.0";
+      const REQUIRED_VERSION = "1.9.0";
       const outdatedAgents = onlineAgents.filter((a: any) => {
         const caps = a.capabilities as any;
         return !caps?.agentVersion || caps.agentVersion < REQUIRED_VERSION;
@@ -5457,13 +5457,13 @@ Respond with a JSON object matching this exact schema.`;
   agentAutoUpdate: router({
     checkVersion: protectedProcedure.query(async () => {
       const dbInst = await db.getDb();
-      if (!dbInst) return { currentVersion: null, latestVersion: "2.1.0", needsUpdate: false };
+      if (!dbInst) return { currentVersion: null, latestVersion: "1.9.0", needsUpdate: false };
       const { pbxAgents } = await import("../drizzle/schema");
       const { desc } = await import("drizzle-orm");
       const agents = await dbInst.select().from(pbxAgents).orderBy(desc(pbxAgents.lastHeartbeat)).limit(1);
       const agent = agents[0];
       const currentVersion = agent?.capabilities ? (JSON.parse(agent.capabilities as unknown as string)?.agentVersion || null) : null;
-      const latestVersion = "2.1.0";
+      const latestVersion = "1.9.0";
       return {
         currentVersion,
         latestVersion,

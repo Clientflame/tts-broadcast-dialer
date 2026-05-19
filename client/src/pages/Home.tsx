@@ -1538,58 +1538,62 @@ export default function Home() {
             <CardHeader><CardTitle className="text-base">FreePBX Connection</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">PBX Agents</span>
-                <span className="text-sm font-mono">{amiStatus.data?.agents ?? 0} registered</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Online</span>
-                <span className="text-sm font-mono">{amiStatus.data?.onlineAgents ?? 0} agent(s)</span>
-              </div>
-              <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Status</span>
                 <Badge variant={amiStatus.data?.connected ? "default" : "outline"}>
                   {amiStatus.data?.connected ? "Connected" : "Disconnected"}
                 </Badge>
               </div>
-              {/* Agent version info */}
-              {amiStatus.data?.agentVersions && amiStatus.data.agentVersions.length > 0 && (
-                <div className="space-y-1">
-                  {amiStatus.data.agentVersions.map((av: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">{av.name || `Agent ${i+1}`}</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-mono">v{av.version}</span>
-                        {av.version !== "unknown" && av.version >= (amiStatus.data?.requiredVersion || "1.5.0") ? (
-                          <CheckCircle2 className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <AlertTriangle className="h-3 w-3 text-amber-500" />
-                        )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">PBX Agents</span>
+                <span className="text-sm font-mono">{amiStatus.data?.onlineAgents ?? 0} / {amiStatus.data?.agents ?? 0} online</span>
+              </div>
+
+              {/* Agent version info - always visible */}
+              {amiStatus.data?.agentVersions && amiStatus.data.agentVersions.length > 0 ? (
+                <div className="rounded-md border p-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Agent Version</span>
+                    <span className="text-xs text-muted-foreground">Latest: v{amiStatus.data?.requiredVersion || "1.9.0"}</span>
+                  </div>
+                  {amiStatus.data.agentVersions.map((av: any, i: number) => {
+                    const isUpToDate = av.version !== "unknown" && av.version >= (amiStatus.data?.requiredVersion || "1.9.0");
+                    return (
+                      <div key={i} className="flex items-center justify-between">
+                        <span className="text-sm">{av.name || `Agent ${i+1}`}</span>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={isUpToDate ? "default" : "outline"} className={`text-xs ${isUpToDate ? "bg-green-600" : "border-amber-500 text-amber-600"}`}>
+                            v{av.version}
+                          </Badge>
+                          {isUpToDate ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                          ) : (
+                            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {(amiStatus.data?.outdatedAgents ?? 0) > 0 && (
-                <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-2">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs font-medium text-amber-600">Agent Update Required</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {amiStatus.data?.outdatedAgents} agent(s) need updating to v{amiStatus.data?.requiredVersion} for multi-segment script support.
-                      </p>
+                    );
+                  })}
+                  {/* Update button - shown when any agent is outdated */}
+                  {(amiStatus.data?.outdatedAgents ?? 0) > 0 && (
+                    <div className="pt-1.5 border-t">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+                        <span className="text-xs text-amber-600">
+                          {amiStatus.data?.outdatedAgents} agent(s) outdated — update to v{amiStatus.data?.requiredVersion} for real-time status tracking
+                        </span>
+                      </div>
                       <Button
-                        variant="outline"
+                        variant="default"
                         size="sm"
-                        className="mt-2 h-7 text-xs border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                        className="w-full h-8 text-xs"
                         onClick={() => {
                           agentAutoUpdate.mutate(undefined, {
                             onSuccess: (res: any) => {
                               if (res.success) {
-                                toast.success("Agent updated successfully! It will reconnect shortly.");
-                                amiStatus.refetch();
+                                toast.success("PBX Agent updated to v" + (amiStatus.data?.requiredVersion || "1.9.0") + "! It will reconnect in ~30s.");
+                                setTimeout(() => amiStatus.refetch(), 30000);
                               } else {
-                                toast.error(res.error || "Update failed");
+                                toast.error(res.error || "Update failed — try re-running the installer manually via SSH");
                               }
                             },
                             onError: (err: any) => toast.error(err.message),
@@ -1597,12 +1601,28 @@ export default function Home() {
                         }}
                         disabled={agentAutoUpdate.isPending}
                       >
-                        {agentAutoUpdate.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />Updating...</> : <><Download className="h-3 w-3 mr-1" />Auto-Update Agent</>}
+                        {agentAutoUpdate.isPending ? <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Updating PBX Agent...</> : <><Download className="h-3.5 w-3.5 mr-1.5" />Update PBX Agent to v{amiStatus.data?.requiredVersion}</>}
                       </Button>
                     </div>
+                  )}
+                  {/* Up to date message */}
+                  {(amiStatus.data?.outdatedAgents ?? 0) === 0 && (
+                    <div className="flex items-center gap-1.5 pt-1 text-xs text-green-600">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>All agents up to date</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-md border p-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Agent Version</span>
+                    <span className="text-xs text-muted-foreground">—</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mt-1">No agents reporting. Install the PBX agent from the FreePBX page.</p>
                 </div>
               )}
+
               <Button variant="outline" size="sm" className="w-full mt-2" disabled={amiStatus.isFetching} onClick={() => { amiStatus.refetch(); toast.info("Refreshing status..."); }}>
                 <RefreshCw className={`h-3.5 w-3.5 mr-2 ${amiStatus.isFetching ? "animate-spin" : ""}`} />Refresh Status
               </Button>

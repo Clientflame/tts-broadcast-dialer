@@ -504,6 +504,8 @@ export default function FreePBX() {
     },
   });
 
+  const agentAutoUpdate = trpc.agentAutoUpdate.update.useMutation();
+
   const [agentName, setAgentName] = useState("");
   const [maxCalls, setMaxCalls] = useState(5);
   const [cpsLimit, setCpsLimit] = useState(1);
@@ -852,6 +854,10 @@ export default function FreePBX() {
                               {agent.activeCalls > 0 && (
                                 <> · <span className="text-blue-600">{agent.activeCalls} active call(s)</span></>
                               )}
+                              {" · "}
+                              <span className={`font-mono ${(agent.capabilities as any)?.agentVersion && (agent.capabilities as any).agentVersion >= "1.9.0" ? "text-green-600" : "text-amber-600"}`}>
+                                v{(agent.capabilities as any)?.agentVersion || "unknown"}
+                              </span>
                             </p>
                           </div>
                         </div>
@@ -868,6 +874,33 @@ export default function FreePBX() {
                             >
                               <Download className="h-3 w-3 mr-1" />
                               {showingInstaller ? "Hide" : "Re-install"}
+                            </Button>
+                          )}
+                          {isOnline && (!(agent.capabilities as any)?.agentVersion || (agent.capabilities as any)?.agentVersion < "1.9.0") && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-7 text-xs"
+                              disabled={agentAutoUpdate.isPending}
+                              onClick={() => {
+                                agentAutoUpdate.mutate(undefined, {
+                                  onSuccess: (res: any) => {
+                                    if (res.success) {
+                                      toast.success("PBX Agent updated to v1.9.0! Reconnecting in ~30s.");
+                                      setTimeout(() => { agents.refetch(); amiStatus.refetch(); }, 30000);
+                                    } else {
+                                      toast.error(res.error || "Update failed — try re-running the installer manually");
+                                    }
+                                  },
+                                  onError: (err: any) => toast.error(err.message),
+                                });
+                              }}
+                            >
+                              {agentAutoUpdate.isPending ? (
+                                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Updating...</>
+                              ) : (
+                                <><Download className="h-3 w-3 mr-1" />Update to v1.9.0</>
+                              )}
                             </Button>
                           )}
                           <Button
