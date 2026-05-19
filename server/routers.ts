@@ -3397,6 +3397,9 @@ Return ONLY the message text, nothing else.`;
           duration: details.duration || 0,
           failureReason,
           claimedBy: (item as any).claimedBy || null,
+          // Real-time granular state from PBX agent status updates
+          currentState: (details.currentState as string) || null,
+          stateUpdatedAt: (details.stateUpdatedAt as number) || null,
         };
       }),
   }),

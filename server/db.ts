@@ -653,7 +653,8 @@ export async function getCampaignStats(campaignId: number) {
 
   const completed = (stats["completed"] || 0) + (stats["answered"] || 0);
   const failed = stats["failed"] || 0;
-  const active = (stats["dialing"] || 0) + (stats["ringing"] || 0);
+  const playingAudio = stats["playing_audio"] || 0;
+  const active = (stats["dialing"] || 0) + (stats["ringing"] || 0) + playingAudio;
   const pending = stats["pending"] || 0;
   const cancelled = stats["cancelled"] || 0;
   const queuePending = queueStats["pending"] || 0;
@@ -670,10 +671,11 @@ export async function getCampaignStats(campaignId: number) {
     failed,
     pending,
     cancelled,
-    // Note: "answered" is a terminal status, not active
+    // Active includes dialing + ringing + playing_audio (all in-progress states)
     active,
     dialing: stats["dialing"] || 0,
     ringing: stats["ringing"] || 0,
+    playingAudio,
     contactListTotal,
     queuePending,
     queueClaimed,
@@ -2241,6 +2243,7 @@ export async function getRecentCallActivity(limit = 50) {
     campaignName: campaigns.name,
     audioName: callQueue.audioName,
     callDuration: callQueue.callDuration,
+    resultDetails: callQueue.resultDetails,
     createdAt: callQueue.createdAt,
     updatedAt: callQueue.updatedAt,
   })
@@ -2260,22 +2263,28 @@ export async function getRecentCallActivity(limit = 50) {
     agentMap = Object.fromEntries(agents.map((a: any) => [a.agentId, a.name || a.agentId]));
   }
 
-  return rows.map((r: any) => ({
-    id: r.id,
-    phoneNumber: r.phoneNumber,
-    status: r.status,
-    result: r.result,
-    agentId: r.claimedBy,
-    agentName: r.claimedBy ? (agentMap[r.claimedBy] || r.claimedBy) : null,
-    callerIdStr: r.callerIdStr,
-    campaignId: r.campaignId,
-    campaignName: r.campaignName || "Quick Test",
-    audioName: r.audioName,
-    callDuration: r.callDuration || null,
-    createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
-    updatedAt: r.updatedAt ? new Date(r.updatedAt).getTime() : null,
-    claimedAt: r.claimedAt,
-  }));
+  return rows.map((r: any) => {
+    const details = (r.resultDetails || {}) as Record<string, any>;
+    return {
+      id: r.id,
+      phoneNumber: r.phoneNumber,
+      status: r.status,
+      result: r.result,
+      agentId: r.claimedBy,
+      agentName: r.claimedBy ? (agentMap[r.claimedBy] || r.claimedBy) : null,
+      callerIdStr: r.callerIdStr,
+      campaignId: r.campaignId,
+      campaignName: r.campaignName || "Quick Test",
+      audioName: r.audioName,
+      callDuration: r.callDuration || null,
+      createdAt: r.createdAt ? new Date(r.createdAt).getTime() : null,
+      updatedAt: r.updatedAt ? new Date(r.updatedAt).getTime() : null,
+      claimedAt: r.claimedAt,
+      // Real-time call state from PBX agent status-update endpoint
+      currentState: details.currentState || null,
+      stateUpdatedAt: details.stateUpdatedAt || null,
+    };
+  });
 }
 
 

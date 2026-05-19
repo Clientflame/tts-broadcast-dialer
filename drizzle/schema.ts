@@ -244,6 +244,7 @@ export const callLogs = mysqlTable("call_logs", {
     "dialing",
     "ringing",
     "answered",
+    "playing_audio",
     "busy",
     "no-answer",
     "failed",

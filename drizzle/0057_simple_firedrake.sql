@@ -1,0 +1,1 @@
+ALTER TABLE `call_logs` MODIFY COLUMN `status` enum('pending','dialing','ringing','answered','playing_audio','busy','no-answer','failed','completed','cancelled') NOT NULL DEFAULT 'pending';

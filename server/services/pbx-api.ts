@@ -460,7 +460,7 @@ pbxRouter.post("/heartbeat", async (req: Request, res: Response) => {
     const agentMax = agent.effectiveMaxCalls ?? agent.maxCalls ?? 5;
     // Drain any pending call control commands for this agent
     const commands = drainCommandsForAgent(agent.agentId);
-    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.8.0", pendingCommands: commands.length > 0 ? commands : undefined });
+    res.json({ status: "ok", serverTime: Date.now(), effectiveMaxCalls: agentMax, requiredVersion: "1.9.0", pendingCommands: commands.length > 0 ? commands : undefined });
   } catch (err) {
     res.status(500).json({ error: "Internal error" });
   }
@@ -1088,6 +1088,75 @@ pbxRouter.post("/recording/upload", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[PBX-API] Recording upload error:", err);
     res.status(500).json({ error: "Recording upload failed" });
+  }
+});
+
+// ─── Real-Time Call Status Updates ─────────────────────────────────────────
+// PBX agent sends intermediate status updates as calls progress through states:
+// dialing → ringing → answered → playing_audio → (terminal via /report)
+pbxRouter.post("/status-update", async (req: Request, res: Response) => {
+  try {
+    const { queueId, status, details } = req.body;
+    if (!queueId || !status) {
+      res.status(400).json({ error: "Missing queueId or status" });
+      return;
+    }
+
+    // Validate allowed intermediate statuses
+    const allowedStatuses = ["dialing", "ringing", "answered", "playing_audio"];
+    if (!allowedStatuses.includes(status)) {
+      res.status(400).json({ error: `Invalid intermediate status: ${status}. Allowed: ${allowedStatuses.join(", ")}` });
+      return;
+    }
+
+    const queueItem = await db.getCallQueueItem(queueId);
+    if (!queueItem) {
+      res.status(404).json({ error: "Queue item not found" });
+      return;
+    }
+
+    // Don't update if the queue item is already in a terminal state
+    if (queueItem.status === "completed" || queueItem.status === "failed") {
+      res.json({ status: "ok", skipped: true, reason: "already_terminal" });
+      return;
+    }
+
+    // Update queue item status (keep it in "dialing" bucket for queue tracking)
+    // We store the granular state in resultDetails for real-time display
+    const updateData: any = {
+      resultDetails: {
+        ...(queueItem.resultDetails as Record<string, any> || {}),
+        currentState: status,
+        stateUpdatedAt: Date.now(),
+        ...(details || {}),
+      },
+    };
+
+    // Update the queue status to "dialing" if it's still "claimed"
+    if (queueItem.status === "claimed" || queueItem.status === "pending") {
+      updateData.status = "dialing";
+    }
+
+    await db.updateCallQueueItem(queueId, updateData);
+
+    // Also update the call_log with the intermediate status for accurate campaign stats
+    if (queueItem.callLogId) {
+      const callLogUpdate: any = { status };
+      if (status === "dialing" && !details?.startedAt) {
+        callLogUpdate.startedAt = Date.now();
+      }
+      if (status === "answered" && details?.answeredAt) {
+        callLogUpdate.answeredAt = details.answeredAt;
+      } else if (status === "answered") {
+        callLogUpdate.answeredAt = Date.now();
+      }
+      await db.updateCallLog(queueItem.callLogId, callLogUpdate);
+    }
+
+    res.json({ status: "ok" });
+  } catch (err) {
+    console.error("[PBX-API] Status update error:", err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 

@@ -1370,3 +1370,5 @@
 - [x] CRITICAL BUG: Duplicate calls — fixed: set status to 'dialing' before enqueue + phone-number-level dedup + callLogId dedup in enqueueCall
 - [ ] Bug: AMD still enabled on campaign despite default being off — campaign was created before default change
 - [x] Bug: Audio playback/player not working in Edit Script page — stale TTS cache had local-mode URLs. Fixed: cleared cache, added URL validation in lookupDbCache, added HTML detection in urlToBase64
+- [x] Real-time call status updates from PBX agent (dialing→ringing→answered→playing_audio)
+- [x] Campaign Call History: show live data with phone, contact name, and status info only

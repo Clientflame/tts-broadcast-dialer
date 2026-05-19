@@ -437,7 +437,8 @@ function formatMinutes(totalSecs: number): string {
   return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
 }
 
-function getStatusConfig(status: string, result: string | null) {
+function getStatusConfig(status: string, result: string | null, currentState?: string | null) {
+  // Terminal states
   if (status === "completed" && result === "answered") {
     return { icon: PhoneIncoming, label: "Answered", color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/30" };
   }
@@ -453,7 +454,17 @@ function getStatusConfig(status: string, result: string | null) {
   if (status === "failed" || (status === "completed" && result === "failed")) {
     return { icon: XCircle, label: "Failed", color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/30" };
   }
-  if (status === "dialing") {
+  // In-progress states — use currentState for granular real-time display
+  if (currentState === "playing_audio" || status === "playing_audio") {
+    return { icon: Volume2, label: "Playing Audio", color: "text-purple-500", bg: "bg-purple-500/10", border: "border-purple-500/30" };
+  }
+  if (currentState === "answered") {
+    return { icon: PhoneCall, label: "Connected", color: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/30" };
+  }
+  if (currentState === "ringing" || status === "ringing") {
+    return { icon: Radio, label: "Ringing", color: "text-cyan-500", bg: "bg-cyan-500/10", border: "border-cyan-500/30" };
+  }
+  if (status === "dialing" || currentState === "dialing") {
     return { icon: PhoneOutgoing, label: "Dialing", color: "text-blue-500", bg: "bg-blue-500/10", border: "border-blue-500/30" };
   }
   if (status === "claimed") {
@@ -874,7 +885,7 @@ function CallActivityFeed() {
   }
 
   // Count active/recent stats
-  const activeCount = items.filter(i => i.status === "dialing" || i.status === "claimed").length;
+  const activeCount = items.filter(i => i.status === "dialing" || i.status === "claimed" || i.currentState === "ringing" || i.currentState === "playing_audio" || i.currentState === "answered").length;
   const answeredCount = items.filter(i => i.result === "answered").length;
   const failedCount = items.filter(i => i.result === "failed" || i.result === "congestion").length;
 
@@ -908,9 +919,9 @@ function CallActivityFeed() {
       <CardContent>
         <div ref={feedRef} className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
           {items.map((item, idx) => {
-            const cfg = getStatusConfig(item.status, item.result);
+            const cfg = getStatusConfig(item.status, item.result, item.currentState);
             const Icon = cfg.icon;
-            const isActive = item.status === "dialing" || item.status === "claimed";
+            const isActive = item.status === "dialing" || item.status === "claimed" || item.currentState === "ringing" || item.currentState === "playing_audio";
             const dur = formatDuration(item.callDuration);
 
             return (
@@ -1000,7 +1011,7 @@ function TestCallWidget() {
   // React to call status changes
   useEffect(() => {
     if (!callStatusQuery.data || !callPollingId) return;
-    const { status, result, failureReason, duration } = callStatusQuery.data;
+    const { status, result, failureReason, duration, currentState } = callStatusQuery.data;
     if (status === "completed" || result === "answered") {
       const dur = duration ? ` (${duration}s)` : "";
       toast.success(`Call completed successfully${dur}`);
@@ -1010,8 +1021,16 @@ function TestCallWidget() {
       toast.error(`Call failed: ${failureReason || "Unknown"}`);
       setCallStatusMsg(`Failed: ${failureReason || "Unknown"}`);
       setCallPollingId(null);
+    } else if (currentState === "playing_audio") {
+      setCallStatusMsg("🔊 Playing audio to recipient...");
+    } else if (currentState === "answered") {
+      setCallStatusMsg("✅ Call connected!");
+    } else if (currentState === "ringing") {
+      setCallStatusMsg("📱 Phone is ringing...");
+    } else if (currentState === "dialing" || status === "dialing") {
+      setCallStatusMsg("📞 Dialing number...");
     } else if (status === "claimed") {
-      setCallStatusMsg("PBX agent dialing...");
+      setCallStatusMsg("PBX agent processing...");
     }
   }, [callStatusQuery.data, callPollingId]);
 

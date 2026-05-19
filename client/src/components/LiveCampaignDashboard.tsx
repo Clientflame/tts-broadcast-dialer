@@ -90,7 +90,11 @@ export function LiveCampaignDashboard({ campaignId, open, onClose }: LiveCampaig
                     <span className="text-xs text-muted-foreground">Active Now</span>
                   </div>
                   <p className="text-2xl font-bold tabular-nums text-blue-700 dark:text-blue-400">{d.active || 0}</p>
-                  <p className="text-xs text-blue-600 font-medium">in progress</p>
+                  <p className="text-xs text-blue-600 font-medium">
+                    {(d.dialing > 0 || d.ringing > 0 || d.playingAudio > 0) ? (
+                      [d.dialing > 0 && `${d.dialing} dial`, d.ringing > 0 && `${d.ringing} ring`, d.playingAudio > 0 && `${d.playingAudio} play`].filter(Boolean).join(" / ")
+                    ) : "in progress"}
+                  </p>
                 </CardContent>
               </Card>
 

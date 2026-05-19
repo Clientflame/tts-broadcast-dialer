@@ -24,8 +24,8 @@ from urllib.error import URLError, HTTPError
 from urllib.parse import urlencode
 
 # ─── Version ────────────────────────────────────────────────────────────────
-AGENT_VERSION = "1.8.0"  # Bump this on every agent update
-AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control", "extension_status"]
+AGENT_VERSION = "1.9.0"  # Bump this on every agent update
+AGENT_FEATURES = ["multi_segment_audio", "amd", "voicemail_drop", "ivr_payment", "call_recording", "live_agent_transfer", "remote_call_control", "extension_status", "real_time_status"]
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 CONFIG = {
@@ -688,6 +688,8 @@ def process_call(ami, call_data):
 
     if result and result.get("Response") != "Error":
         log.info(f"Call {queue_id} originated to {phone_number}")
+        # Report dialing status immediately
+        report_status_update(queue_id, "dialing", {"startedAt": int(time.time() * 1000)})
         with active_calls_lock:
             active_calls[queue_id] = {
                 "channel": channel,
@@ -789,6 +791,24 @@ def transfer_to_agent(ami, channel, extension, queue_id):
         return False
 
 
+def report_status_update(queue_id, status, details=None):
+    """Report intermediate call state change to the web app (non-blocking)."""
+    data = {
+        "queueId": queue_id,
+        "status": status,
+        "details": details or {},
+    }
+    try:
+        resp = api_request("status-update", method="POST", data=data)
+        if resp:
+            log.debug(f"Status update for {queue_id}: {status}")
+        else:
+            log.warning(f"Failed to report status update for {queue_id}: {status}")
+    except Exception as e:
+        # Status updates are best-effort; don't let failures affect call flow
+        log.warning(f"Status update error for {queue_id}: {e}")
+
+
 def report_result(queue_id, result, details=None):
     """Report call result back to the web app."""
     data = {
@@ -877,6 +897,10 @@ def monitor_ami_events(ami):
                                         active_calls[matched_queue_id]["auto_hangup_at"] = time.time() + 2
                             else:
                                 log.info(f"Call {matched_queue_id} answered (reason: {reason})")
+                                # Report answered status
+                                report_status_update(matched_queue_id, "answered", {
+                                    "answeredAt": int(time.time() * 1000),
+                                })
                                 # Store the actual channel for Hangup matching
                                 with active_calls_lock:
                                     if matched_queue_id in active_calls:
@@ -887,6 +911,9 @@ def monitor_ami_events(ami):
                                         # Start MixMonitor recording if enabled
                                         if active_calls[matched_queue_id].get("recording_enabled"):
                                             start_recording(ami, channel, matched_queue_id)
+
+                                # Report playing_audio status (audio playback starts immediately after answer)
+                                report_status_update(matched_queue_id, "playing_audio")
                         else:
                             # Call failed (no answer, busy, congestion)
                             reason_map = {
@@ -998,8 +1025,28 @@ def monitor_ami_events(ami):
                             })
 
             elif event in ("Newchannel", "Newstate", "Dial", "Bridge"):
+                # Detect ringing state from Newstate events
+                # ChannelState 5 = Ringing, ChannelStateDesc = "Ringing" or "Ring"
+                channel_state = event_data.get("ChannelState", "")
+                channel_state_desc = event_data.get("ChannelStateDesc", "").lower()
+                channel = event_data.get("Channel", "")
+
+                if channel_state == "5" or "ring" in channel_state_desc:
+                    # Match this ringing event to an active call
+                    trunk = CONFIG["trunk_name"]
+                    if trunk in channel:
+                        matched_queue_id = None
+                        with active_calls_lock:
+                            for qid, info in list(active_calls.items()):
+                                if trunk in info["channel"] and not info.get("ringing_reported"):
+                                    matched_queue_id = qid
+                                    info["ringing_reported"] = True
+                                    break
+                        if matched_queue_id is not None:
+                            report_status_update(matched_queue_id, "ringing")
+
                 # Log interesting events for debugging
-                log.debug(f"Event {event}: {event_data.get('Channel', '')} {event_data.get('ChannelState', '')}")
+                log.debug(f"Event {event}: {event_data.get('Channel', '')} {event_data.get('ChannelState', '')} {event_data.get('ChannelStateDesc', '')}")
 
         except Exception as e:
             if ami.connected:

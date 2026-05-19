@@ -1128,9 +1128,10 @@ export default function Campaigns() {
   const [callHistorySearch, setCallHistorySearch] = useState("");
   const [callHistorySearchInput, setCallHistorySearchInput] = useState("");
   const CALL_HISTORY_PAGE_SIZE = 25;
+  const isRunning = campaignDetail.data?.status === "running";
   const callHistory = trpc.callLogs.paginated.useQuery(
     { campaignId: detailId!, limit: CALL_HISTORY_PAGE_SIZE, offset: callHistoryPage * CALL_HISTORY_PAGE_SIZE, status: callHistoryFilter !== "all" ? callHistoryFilter : undefined, search: callHistorySearch || undefined },
-    { enabled: !!detailId, refetchInterval: detailId ? 8000 : false }
+    { enabled: !!detailId, refetchInterval: detailId ? (isRunning ? 3000 : 8000) : false }
   );
 
   const createCampaign = trpc.campaigns.create.useMutation({
@@ -1642,7 +1643,11 @@ export default function Campaigns() {
                 {stats.active > 0 && (
                   <div className="flex items-center gap-2 text-sm text-primary">
                     <Loader2 className="h-4 w-4 animate-spin" />{stats.active} active call{stats.active > 1 ? "s" : ""} in progress
-                    {stats.dialing > 0 && <span className="text-muted-foreground">({stats.dialing} dialing, {stats.ringing} ringing)</span>}
+                    {(stats.dialing > 0 || stats.ringing > 0 || stats.playingAudio > 0) && (
+                      <span className="text-muted-foreground">
+                        ({[stats.dialing > 0 && `${stats.dialing} dialing`, stats.ringing > 0 && `${stats.ringing} ringing`, stats.playingAudio > 0 && `${stats.playingAudio} playing`].filter(Boolean).join(", ")})
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -1715,7 +1720,10 @@ export default function Campaigns() {
           <Card>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle className="text-base">Call History</CardTitle>
+                <CardTitle className="text-base flex items-center gap-2">
+                  Call History
+                  {isRunning && <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-green-600 bg-green-50 dark:bg-green-950/30 animate-pulse border-green-300">LIVE</Badge>}
+                </CardTitle>
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -1736,6 +1744,7 @@ export default function Campaigns() {
                       <SelectItem value="pending">Pending</SelectItem>
                       <SelectItem value="dialing">Dialing</SelectItem>
                       <SelectItem value="ringing">Ringing</SelectItem>
+                      <SelectItem value="playing_audio">Playing Audio</SelectItem>
                       <SelectItem value="answered">Answered</SelectItem>
                       <SelectItem value="completed">Completed</SelectItem>
                       <SelectItem value="busy">Busy</SelectItem>
@@ -1759,17 +1768,13 @@ export default function Campaigns() {
               ) : (
                 <>
                   <div className="overflow-x-auto">
-                  <Table className="min-w-[800px]">
+                  <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[140px]">Phone Number</TableHead>
+                        <TableHead className="w-[150px]">Phone Number</TableHead>
                         <TableHead>Contact</TableHead>
-                        <TableHead className="w-[100px]">Status</TableHead>
-                        <TableHead className="w-[80px]">Duration</TableHead>
-                        <TableHead className="w-[60px]">Attempt</TableHead>
-                        <TableHead className="w-[100px]">Caller ID</TableHead>
-                        <TableHead className="w-[80px]">AMD</TableHead>
-                        <TableHead className="w-[150px]">Time</TableHead>
+                        <TableHead className="w-[120px]">Status</TableHead>
+                        <TableHead className="w-[100px]">Info</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1781,32 +1786,41 @@ export default function Campaigns() {
                           "no-answer": "text-orange-600 bg-orange-50 dark:bg-orange-950/30",
                           failed: "text-red-600 bg-red-50 dark:bg-red-950/30",
                           pending: "text-slate-600 bg-slate-50 dark:bg-slate-950/30",
-                          dialing: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
-                          ringing: "text-blue-600 bg-blue-50 dark:bg-blue-950/30",
+                          dialing: "text-blue-600 bg-blue-50 dark:bg-blue-950/30 animate-pulse",
+                          ringing: "text-amber-600 bg-amber-50 dark:bg-amber-950/30 animate-pulse",
+                          playing_audio: "text-purple-600 bg-purple-50 dark:bg-purple-950/30 animate-pulse",
                           cancelled: "text-gray-500 bg-gray-50 dark:bg-gray-950/30",
                         };
+                        const statusLabel: Record<string, string> = {
+                          dialing: "Dialing...",
+                          ringing: "Ringing...",
+                          playing_audio: "Playing Audio",
+                          answered: "Answered",
+                          completed: "Completed",
+                          busy: "Busy",
+                          "no-answer": "No Answer",
+                          failed: "Failed",
+                          pending: "Pending",
+                          cancelled: "Cancelled",
+                        };
+                        // Info column: show duration for completed/answered, error for failed, time for others
+                        const infoText = (log.status === "answered" || log.status === "completed") && log.duration
+                          ? `${log.duration}s`
+                          : log.status === "failed" && log.errorMessage
+                          ? log.errorMessage.slice(0, 20)
+                          : log.startedAt
+                          ? new Date(log.startedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                          : "—";
                         return (
-                          <TableRow key={log.id}>
-                            <TableCell className="font-mono text-xs">{log.phoneNumber}</TableCell>
-                            <TableCell className="text-xs truncate max-w-[120px]">{log.contactName || "—"}</TableCell>
+                          <TableRow key={log.id} className={["dialing", "ringing", "playing_audio"].includes(log.status) ? "bg-blue-50/30 dark:bg-blue-950/10" : ""}>
+                            <TableCell className="font-mono text-sm">{log.phoneNumber}</TableCell>
+                            <TableCell className="text-sm truncate max-w-[180px]">{log.contactName || "—"}</TableCell>
                             <TableCell>
-                              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusColor[log.status] || ""}`}>
-                                {log.status}
+                              <Badge variant="outline" className={`text-xs px-2 py-0.5 ${statusColor[log.status] || ""}`}>
+                                {statusLabel[log.status] || log.status}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-xs">{log.duration ? `${log.duration}s` : "—"}</TableCell>
-                            <TableCell className="text-xs text-center">{log.attempt}</TableCell>
-                            <TableCell className="font-mono text-[10px]">{log.callerIdUsed || "—"}</TableCell>
-                            <TableCell className="text-xs">
-                              {log.amdResult ? (
-                                <Badge variant="outline" className={`text-[10px] px-1 py-0 ${log.amdResult === "HUMAN" ? "text-green-600" : log.amdResult === "MACHINE" ? "text-orange-600" : "text-gray-500"}`}>
-                                  {log.amdResult}{log.voicemailDropped ? " (VM)" : ""}
-                                </Badge>
-                              ) : "—"}
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
-                              {log.startedAt ? new Date(log.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : log.createdAt ? new Date(log.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
-                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{infoText}</TableCell>
                           </TableRow>
                         );
                       })}
