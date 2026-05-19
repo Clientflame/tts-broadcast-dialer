@@ -568,6 +568,7 @@ export async function getCampaignCallLogsPaginated(opts: {
     ivrAction: callLogs.ivrAction,
     amdResult: callLogs.amdResult,
     voicemailDropped: callLogs.voicemailDropped,
+    asteriskChannel: callLogs.asteriskChannel,
     startedAt: callLogs.startedAt,
     answeredAt: callLogs.answeredAt,
     endedAt: callLogs.endedAt,
@@ -1757,6 +1758,14 @@ export async function getCallQueueItem(id: number) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(callQueue).where(eq(callQueue.id, id)).limit(1);
+  return result[0];
+}
+export async function getCallQueueItemByCallLogId(callLogId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(callQueue)
+    .where(and(eq(callQueue.callLogId, callLogId), inArray(callQueue.status, ["pending", "claimed", "dialing", "in_progress"])))
+    .limit(1);
   return result[0];
 }
 

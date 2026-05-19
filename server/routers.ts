@@ -1511,6 +1511,32 @@ export const appRouter = router({
       const csv = [headers.join(","), ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
       return { csv, campaignName: campaign.name, totalRows: logs.length };
     }),
+    hangup: protectedProcedure.input(z.object({
+      callLogId: z.number(),
+      phoneNumber: z.string(),
+      channel: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      // Find the active queue item for this call log
+      const queueItem = await db.getCallQueueItemByCallLogId(input.callLogId);
+      const queueId = queueItem?.id || 0;
+      const channel = input.channel || queueItem?.channel || undefined;
+      const { enqueueCommand } = await import("./services/call-control");
+      const cmd = enqueueCommand({
+        type: "hangup",
+        queueId,
+        channel,
+        phoneNumber: input.phoneNumber,
+        issuedBy: ctx.user.name || ctx.user.openId,
+      });
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: "call_hangup",
+        resource: "call",
+        resourceId: input.callLogId,
+        details: { phoneNumber: input.phoneNumber, channel, commandId: cmd.id, source: "call_history" },
+      });
+      return { success: true, commandId: cmd.id };
+    }),
   }),
 
   auditLogs: router({

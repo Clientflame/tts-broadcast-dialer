@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
-  Search, ChevronLeft, ChevronRight, Activity,
+  Search, ChevronLeft, ChevronRight, Activity, PhoneOff,
 } from "lucide-react";
 import { LiveCampaignDashboard } from "@/components/LiveCampaignDashboard";
 
@@ -1134,6 +1134,11 @@ export default function Campaigns() {
     { enabled: !!detailId, refetchInterval: detailId ? (isRunning ? 3000 : 8000) : false }
   );
 
+  const hangupCall = trpc.callLogs.hangup.useMutation({
+    onSuccess: () => { toast.success("Hangup command sent"); callHistory.refetch(); },
+    onError: (e) => toast.error(`Hangup failed: ${e.message}`),
+  });
+
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
     onError: (e) => toast.error(e.message),
@@ -1643,9 +1648,9 @@ export default function Campaigns() {
                 {stats.active > 0 && (
                   <div className="flex items-center gap-2 text-sm text-primary">
                     <Loader2 className="h-4 w-4 animate-spin" />{stats.active} active call{stats.active > 1 ? "s" : ""} in progress
-                    {(stats.dialing > 0 || stats.ringing > 0 || stats.playingAudio > 0) && (
+                    {((stats.dialing || 0) > 0 || (stats.ringing || 0) > 0 || (stats.playingAudio || 0) > 0) && (
                       <span className="text-muted-foreground">
-                        ({[stats.dialing > 0 && `${stats.dialing} dialing`, stats.ringing > 0 && `${stats.ringing} ringing`, stats.playingAudio > 0 && `${stats.playingAudio} playing`].filter(Boolean).join(", ")})
+                        ({[(stats.dialing || 0) > 0 && `${stats.dialing} dialing`, (stats.ringing || 0) > 0 && `${stats.ringing} ringing`, (stats.playingAudio || 0) > 0 && `${stats.playingAudio} playing`].filter(Boolean).join(", ")})
                       </span>
                     )}
                   </div>
@@ -1775,6 +1780,7 @@ export default function Campaigns() {
                         <TableHead>Contact</TableHead>
                         <TableHead className="w-[120px]">Status</TableHead>
                         <TableHead className="w-[100px]">Info</TableHead>
+                        <TableHead className="w-[60px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1821,6 +1827,24 @@ export default function Campaigns() {
                               </Badge>
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground">{infoText}</TableCell>
+                            <TableCell>
+                              {["dialing", "ringing", "playing_audio", "answered"].includes(log.status) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                  onClick={() => {
+                                    if (confirm(`Hang up call to ${log.phoneNumber}?`)) {
+                                      hangupCall.mutate({ callLogId: log.id, phoneNumber: log.phoneNumber, channel: log.asteriskChannel || undefined });
+                                    }
+                                  }}
+                                  disabled={hangupCall.isPending}
+                                  title="Hang up this call"
+                                >
+                                  <PhoneOff className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
