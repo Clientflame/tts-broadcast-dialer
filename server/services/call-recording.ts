@@ -236,6 +236,50 @@ export async function getRecording(recordingId: number) {
   return recording || null;
 }
 
+// ─── Get Recording by Call Log ID ───────────────────────────────────────────
+
+export async function getRecordingByCallLogId(callLogId: number) {
+  const db = (await getDb())!;
+  const [recording] = await db
+    .select({
+      id: callRecordings.id,
+      s3Url: callRecordings.s3Url,
+      duration: callRecordings.duration,
+      status: callRecordings.status,
+      recordingType: callRecordings.recordingType,
+      mimeType: callRecordings.mimeType,
+    })
+    .from(callRecordings)
+    .where(and(eq(callRecordings.callLogId, callLogId), eq(callRecordings.status, "ready")))
+    .orderBy(desc(callRecordings.createdAt))
+    .limit(1);
+  return recording || null;
+}
+
+// ─── Get Recordings by Call Log IDs (batch) ─────────────────────────────────
+
+export async function getRecordingsByCallLogIds(callLogIds: number[]) {
+  if (callLogIds.length === 0) return [];
+  const db = (await getDb())!;
+  const { inArray } = await import("drizzle-orm");
+  const recordings = await db
+    .select({
+      id: callRecordings.id,
+      callLogId: callRecordings.callLogId,
+      s3Url: callRecordings.s3Url,
+      duration: callRecordings.duration,
+      status: callRecordings.status,
+      mimeType: callRecordings.mimeType,
+    })
+    .from(callRecordings)
+    .where(and(
+      inArray(callRecordings.callLogId, callLogIds),
+      eq(callRecordings.status, "ready")
+    ))
+    .orderBy(desc(callRecordings.createdAt));
+  return recordings;
+}
+
 // ─── Delete Recording ───────────────────────────────────────────────────────
 
 export async function deleteRecording(recordingId: number) {

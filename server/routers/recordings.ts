@@ -10,6 +10,7 @@ import {
   deleteRecording,
   getRecordingStats,
   applyRetentionPolicy,
+  getRecordingsByCallLogIds,
 } from "../services/call-recording";
 import { getDb } from "../db";
 import {
@@ -79,6 +80,21 @@ export const recordingsRouter = router({
   applyRetention: protectedProcedure.mutation(async ({ ctx }) => {
     return applyRetentionPolicy();
   }),
+
+  // Get recordings for a batch of call log IDs (used in call history table)
+  byCallLogIds: protectedProcedure
+    .input(z.object({ callLogIds: z.array(z.number()).max(100) }))
+    .query(async ({ input }) => {
+      const recordings = await getRecordingsByCallLogIds(input.callLogIds);
+      // Return as a map: callLogId -> recording info
+      const map: Record<number, { id: number; s3Url: string; duration: number | null; mimeType: string }> = {};
+      for (const rec of recordings) {
+        if (rec.callLogId && !map[rec.callLogId]) {
+          map[rec.callLogId] = { id: rec.id, s3Url: rec.s3Url, duration: rec.duration, mimeType: rec.mimeType };
+        }
+      }
+      return map;
+    }),
 });
 
 // ─── Wallboard Router ───────────────────────────────────────────────────────

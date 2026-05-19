@@ -1373,3 +1373,4 @@
 - [x] Real-time call status updates from PBX agent (dialing→ringing→answered→playing_audio)
 - [x] Campaign Call History: show live data with phone, contact name, and status info only
 - [x] Live call control: Hangup button on active calls in Campaign Call History table
+- [x] Inline call recording playback in Campaign Call History table

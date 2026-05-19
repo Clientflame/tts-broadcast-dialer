@@ -1139,6 +1139,21 @@ export default function Campaigns() {
     onError: (e) => toast.error(`Hangup failed: ${e.message}`),
   });
 
+  // Fetch recordings for the current page of call logs
+  const callLogIds = useMemo(() => {
+    if (!callHistory.data?.items) return [];
+    return callHistory.data.items
+      .filter((l: any) => ["answered", "completed"].includes(l.status))
+      .map((l: any) => l.id);
+  }, [callHistory.data?.items]);
+
+  const recordingsMap = trpc.recordings.byCallLogIds.useQuery(
+    { callLogIds },
+    { enabled: callLogIds.length > 0, staleTime: 30000 }
+  );
+
+  const [playingRecordingId, setPlayingRecordingId] = useState<number | null>(null);
+
   const createCampaign = trpc.campaigns.create.useMutation({
     onSuccess: () => { utils.campaigns.list.invalidate(); setCreateOpen(false); setForm({ ...DEFAULT_FORM }); toast.success("Campaign created"); },
     onError: (e) => toast.error(e.message),
@@ -1817,7 +1832,9 @@ export default function Campaigns() {
                           : log.startedAt
                           ? new Date(log.startedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
                           : "—";
+                        const recording = recordingsMap.data?.[log.id];
                         return (
+                          <>
                           <TableRow key={log.id} className={["dialing", "ringing", "playing_audio"].includes(log.status) ? "bg-blue-50/30 dark:bg-blue-950/10" : ""}>
                             <TableCell className="font-mono text-sm">{log.phoneNumber}</TableCell>
                             <TableCell className="text-sm truncate max-w-[180px]">{log.contactName || "—"}</TableCell>
@@ -1826,7 +1843,22 @@ export default function Campaigns() {
                                 {statusLabel[log.status] || log.status}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{infoText}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <span>{infoText}</span>
+                                {recording && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 w-5 p-0 text-primary hover:text-primary/80"
+                                    onClick={() => setPlayingRecordingId(playingRecordingId === log.id ? null : log.id)}
+                                    title={playingRecordingId === log.id ? "Hide player" : "Play recording"}
+                                  >
+                                    {playingRecordingId === log.id ? <StopCircle className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
                             <TableCell>
                               {["dialing", "ringing", "playing_audio", "answered"].includes(log.status) && (
                                 <Button
@@ -1846,6 +1878,27 @@ export default function Campaigns() {
                               )}
                             </TableCell>
                           </TableRow>
+                          {playingRecordingId === log.id && recording && (
+                            <TableRow key={`${log.id}-player`}>
+                              <TableCell colSpan={5} className="py-2 px-4 bg-muted/30">
+                                <div className="flex items-center gap-3">
+                                  <audio
+                                    controls
+                                    autoPlay
+                                    className="h-8 w-full max-w-md"
+                                    src={recording.s3Url}
+                                    onEnded={() => setPlayingRecordingId(null)}
+                                  />
+                                  {recording.duration && (
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                      {Math.floor(recording.duration / 60)}:{String(recording.duration % 60).padStart(2, "0")}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                          </>
                         );
                       })}
                     </TableBody>
