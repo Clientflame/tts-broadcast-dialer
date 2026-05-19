@@ -807,8 +807,8 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(75).optional(),
-      cpsLimit: z.number().min(1).max(10).optional(),
+      maxConcurrentCalls: z.number().min(1).max(200).optional(),
+      cpsLimit: z.number().min(1).max(20).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -891,8 +891,8 @@ export const appRouter = router({
       targetStates: z.array(z.string()).optional(),
       targetAreaCodes: z.array(z.string()).optional(),
       useGeoCallerIds: z.number().min(0).max(1).optional(),
-      maxConcurrentCalls: z.number().min(1).max(75).optional(),
-      cpsLimit: z.number().min(1).max(10).optional(),
+      maxConcurrentCalls: z.number().min(1).max(200).optional(),
+      cpsLimit: z.number().min(1).max(20).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       scheduledAt: z.number().optional(),
@@ -3015,7 +3015,7 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(75).optional(),
+      maxConcurrentCalls: z.number().min(1).max(200).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -3033,7 +3033,7 @@ export const appRouter = router({
       messageText: z.string().optional(),
       voice: voiceEnum.optional(),
       ttsProvider: z.enum(["openai", "google"]).optional(),
-      maxConcurrentCalls: z.number().min(1).max(75).optional(),
+      maxConcurrentCalls: z.number().min(1).max(200).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
       timezone: z.string().max(64).optional(),
@@ -4626,7 +4626,7 @@ Respond with a JSON object matching this exact schema.`;
     updateAgentCps: protectedProcedure
       .input(z.object({
         agentId: z.string(),
-        cpsLimit: z.number().int().min(1).max(10),
+        cpsLimit: z.number().int().min(1).max(20),
       }))
       .mutation(async ({ input }) => {
         await db.updatePbxAgentCps(input.agentId, input.cpsLimit);
