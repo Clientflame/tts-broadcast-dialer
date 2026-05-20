@@ -1375,3 +1375,12 @@
 - [x] Live call control: Hangup button on active calls in Campaign Call History table
 - [x] Inline call recording playback in Campaign Call History table
 - [x] PBX agent version display and one-click update button in FreePBX Connection section
+- [x] CollectIQ Auto-Sync worker deployed to pbx26 (replaces missing vtiger_auto_sync_worker)
+- [x] Inbound call screening fixed on pbx26 — vtiger_screen.py AGI: fixed python shebang, initialized SQLite cache DB, created TTS rejection audio
+- [x] Queue 5000 routing fixed on pbx26 — ext-queues-screen context in extensions_custom.conf does CollectIQ screening then routes to queue
+- [x] Rename all Vtiger references to CollectIQ in pbx26 admin panel (JS functions, headings)
+- [x] PBX agent v1.9.0 deployed and running on pbx26 (confirmed active, reporting to app26.407hosted.com)
+- [x] Fix freepbx_host in app_settings — updated from 192.168.1.100 to pbx26.407hosted.com
+- [x] Add SSH credentials to app_settings (freepbx_ssh_user, freepbx_ssh_password) for reliable SSH access
+- [x] Bridge health scheduler updated to use app_settings as fallback for SSH credentials
+- [ ] Add /api/phone-lookup/export endpoint to CollectIQ (needed for Auto-Sync bulk cache)

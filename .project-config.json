@@ -13,10 +13,10 @@
   "experiments": null,
   "git_remote": {
     "repo_url": "s3://vida-prod-gitrepo/webdev-git/310519663328121958/QaP68Z2AATogwpccsoDAFH",
-    "access_key_id": "ASIAZV3A2ECZAWV33OGE",
-    "secret_access_key": "OKQ8XtR6UQ03q1WZFZA76uFLwv6lp8xuYivdOqEg",
-    "session_token": "IQoJb3JpZ2luX2VjEPn//////////wEaCXVzLWVhc3QtMSJIMEYCIQCe/WyCD0OcUwqb9RTM20w7PLdlsiHYLynHg8Rlg2VlPQIhAJcCm929xew8T93hBa6giDA/rQiJ3u5YwZAQWwMzp3Z8Kv8DCML//////////wEQBBoMNjY1Mzg2MDk4ODY2IgwFyzCiVo01WigT4DYq0wPMzYT9Mu3EHDAEf82fZEf/QlxFSz4MSCuGtzn2Pv2BfJ+R5tANVNSIxfMvDe5dIAQsg3hjPTKQgJtbIMEnNAnQPQ9nTdu4SzRUzOg7dMyxGnfLtzfHb6NhXIKYR1l68Ry+HWqipwysuU1/hjJmmISmkYOP4UBnSaiu0TQaRCdk5zV4frtbQiFKcNa7NLUUlrilki/TyOee1WgbY8CQkTbonNg9UtcNaOgj1Ik/Bnmxh4qE1wzFk2Lh0VX7Zn/4bgpswigQPidzOfVpvSV3rhU+wXRcnkBjtBD3I0ZFZfSF9PVLDiqIJukl4g6+ORjvC1OWAOIW1Gnv0bqRd6ECKxLfhLMw8JdFJ5d2IFjiarMqlIBgK2nJld/neetA/crVNvKqUm2lYjNaZdOxIj0JXFNwhzILVasvwmv1SoEkLBkUC3fC8BhUegX5Z3CXmAioDH83HUEvslMME3qP5liNwE6J+gtc1mfD1HsPNvIFX8XZfnRR65dhNBkF5HbX0x/5+BcLTvyYgbqyahBtC0x6TDeeRwyN5aJH6neLdhpRnorJy37fAi/1nY3Ou40bwALOQoJfE6BtcrX+WJmbBxhsa/rj6ddH+Kw7LZ6ufgEVUhR1LN/cKTDsga3QBjqcAeQ40T0l4/2kyDgnEf4ZLrGhvjU938WfarATLp41vPTt6nb/Cxspp7st4OV0iVwZg4Lv/IDOPDSDfOM8nga64Jodpp3JONKRWLP9Ixq+4FOPR3bSqKniF17kLOWW1Ykya+tgu8YkrJoaQwwzljXtolQGfE313EvuYk5ETnw1IFktP6niMDEryK70ZRpQWp+kZEBERT5rRvZ0DzvuvQ==",
-    "expiration": "2026-05-19T04:40:12.000Z"
+    "access_key_id": "ASIAZV3A2ECZJPACPV5W",
+    "secret_access_key": "UjGNgLBpe6vlLe5qJ9BLC+avOpAk5aGrFXmsKdeh",
+    "session_token": "IQoJb3JpZ2luX2VjECcaCXVzLWVhc3QtMSJGMEQCIGmJjY4KWKsfM8KNsBtTbosdXfveucGcIr5BUApsTweDAiB/hdyoSkSOyyAqmcFb+oopS00RKVyp7WmZc8X7A8hzKCr/Awjw//////////8BEAQaDDY2NTM4NjA5ODg2NiIMFBat/S4ZJUJaR5YgKtMDkARyxzLT1YvNLgkNz0zm/R3neEw49+NOiwQs9i+w37OVTNiUDzciK75c2KX396budqjC2m06dyXqydExK9BkTsGBc/dEH4wAs4dkytXeHksldQzwIgExwcHgCPnyN06FJh4shU/eC+AXF1A8e0jH/2akbxo1+iqMNhZN/GDhwyDMvJ6kbJaE3KC1UQS2VPF0XQhgs7XSjFhs5Tig6h8UMSQ6k6FB6p5Qz1EVphMaaEdu3Bst/h2ytzGbvqVHAXsCWRQemyty6Ek2MBbZhItOzG4YS3qHdL1hZqn2dxcDm6CSL84ukGI7/nzD1qXh6XPmBmqCvuG5YGnPEmuvy8fIc4Uh3rzC3ZD/PH0vAss37u3M/id5+JtwN8ZIVpDUmjR1BevjUf8qf5vayGDPg+4LbBsuHW2MD4HR+an4sQo6ji3L+q+Xc3CH00qIc7vhwj1ltR+NI++qDUU5Pr+ws24G5H3R5tIJYSWwCZh3wHqnvDD7V3JJ/P2Jm7zy8GNoFiuV+Pe6PMYnyAMIAxxIFNKgngc807mLGjeOs/XtmQCoGjcpAF47ipH6/p/GLrAJWRHwOKwaaYAImnsWNRliDI7S6wIXbXHYp7bOaYwhCaQb8OIYhJYww4q30AY6ngEAoyr4Ka3zG0hqJlvgjq/pyFJ9uC8kKD4lYiwo1XPGIUYfPL9WCdhev2TxA8fDJqAALlsIZYkj72GwNroj0CrEh19tpPI1s4mcm77U0uhWNGju/OmfUW/3i7kbxaI/umDjsRUNnSzBdTpR+KHTnbX2/ffjGMp36D/DhCRPera0bJFqNdLHxvuD8QQE5qs/Z8i69uSrnv/JQBOtudFVkA==",
+    "expiration": "2026-05-21T02:29:23.000Z"
   },
   "name": "tts-broadcast-dialer",
   "path": "/home/ubuntu/tts-broadcast-dialer",

@@ -292,7 +292,7 @@ export const dncList = mysqlTable("dnc_list", {
   userId: int("userId").notNull(),
   phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
   reason: varchar("reason", { length: 255 }),
-  source: mysqlEnum("source", ["manual", "import", "opt-out", "complaint", "disconnected"]).default("manual").notNull(),
+  source: mysqlEnum("source", ["manual", "import", "opt-out", "complaint", "disconnected", "quarantine"]).default("manual").notNull(),
   addedBy: varchar("addedBy", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

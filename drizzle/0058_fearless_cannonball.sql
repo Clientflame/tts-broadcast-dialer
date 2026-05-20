@@ -1,0 +1,1 @@
+ALTER TABLE `dnc_list` MODIFY COLUMN `source` enum('manual','import','opt-out','complaint','disconnected','quarantine') NOT NULL DEFAULT 'manual';

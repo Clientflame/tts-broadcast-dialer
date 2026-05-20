@@ -4507,7 +4507,7 @@ Respond with a JSON object matching this exact schema.`;
       if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI generation failed - no response" });
 
       try {
-        const parsed = JSON.parse(content);
+        const parsed = JSON.parse(content as string);
         // Convert to ScriptSegment format
         const segments = (parsed.segments || []).map((seg: any, i: number) => ({
           id: crypto.randomUUID(),

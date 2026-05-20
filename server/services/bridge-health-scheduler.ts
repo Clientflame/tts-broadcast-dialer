@@ -6,6 +6,7 @@
 
 import { Client as SSHClient } from "ssh2";
 import * as db from "../db";
+import { getAppSetting } from "../db";
 import { dispatchNotification } from "./notification-dispatcher";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -13,9 +14,9 @@ let intervalHandle: ReturnType<typeof setInterval> | null = null;
 let lastBridgeStatus: "healthy" | "offline" | null = null;
 
 async function runHealthCheck() {
-  const host = process.env.FREEPBX_HOST;
-  const sshUser = process.env.FREEPBX_SSH_USER;
-  const sshPass = process.env.FREEPBX_SSH_PASSWORD;
+  const host = await getAppSetting("freepbx_host") || process.env.FREEPBX_HOST;
+  const sshUser = await getAppSetting("freepbx_ssh_user") || process.env.FREEPBX_SSH_USER;
+  const sshPass = await getAppSetting("freepbx_ssh_password") || process.env.FREEPBX_SSH_PASSWORD;
 
   if (!host || !sshUser || !sshPass) {
     console.warn("[BridgeHealthCheck] SSH credentials not configured, skipping");

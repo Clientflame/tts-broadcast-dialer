@@ -5710,12 +5710,13 @@ export async function quarantineNumber(phoneNumber: string, reason: string, user
   await db.insert(dncList)
     .values({
       phoneNumber,
+      userId,
       source: "quarantine",
       reason,
-      addedBy: userId,
+      addedBy: String(userId),
       createdAt: new Date(),
     })
-    .onDuplicateKeyUpdate({ set: { source: "quarantine", reason, updatedAt: new Date() } });
+    .onDuplicateKeyUpdate({ set: { source: "quarantine", reason } });
 }
 
 export async function unquarantineNumbers(ids: number[]): Promise<number> {
