@@ -1389,3 +1389,4 @@
 - [x] Register PBX API key (clq_25e0...) in external_api_keys table
 - [x] Update pbx26 config crm_url from collectiq.407hosted.com to vai26.407hosted.com
 - [x] Vitest tests for phone-lookup API (7 tests passing)
+- [x] Fix page reload after blue Update button — improved polling logic, added 4s warmup delay, auto-reload on timeout, chunk error handler

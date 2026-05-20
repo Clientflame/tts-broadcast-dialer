@@ -69,7 +69,7 @@ function startUpdatePolling(
   setRestartPhase: (v: string) => void,
 ) {
   setIsRestarting(true);
-  setRestartCountdown(30);
+  setRestartCountdown(60);
   setRestartPhase("stopping");
 
   const countdownId = setInterval(() => {
@@ -80,21 +80,32 @@ function startUpdatePolling(
   }, 1000);
 
   let sawDown = false; // Gate: must see server go down before accepting "back up"
+  let pollActive = true;
 
   const pollId = setInterval(async () => {
+    if (!pollActive) return;
     try {
       const res = await fetch('/api/version', {
         method: 'GET',
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(5000),
         cache: 'no-store',
+        headers: { 'pragma': 'no-cache', 'cache-control': 'no-cache' },
       });
       if (!res.ok) {
-        // Server returned error — treat as down
+        // Server returned error (502/503 from proxy) — treat as down
         sawDown = true;
         setRestartPhase("restarting");
         return;
       }
-      const data = await res.json();
+      let data: any;
+      try {
+        data = await res.json();
+      } catch {
+        // Response wasn't JSON (proxy error page) — treat as down
+        sawDown = true;
+        setRestartPhase("restarting");
+        return;
+      }
       const newStartupId = data.startupId || "";
 
       if (!sawDown && newStartupId === preUpdateStartupId) {
@@ -109,14 +120,24 @@ function startUpdatePolling(
 
       // Server is back with a new startupId — update is complete
       if (sawDown && newStartupId !== preUpdateStartupId) {
+        pollActive = false;
         clearInterval(pollId);
         clearInterval(countdownId);
         setRestartPhase("reloading");
-        toast.success('Update complete! Reloading...', { duration: 3000 });
-        // Hard reload: navigate to a cache-busted URL to force fresh assets
+        toast.success('Update complete! Reloading page...', { duration: 5000 });
+        // Wait for server to be fully ready (schedulers, DB connections, etc.)
+        // Then do a hard reload with cache-busting
         setTimeout(() => {
-          window.location.href = window.location.pathname + '?_updated=' + Date.now();
-        }, 1500);
+          // Try fetching the main page first to confirm it's fully ready
+          fetch('/', { cache: 'no-store', signal: AbortSignal.timeout(10000) })
+            .then(() => {
+              window.location.href = '/?_updated=' + Date.now();
+            })
+            .catch(() => {
+              // Even if the page fetch fails, still try to reload
+              window.location.href = '/?_updated=' + Date.now();
+            });
+        }, 4000);
         return;
       }
     } catch {
@@ -124,14 +145,25 @@ function startUpdatePolling(
       sawDown = true;
       setRestartPhase("restarting");
     }
-  }, 3000);
+  }, 2500); // Poll every 2.5s for faster detection
 
-  // Safety timeout: stop polling after 3 minutes
+  // Safety timeout: stop polling after 3 minutes and auto-reload
   setTimeout(() => {
+    if (!pollActive) return; // Already handled
+    pollActive = false;
     clearInterval(pollId);
     clearInterval(countdownId);
-    setIsRestarting(false);
-    toast.info('Server may still be restarting. Please refresh the page manually.', { duration: 10000 });
+    setRestartPhase("reloading");
+    // If we saw the server go down, it likely came back but we missed it — just reload
+    if (sawDown) {
+      toast.info('Update likely complete. Reloading...', { duration: 3000 });
+      setTimeout(() => {
+        window.location.href = '/?_updated=' + Date.now();
+      }, 2000);
+    } else {
+      setIsRestarting(false);
+      toast.info('Server may still be restarting. Please refresh the page manually.', { duration: 10000 });
+    }
   }, 180000);
 }
 

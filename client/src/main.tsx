@@ -9,6 +9,43 @@ import ThemeBranding from "@/components/ThemeBranding";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
+// ─── Chunk Loading Error Handler ────────────────────────────────────────────
+// After an update/deployment, old JS chunk URLs become invalid.
+// Detect this and auto-reload the page to get fresh assets.
+window.addEventListener('error', (event) => {
+  const msg = event.message || '';
+  if (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Loading chunk') ||
+    msg.includes('Loading CSS chunk') ||
+    msg.includes('Importing a module script failed')
+  ) {
+    // Only auto-reload once to avoid infinite loops
+    const lastReload = sessionStorage.getItem('_chunk_reload');
+    const now = Date.now();
+    if (!lastReload || now - parseInt(lastReload) > 30000) {
+      sessionStorage.setItem('_chunk_reload', String(now));
+      window.location.reload();
+    }
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = event.reason?.message || String(event.reason) || '';
+  if (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Loading chunk') ||
+    msg.includes('Importing a module script failed')
+  ) {
+    const lastReload = sessionStorage.getItem('_chunk_reload');
+    const now = Date.now();
+    if (!lastReload || now - parseInt(lastReload) > 30000) {
+      sessionStorage.setItem('_chunk_reload', String(now));
+      window.location.reload();
+    }
+  }
+});
+
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
