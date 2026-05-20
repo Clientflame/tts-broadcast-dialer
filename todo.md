@@ -1390,3 +1390,5 @@
 - [x] Update pbx26 config crm_url from collectiq.407hosted.com to vai26.407hosted.com
 - [x] Vitest tests for phone-lookup API (7 tests passing)
 - [x] Fix page reload after blue Update button — improved polling logic, added 4s warmup delay, auto-reload on timeout, chunk error handler
+- [x] Fix CollectIQ Auto-Sync on pbx26 admin panel (route handler was running sync synchronously, now uses background thread)
+- [x] Add Contact Detail page (/contacts/:id) for PBX screen-pop URLs — shows contact info, debt fields, custom fields, and call history

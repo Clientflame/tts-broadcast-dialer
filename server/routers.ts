@@ -490,6 +490,22 @@ export const appRouter = router({
     })).mutation(async ({ ctx, input }) => {
       return db.previewImport(input.phoneNumbers, input.listId, { skipDupeCheck: input.skipDupeCheck });
     }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+      const contact = await db.getContact(input.id);
+      if (!contact) return null;
+      // Fetch call history for this contact
+      const dbInst = await db.getDb();
+      let callHistory: any[] = [];
+      if (dbInst) {
+        callHistory = await dbInst.select().from(callLogs)
+          .where(eq(callLogs.contactId, input.id))
+          .orderBy(desc(callLogs.createdAt))
+          .limit(50);
+      }
+      // Get the list name
+      const list = await db.getContactList(contact.listId);
+      return { ...contact, listName: list?.name || "Unknown", callHistory };
+    }),
   }),
 
   audio: router({

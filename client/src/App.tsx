@@ -57,6 +57,7 @@ import ApiDocs from "./pages/ApiDocs";
 import SkipTracing from "./pages/SkipTracing";
 import Settlements from "./pages/Settlements";
 import CollectionImport from "./pages/CollectionImport";
+import ContactDetail from "./pages/ContactDetail";
 
 function Router() {
   return (
@@ -64,6 +65,7 @@ function Router() {
       <Route path={"/"} component={Home} />
       <Route path={"/campaigns"} component={Campaigns} />
       <Route path={"/contacts"} component={Contacts} />
+      <Route path={"/contacts/:id"} component={ContactDetail} />
       <Route path={"/audio"} component={Audio} />
       <Route path={"/caller-ids"} component={CallerIds} />
       <Route path={"/did-analytics"} component={DidAnalytics} />
