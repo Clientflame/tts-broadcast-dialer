@@ -1383,4 +1383,9 @@
 - [x] Fix freepbx_host in app_settings — updated from 192.168.1.100 to pbx26.407hosted.com
 - [x] Add SSH credentials to app_settings (freepbx_ssh_user, freepbx_ssh_password) for reliable SSH access
 - [x] Bridge health scheduler updated to use app_settings as fallback for SSH credentials
-- [ ] Add /api/phone-lookup/export endpoint to CollectIQ (needed for Auto-Sync bulk cache)
+- [x] Add /api/phone-lookup/export endpoint (bulk export all contacts for auto-sync worker)
+- [x] Add /api/phone-lookup endpoint (individual phone lookup for PBX call screening)
+- [x] Add /api/phone-lookup/log endpoint (log inbound calls from PBX screening)
+- [x] Register PBX API key (clq_25e0...) in external_api_keys table
+- [x] Update pbx26 config crm_url from collectiq.407hosted.com to vai26.407hosted.com
+- [x] Vitest tests for phone-lookup API (7 tests passing)

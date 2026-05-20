@@ -16,6 +16,7 @@ import { createVoiceAiInstallerRouter } from "../services/voice-ai-installer";
 import { mountLocalStorageRoute } from "../storage";
 import { restApiRouter } from "../services/rest-api";
 import { audioProxyRouter } from "../services/audio-proxy";
+import { phoneLookupRouter } from "../services/phone-lookup-api";
 
 // Rate limiter for auth endpoints — 10 attempts per 15 minutes per IP
 const authRateLimiter = rateLimit({
@@ -74,6 +75,8 @@ async function startServer() {
   app.use("/api/audio-proxy", audioProxyRouter);
   // PBX Agent API (authenticated endpoints with API key auth)
   app.use("/api/pbx", pbxRouter);
+  // Phone Lookup API (for PBX call screening and auto-sync worker)
+  app.use("/api/phone-lookup", phoneLookupRouter);
   // External REST API (authenticated with API keys)
   app.use("/api/v1", restApiRouter);
   // Plain health check endpoint for Docker healthcheck (no tRPC input required)
