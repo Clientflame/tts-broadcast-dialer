@@ -1394,3 +1394,4 @@
 - [x] Add Contact Detail page (/contacts/:id) for PBX screen-pop URLs — shows contact info, debt fields, custom fields, and call history
 - [x] Admin API: REST endpoints at /api/v1/* with API-key auth for full tRPC-equivalent access (campaigns CRUD, scripts, settings, contacts, audio, caller IDs, DNC)
 - [x] Fix pacingMaxConcurrent mismatch: auto-sync to maxConcurrentCalls when pacing mode is "fixed" (on create and update)
+- [x] Fix TypeError: recentAdjustments[0].includes is not a function - recentAdjustments changed from string[] to object[] with {timestamp, from, to, reason}

@@ -1476,8 +1476,8 @@ export default function Home() {
                             <span className="text-muted-foreground">Avg: {c.pacing.avgCallDuration}s</span>
                           )}
                           {c.pacing.recentAdjustments?.length > 0 && (
-                            <span className={`text-xs ${c.pacing.recentAdjustments[0].includes("Increased") ? "text-green-500" : c.pacing.recentAdjustments[0].includes("Decreased") ? "text-amber-500" : "text-muted-foreground"}`}>
-                              {c.pacing.recentAdjustments[0]}
+                            <span className={`text-xs ${(c.pacing.recentAdjustments[0]?.reason || '').includes("ramp-up") ? "text-green-500" : (c.pacing.recentAdjustments[0]?.reason || '').includes("ramp-down") ? "text-amber-500" : "text-muted-foreground"}`}>
+                              {c.pacing.recentAdjustments[0]?.reason || `${c.pacing.recentAdjustments[0]?.from} → ${c.pacing.recentAdjustments[0]?.to}`}
                             </span>
                           )}
                         </div>
