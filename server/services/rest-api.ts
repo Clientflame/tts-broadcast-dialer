@@ -10,15 +10,44 @@
  * Endpoints:
  *   GET    /api/v1/campaigns              - List campaigns
  *   GET    /api/v1/campaigns/:id          - Get campaign details
+ *   POST   /api/v1/campaigns              - Create a campaign
+ *   PUT    /api/v1/campaigns/:id          - Update a campaign
+ *   DELETE /api/v1/campaigns/:id          - Delete a campaign
  *   POST   /api/v1/campaigns/:id/launch   - Launch a campaign
+ *   POST   /api/v1/campaigns/:id/stop     - Stop (cancel) a campaign
+ *   POST   /api/v1/campaigns/:id/pause    - Pause a campaign
+ *   POST   /api/v1/campaigns/:id/resume   - Resume/start a paused/draft campaign
+ *   GET    /api/v1/campaigns/:id/stats    - Get campaign analytics/stats
+ *   GET    /api/v1/dialer/live            - Get live dialer stats
  *   GET    /api/v1/contacts               - List contacts (by list or campaign)
+ *   GET    /api/v1/contacts/:id           - Get a single contact
+ *   PUT    /api/v1/contacts/:id           - Update a contact
+ *   DELETE /api/v1/contacts/:id           - Delete a contact
  *   POST   /api/v1/contacts               - Import a single contact
  *   POST   /api/v1/contacts/bulk          - Bulk import contacts (JSON array)
  *   POST   /api/v1/contacts/csv           - Import contacts from CSV upload
- *   POST   /api/v1/contacts/import        - Legacy import (JSON array, kept for backwards compat)
+ *   POST   /api/v1/contacts/import        - Legacy import (JSON array)
  *   GET    /api/v1/contact-lists          - List all contact lists
  *   POST   /api/v1/contact-lists          - Create a new contact list
  *   GET    /api/v1/contact-lists/:id      - Get contact list details
+ *   PUT    /api/v1/contact-lists/:id      - Update a contact list
+ *   DELETE /api/v1/contact-lists/:id      - Delete a contact list
+ *   GET    /api/v1/scripts                - List call scripts
+ *   GET    /api/v1/scripts/:id            - Get a call script
+ *   POST   /api/v1/scripts                - Create a call script
+ *   PUT    /api/v1/scripts/:id            - Update a call script
+ *   DELETE /api/v1/scripts/:id            - Delete a call script
+ *   GET    /api/v1/audio                  - List audio files
+ *   GET    /api/v1/audio/:id              - Get an audio file
+ *   POST   /api/v1/audio/generate         - Generate TTS audio
+ *   DELETE /api/v1/audio/:id              - Delete an audio file
+ *   GET    /api/v1/caller-ids             - List caller IDs
+ *   POST   /api/v1/caller-ids             - Add a caller ID
+ *   POST   /api/v1/caller-ids/bulk        - Bulk add caller IDs
+ *   PUT    /api/v1/caller-ids/:id         - Update a caller ID
+ *   DELETE /api/v1/caller-ids/:id         - Delete a caller ID
+ *   GET    /api/v1/settings               - Get app settings
+ *   PUT    /api/v1/settings               - Update app settings
  *   GET    /api/v1/call-logs/:campaignId  - Get call logs for a campaign
  *   GET    /api/v1/reports/summary        - Get summary report
  *   GET    /api/v1/dnc                    - List DNC numbers
@@ -28,6 +57,8 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import * as db from "../db";
+import { startCampaign, pauseCampaign, cancelCampaign, getDialerLiveStats } from "./dialer";
+import { generateTTS } from "./tts";
 
 const restApiRouter = Router();
 
@@ -283,16 +314,14 @@ restApiRouter.post("/campaigns/:id/launch", async (req: AuthenticatedRequest, re
   if (!req.apiPermissions?.campaigns?.launch) {
     return res.status(403).json({ error: "API key does not have campaigns:launch permission" });
   }
-
   try {
     const campaign = await db.getCampaign(Number(req.params.id));
     if (!campaign) return res.status(404).json({ error: "Campaign not found" });
     if (campaign.status === "running") return res.status(400).json({ error: "Campaign is already running" });
-
-    await db.updateCampaign(Number(req.params.id), { status: "running" });
+    await startCampaign(Number(req.params.id), 0);
     res.json({ success: true, message: `Campaign "${campaign.name}" launched` });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to launch campaign" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to launch campaign" });
   }
 });
 
@@ -808,6 +837,517 @@ restApiRouter.delete("/dnc/:phoneNumber", async (req: AuthenticatedRequest, res)
     res.json({ success: true, message: `${phoneNumber} removed from DNC` });
   } catch (err) {
     res.status(500).json({ error: "Failed to remove from DNC" });
+  }
+});
+
+// ─── Campaign CRUD (create, update, delete, stop/pause/resume) ──────────────
+restApiRouter.post("/campaigns", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have campaigns:write permission" });
+  }
+  try {
+    const { name, contactListId, ...rest } = req.body;
+    if (!name || !contactListId) {
+      return res.status(400).json({ error: "name and contactListId are required" });
+    }
+    const contactCount = await db.getContactListContactCount(Number(contactListId));
+    const result = await db.createCampaign({
+      userId: 0, // API-created
+      name,
+      contactListId: Number(contactListId),
+      totalContacts: contactCount,
+      ...rest,
+    });
+    res.status(201).json({ success: true, data: { id: result.id } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to create campaign" });
+  }
+});
+
+restApiRouter.put("/campaigns/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have campaigns:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const campaign = await db.getCampaign(id);
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status === "running") return res.status(400).json({ error: "Cannot update a running campaign" });
+    const { id: _id, userId: _uid, createdAt: _ca, updatedAt: _ua, ...updateData } = req.body;
+    // If contactListId changed, recalculate totalContacts
+    if (updateData.contactListId && updateData.contactListId !== campaign.contactListId) {
+      updateData.totalContacts = await db.getContactListContactCount(Number(updateData.contactListId));
+    }
+    await db.updateCampaign(id, updateData);
+    res.json({ success: true, message: "Campaign updated" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update campaign" });
+  }
+});
+
+restApiRouter.delete("/campaigns/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have campaigns:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const campaign = await db.getCampaign(id);
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status === "running") return res.status(400).json({ error: "Stop the campaign before deleting" });
+    await db.deleteCampaign(id);
+    res.json({ success: true, message: "Campaign deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete campaign" });
+  }
+});
+
+restApiRouter.post("/campaigns/:id/stop", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.launch) {
+    return res.status(403).json({ error: "API key does not have campaigns:launch permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const campaign = await db.getCampaign(id);
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status !== "running") return res.status(400).json({ error: "Campaign is not running" });
+    await cancelCampaign(id, 0);
+    res.json({ success: true, message: `Campaign "${campaign.name}" stopped` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to stop campaign" });
+  }
+});
+
+restApiRouter.post("/campaigns/:id/pause", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.launch) {
+    return res.status(403).json({ error: "API key does not have campaigns:launch permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const campaign = await db.getCampaign(id);
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status !== "running") return res.status(400).json({ error: "Campaign is not running" });
+    await pauseCampaign(id, 0);
+    res.json({ success: true, message: `Campaign "${campaign.name}" paused` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to pause campaign" });
+  }
+});
+
+restApiRouter.post("/campaigns/:id/resume", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.launch) {
+    return res.status(403).json({ error: "API key does not have campaigns:launch permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const campaign = await db.getCampaign(id);
+    if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+    if (campaign.status !== "paused" && campaign.status !== "draft") {
+      return res.status(400).json({ error: "Campaign must be paused or draft to resume/start" });
+    }
+    await startCampaign(id, 0);
+    res.json({ success: true, message: `Campaign "${campaign.name}" started` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to resume campaign" });
+  }
+});
+
+restApiRouter.get("/campaigns/:id/stats", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have campaigns:read permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const analytics = await db.getCampaignAnalytics(id);
+    if (!analytics) return res.status(404).json({ error: "Campaign not found" });
+    res.json({ success: true, data: analytics });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to fetch campaign stats" });
+  }
+});
+
+restApiRouter.get("/dialer/live", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have campaigns:read permission" });
+  }
+  try {
+    const stats = await getDialerLiveStats();
+    res.json({ success: true, data: stats });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to fetch live dialer stats" });
+  }
+});
+
+// ─── Call Scripts CRUD ──────────────────────────────────────────────────────
+restApiRouter.get("/scripts", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.scripts?.read && !req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have scripts:read permission" });
+  }
+  try {
+    const scripts = await db.getCallScripts();
+    res.json({ success: true, data: scripts, total: scripts.length });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch scripts" });
+  }
+});
+
+restApiRouter.get("/scripts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.scripts?.read && !req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have scripts:read permission" });
+  }
+  try {
+    const script = await db.getCallScript(Number(req.params.id));
+    if (!script) return res.status(404).json({ error: "Script not found" });
+    res.json({ success: true, data: script });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch script" });
+  }
+});
+
+restApiRouter.post("/scripts", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.scripts?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have scripts:write permission" });
+  }
+  try {
+    const { name, segments, description, callbackNumber, status } = req.body;
+    if (!name || !segments || !Array.isArray(segments)) {
+      return res.status(400).json({ error: "name and segments[] are required" });
+    }
+    const result = await db.createCallScript({
+      userId: 0,
+      name,
+      segments,
+      description: description || null,
+      callbackNumber: callbackNumber || null,
+      status: status || "active",
+    });
+    res.status(201).json({ success: true, data: { id: result.id } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to create script" });
+  }
+});
+
+restApiRouter.put("/scripts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.scripts?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have scripts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const script = await db.getCallScript(id);
+    if (!script) return res.status(404).json({ error: "Script not found" });
+    const { name, segments, description, callbackNumber, status } = req.body;
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (segments !== undefined) updateData.segments = segments;
+    if (description !== undefined) updateData.description = description;
+    if (callbackNumber !== undefined) updateData.callbackNumber = callbackNumber;
+    if (status !== undefined) updateData.status = status;
+    await db.updateCallScript(id, updateData);
+    res.json({ success: true, message: "Script updated" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update script" });
+  }
+});
+
+restApiRouter.delete("/scripts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.scripts?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have scripts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const script = await db.getCallScript(id);
+    if (!script) return res.status(404).json({ error: "Script not found" });
+    await db.deleteCallScript(id);
+    res.json({ success: true, message: "Script deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete script" });
+  }
+});
+
+// ─── Audio Files CRUD ──────────────────────────────────────────────────────
+restApiRouter.get("/audio", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.audio?.read && !req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have audio:read permission" });
+  }
+  try {
+    const files = await db.getAudioFiles();
+    res.json({ success: true, data: files, total: files.length });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch audio files" });
+  }
+});
+
+restApiRouter.get("/audio/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.audio?.read && !req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have audio:read permission" });
+  }
+  try {
+    const file = await db.getAudioFile(Number(req.params.id));
+    if (!file) return res.status(404).json({ error: "Audio file not found" });
+    res.json({ success: true, data: file });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch audio file" });
+  }
+});
+
+restApiRouter.post("/audio/generate", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.audio?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have audio:write permission" });
+  }
+  try {
+    const { text, voice, name, speed } = req.body;
+    if (!text || !voice || !name) {
+      return res.status(400).json({ error: "text, voice, and name are required" });
+    }
+    // Generate TTS audio
+    const ttsResult = await generateTTS({ text, voice, name, speed: speed ? Number(speed) : undefined });
+    // Save to database
+    const record = await db.createAudioFile({
+      userId: 0,
+      name,
+      text,
+      voice,
+      s3Url: ttsResult.s3Url,
+      s3Key: ttsResult.s3Key,
+      fileSize: ttsResult.fileSize,
+      status: "ready",
+    });
+    res.status(201).json({ success: true, data: { id: record.id, s3Url: ttsResult.s3Url, fileSize: ttsResult.fileSize } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate audio" });
+  }
+});
+
+restApiRouter.delete("/audio/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.audio?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have audio:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const file = await db.getAudioFile(id);
+    if (!file) return res.status(404).json({ error: "Audio file not found" });
+    await db.deleteAudioFile(id);
+    res.json({ success: true, message: "Audio file deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete audio file" });
+  }
+});
+
+// ─── Caller IDs CRUD ───────────────────────────────────────────────────────
+restApiRouter.get("/caller-ids", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.callerIds?.read && !req.apiPermissions?.campaigns?.read) {
+    return res.status(403).json({ error: "API key does not have callerIds:read permission" });
+  }
+  try {
+    const ids = await db.getCallerIds();
+    res.json({ success: true, data: ids, total: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch caller IDs" });
+  }
+});
+
+restApiRouter.post("/caller-ids", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.callerIds?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have callerIds:write permission" });
+  }
+  try {
+    const { phoneNumber, label } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({ error: "phoneNumber is required" });
+    }
+    const result = await db.createCallerId({
+      userId: 0,
+      phoneNumber,
+      label: label || null,
+    });
+    if (result.duplicate) {
+      return res.status(409).json({ error: "Caller ID already exists", data: { id: result.id } });
+    }
+    res.status(201).json({ success: true, data: { id: result.id } });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to create caller ID" });
+  }
+});
+
+restApiRouter.post("/caller-ids/bulk", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.callerIds?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have callerIds:write permission" });
+  }
+  try {
+    const { entries } = req.body;
+    if (!entries || !Array.isArray(entries) || entries.length === 0) {
+      return res.status(400).json({ error: "entries[] array is required" });
+    }
+    if (entries.length > 1000) {
+      return res.status(400).json({ error: "Maximum 1000 caller IDs per request" });
+    }
+    const data = entries.map((e: any) => ({
+      userId: 0,
+      phoneNumber: e.phoneNumber || e.phone_number || e.phone,
+      label: e.label || null,
+    }));
+    const result = await db.bulkCreateCallerIds(data);
+    res.status(201).json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to bulk create caller IDs" });
+  }
+});
+
+restApiRouter.put("/caller-ids/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.callerIds?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have callerIds:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const { label, isActive } = req.body;
+    const updateData: any = {};
+    if (label !== undefined) updateData.label = label;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    await db.updateCallerId(id, updateData);
+    res.json({ success: true, message: "Caller ID updated" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update caller ID" });
+  }
+});
+
+restApiRouter.delete("/caller-ids/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.callerIds?.write && !req.apiPermissions?.campaigns?.write) {
+    return res.status(403).json({ error: "API key does not have callerIds:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    await db.deleteCallerId(id);
+    res.json({ success: true, message: "Caller ID deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete caller ID" });
+  }
+});
+
+// ─── Settings ──────────────────────────────────────────────────────────────
+restApiRouter.get("/settings", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.settings?.read && !req.apiPermissions?.reports?.read) {
+    return res.status(403).json({ error: "API key does not have settings:read permission" });
+  }
+  try {
+    const keys = req.query.keys ? String(req.query.keys).split(",") : undefined;
+    const settings = await db.getAppSettings(keys);
+    // Mask secret values
+    const data = settings.map(s => ({
+      key: s.key,
+      value: s.isSecret ? "***" : s.value,
+      description: s.description,
+      isSecret: s.isSecret,
+      updatedAt: s.updatedAt,
+    }));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+restApiRouter.put("/settings", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.settings?.write) {
+    return res.status(403).json({ error: "API key does not have settings:write permission" });
+  }
+  try {
+    const { settings } = req.body;
+    if (!settings || !Array.isArray(settings)) {
+      return res.status(400).json({ error: "settings[] array is required with {key, value} objects" });
+    }
+    for (const s of settings) {
+      if (!s.key) continue;
+      await db.upsertAppSetting(s.key, s.value ?? null, s.description, s.isSecret);
+    }
+    res.json({ success: true, message: `${settings.length} setting(s) updated` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update settings" });
+  }
+});
+
+// ─── Contacts CRUD (single contact operations) ─────────────────────────────
+restApiRouter.get("/contacts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.contacts?.read) {
+    return res.status(403).json({ error: "API key does not have contacts:read permission" });
+  }
+  try {
+    const contact = await db.getContact(Number(req.params.id));
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+    res.json({ success: true, data: contact });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch contact" });
+  }
+});
+
+restApiRouter.put("/contacts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.contacts?.write) {
+    return res.status(403).json({ error: "API key does not have contacts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const contact = await db.getContact(id);
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+    const { firstName, lastName, email, company, state, customFields, phoneNumber } = req.body;
+    const updateData: any = {};
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (email !== undefined) updateData.email = email;
+    if (company !== undefined) updateData.company = company;
+    if (state !== undefined) updateData.state = state;
+    if (customFields !== undefined) updateData.customFields = customFields;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber.replace(/\D/g, "");
+    await db.updateContact(id, updateData);
+    res.json({ success: true, message: "Contact updated" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update contact" });
+  }
+});
+
+restApiRouter.delete("/contacts/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.contacts?.write) {
+    return res.status(403).json({ error: "API key does not have contacts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const contact = await db.getContact(id);
+    if (!contact) return res.status(404).json({ error: "Contact not found" });
+    await db.deleteContacts([id]);
+    res.json({ success: true, message: "Contact deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete contact" });
+  }
+});
+
+// ─── Contact Lists CRUD (update/delete) ────────────────────────────────────
+restApiRouter.put("/contact-lists/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.contacts?.write) {
+    return res.status(403).json({ error: "API key does not have contacts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const list = await db.getContactList(id);
+    if (!list) return res.status(404).json({ error: "Contact list not found" });
+    const { name, description } = req.body;
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    await db.updateContactList(id, updateData);
+    res.json({ success: true, message: "Contact list updated" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to update contact list" });
+  }
+});
+
+restApiRouter.delete("/contact-lists/:id", async (req: AuthenticatedRequest, res) => {
+  if (!req.apiPermissions?.contacts?.write) {
+    return res.status(403).json({ error: "API key does not have contacts:write permission" });
+  }
+  try {
+    const id = Number(req.params.id);
+    const list = await db.getContactList(id);
+    if (!list) return res.status(404).json({ error: "Contact list not found" });
+    await db.deleteContactList(id);
+    res.json({ success: true, message: "Contact list deleted" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to delete contact list" });
   }
 });
 
