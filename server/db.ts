@@ -5172,7 +5172,7 @@ import crypto from "crypto";
 
 export function generateApiKey(): { key: string; prefix: string; hash: string } {
   const key = `tbd_${crypto.randomBytes(32).toString("hex")}`;
-  const prefix = key.slice(0, 12);
+  const prefix = key.slice(0, 8); // "tbd_" + 4 hex = 8 chars, fits varchar(10)
   const hash = crypto.createHash("sha256").update(key).digest("hex");
   return { key, prefix, hash };
 }
