@@ -882,6 +882,10 @@ export const appRouter = router({
       if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
       if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
       if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      // Auto-sync pacingMaxConcurrent to maxConcurrentCalls when pacing mode is "fixed"
+      if ((dbData.pacingMode || 'fixed') === 'fixed' && dbData.maxConcurrentCalls) {
+        dbData.pacingMaxConcurrent = dbData.maxConcurrentCalls;
+      }
       // Auto-populate totalContacts from the contact list
       const contactCount = await db.getContactListContactCount(input.contactListId);
       dbData.totalContacts = contactCount;
@@ -964,6 +968,11 @@ export const appRouter = router({
       if (tzEnforcementEnabled !== undefined) dbData.enforceContactTimezone = tzEnforcementEnabled;
       if (tcpaStartHour !== undefined) dbData.contactTzWindowStart = `${String(tcpaStartHour).padStart(2, '0')}:00`;
       if (tcpaEndHour !== undefined) dbData.contactTzWindowEnd = `${String(tcpaEndHour).padStart(2, '0')}:00`;
+      // Auto-sync pacingMaxConcurrent to maxConcurrentCalls when pacing mode is "fixed"
+      const effectivePacingMode = dbData.pacingMode || campaign.pacingMode || 'fixed';
+      if (effectivePacingMode === 'fixed' && dbData.maxConcurrentCalls) {
+        dbData.pacingMaxConcurrent = dbData.maxConcurrentCalls;
+      }
       // Update totalContacts if contactListId changed
       if (input.contactListId && input.contactListId !== campaign.contactListId) {
         const contactCount = await db.getContactListContactCount(input.contactListId);

@@ -1393,3 +1393,4 @@
 - [x] Fix CollectIQ Auto-Sync on pbx26 admin panel (route handler was running sync synchronously, now uses background thread)
 - [x] Add Contact Detail page (/contacts/:id) for PBX screen-pop URLs — shows contact info, debt fields, custom fields, and call history
 - [x] Admin API: REST endpoints at /api/v1/* with API-key auth for full tRPC-equivalent access (campaigns CRUD, scripts, settings, contacts, audio, caller IDs, DNC)
+- [x] Fix pacingMaxConcurrent mismatch: auto-sync to maxConcurrentCalls when pacing mode is "fixed" (on create and update)
