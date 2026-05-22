@@ -938,14 +938,14 @@ export async function pauseCampaign(campaignId: number, userId: number): Promise
   stopCampaignInternal(campaignId);
   await db.updateCampaign(campaignId, { status: "paused" });
 
-  // Clean up in-flight call_logs: reset "dialing" and "ringing" back to "pending"
+  // Clean up in-flight call_logs: reset "dialing", "ringing", and "playing_audio" back to "pending"
   // so they can be re-dialed when the campaign resumes
   const dbInst = await db.getDb();
   if (dbInst) {
     const { callLogs: clTable, callQueue: cqTable } = await import("../../drizzle/schema");
     const { eq, and, inArray } = await import("drizzle-orm");
     const [resetResult] = await dbInst.update(clTable).set({ status: "pending", startedAt: null })
-      .where(and(eq(clTable.campaignId, campaignId), inArray(clTable.status, ["dialing", "ringing"])));
+      .where(and(eq(clTable.campaignId, campaignId), inArray(clTable.status, ["dialing", "ringing", "playing_audio"])));
     if (resetResult.affectedRows > 0) {
       console.log(`[Dialer] Pause: reset ${resetResult.affectedRows} in-flight call_logs to pending for campaign ${campaignId}`);
     }
@@ -961,13 +961,13 @@ export async function cancelCampaign(campaignId: number, userId: number): Promis
   stopCampaignInternal(campaignId);
   await db.updateCampaign(campaignId, { status: "cancelled", completedAt: Date.now() });
 
-  // Clean up in-flight call_logs: mark "dialing", "ringing", and "pending" as cancelled
+  // Clean up in-flight call_logs: mark "dialing", "ringing", "playing_audio", and "pending" as cancelled
   const dbInst = await db.getDb();
   if (dbInst) {
     const { callLogs: clTable, callQueue: cqTable } = await import("../../drizzle/schema");
     const { eq, and, inArray, sql } = await import("drizzle-orm");
     const [cancelResult] = await dbInst.update(clTable).set({ status: "cancelled", endedAt: sql`${Date.now()}` })
-      .where(and(eq(clTable.campaignId, campaignId), inArray(clTable.status, ["pending", "dialing", "ringing"])));
+      .where(and(eq(clTable.campaignId, campaignId), inArray(clTable.status, ["pending", "dialing", "ringing", "playing_audio"])));
     if (cancelResult.affectedRows > 0) {
       console.log(`[Dialer] Cancel: marked ${cancelResult.affectedRows} call_logs as cancelled for campaign ${campaignId}`);
     }
@@ -1161,13 +1161,13 @@ export async function recoverStaleCampaigns(): Promise<void> {
     console.log(`[Dialer Recovery] Found ${runningCampaigns.length} campaign(s) in 'running' state after restart`);
 
     for (const campaign of runningCampaigns) {
-      // Check if there are any pending or dialing call_logs
+      // Check if there are any pending or in-flight call_logs
       const pendingLogs = await dbInst
         .select({ count: count() })
         .from(callLogs)
         .where(and(
           eq(callLogs.campaignId, campaign.id),
-          inArray(callLogs.status, ["pending", "dialing", "ringing"])
+          inArray(callLogs.status, ["pending", "dialing", "ringing", "playing_audio"])
         ));
 
       // Check if there are any pending or claimed queue items
@@ -1202,7 +1202,7 @@ export async function recoverStaleCampaigns(): Promise<void> {
           }
         }).catch(() => {});
       } else {
-        // There are still pending calls — mark any "dialing" or "ringing" call_logs as failed
+        // There are still pending calls — mark any "dialing", "ringing", or "playing_audio" call_logs as failed
         // since the server lost track of them
         await dbInst.update(callLogs).set({
           status: "failed",
@@ -1210,7 +1210,7 @@ export async function recoverStaleCampaigns(): Promise<void> {
           endedAt: sql`${Date.now()}`,
         }).where(and(
           eq(callLogs.campaignId, campaign.id),
-          inArray(callLogs.status, ["dialing", "ringing"])
+          inArray(callLogs.status, ["dialing", "ringing", "playing_audio"])
         ));
 
         // Release any claimed queue items back to pending
@@ -1239,5 +1239,36 @@ export async function recoverStaleCampaigns(): Promise<void> {
     }
   } catch (err) {
     console.error("[Dialer Recovery] Error during recovery:", err);
+  }
+
+  // Also clean up stale in-flight calls for paused campaigns
+  // This handles the case where a server restart happened while calls were active,
+  // and the campaign was already paused — leaving ghost "dialing"/"ringing"/"playing_audio" records
+  try {
+    const dbInst2 = await db.getDb();
+    if (dbInst2) {
+      const { campaigns: campaignsTable, callLogs } = await import("../../drizzle/schema");
+      const { eq, and, inArray, sql } = await import("drizzle-orm");
+
+      const pausedCampaigns = await dbInst2
+        .select({ id: campaignsTable.id })
+        .from(campaignsTable)
+        .where(inArray(campaignsTable.status, ["paused", "draft", "scheduled"]));
+
+      for (const campaign of pausedCampaigns) {
+        const [resetResult] = await dbInst2.update(callLogs).set({
+          status: "pending",
+          startedAt: null,
+        }).where(and(
+          eq(callLogs.campaignId, campaign.id),
+          inArray(callLogs.status, ["dialing", "ringing", "playing_audio"])
+        ));
+        if (resetResult.affectedRows > 0) {
+          console.log(`[Dialer Recovery] Reset ${resetResult.affectedRows} stale in-flight call(s) to pending for paused campaign ${campaign.id}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Dialer Recovery] Error cleaning up paused campaign stale calls:", err);
   }
 }

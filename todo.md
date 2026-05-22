@@ -1409,3 +1409,4 @@
 - [x] Auto-suggest label naming: "Create Label" shortcut that pre-fills today's date (e.g., "5.22.26") for quick DID batch labeling
 - [x] DID pool preview on campaign detail: show live count of DIDs matching selected labels + expandable "View DIDs" list
 - [x] Label-based DID rotation analytics: break down answer rates by label in DID Analytics page
+- [x] Fix: stale/ghost active calls showing on paused campaigns (playing_audio not cleaned up on pause, server restart recovery now handles playing_audio, added clearStaleCalls endpoint + UI button)

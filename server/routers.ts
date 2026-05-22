@@ -1038,6 +1038,21 @@ export const appRouter = router({
       await cancelCampaign(input.id, ctx.user.id);
       return { success: true };
     }),
+    clearStaleCalls: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+      const campaign = await db.getCampaign(input.id);
+      if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
+      if (campaign.status === "running") throw new TRPCError({ code: "BAD_REQUEST", message: "Cannot clear stale calls while campaign is running" });
+      const dbInst = await db.getDb();
+      if (!dbInst) return { cleared: 0 };
+      const { callLogs: clTable } = await import("../drizzle/schema");
+      const { eq, and, inArray } = await import("drizzle-orm");
+      const [result] = await dbInst.update(clTable).set({ status: "pending", startedAt: null })
+        .where(and(eq(clTable.campaignId, input.id), inArray(clTable.status, ["dialing", "ringing", "playing_audio"])));
+      if (result.affectedRows > 0) {
+        await db.createAuditLog({ userId: ctx.user.id, userName: ctx.user.name || undefined, action: "campaign.clearStaleCalls", resource: "campaign", resourceId: input.id });
+      }
+      return { cleared: result.affectedRows };
+    }),
     reactivate: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
       const campaign = await db.getCampaign(input.id);
       if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });

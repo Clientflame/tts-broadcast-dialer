@@ -1292,6 +1292,11 @@ export default function Campaigns() {
     onError: (e) => toast.error(e.message),
   });
 
+  const clearStaleMut = trpc.campaigns.clearStaleCalls.useMutation({
+    onSuccess: (r) => { utils.campaigns.stats.invalidate(); toast.success(`Cleared ${r.cleared} stale call record(s)`); },
+    onError: (e) => toast.error(e.message),
+  });
+
   // Test Call feature
   const [testCallOpen, setTestCallOpen] = useState(false);
   const [testCallPhone, setTestCallPhone] = useState("");
@@ -1740,6 +1745,15 @@ export default function Campaigns() {
                       <span className="text-muted-foreground">
                         ({[(stats.dialing || 0) > 0 && `${stats.dialing} dialing`, (stats.ringing || 0) > 0 && `${stats.ringing} ringing`, (stats.playingAudio || 0) > 0 && `${stats.playingAudio} playing`].filter(Boolean).join(", ")})
                       </span>
+                    )}
+                    {c.status !== "running" && (
+                      <Button variant="ghost" size="sm" className="h-6 text-xs text-yellow-600 hover:text-yellow-700" onClick={() => {
+                        if (confirm("Clear stale calls? This will reset ghost dialing/ringing/playing records back to pending.")) {
+                          clearStaleMut.mutate({ id: c.id });
+                        }
+                      }}>
+                        <XCircle className="h-3 w-3 mr-1" />Clear Stale
+                      </Button>
                     )}
                   </div>
                 )}
