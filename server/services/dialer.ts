@@ -195,15 +195,18 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   const didRotationMode = (campaign as any).didRotationMode || "round_robin";
   if ((campaign as any).useDidRotation) {
     const didLabel = (campaign as any).didLabel || null;
+    const didPoolLabels: string[] | null = (campaign as any).didPoolLabels || null;
     const didPoolStrategy = (campaign as any).didPoolStrategy || "all";
     const didManualIds = (campaign as any).didManualIds || null;
     callerIdPool = await db.getActiveCallerIds({
       label: didPoolStrategy === "label" ? didLabel : null,
+      labels: didPoolStrategy === "label" ? didPoolLabels : null,
       strategy: didPoolStrategy,
       manualIds: didManualIds,
     });
     if (callerIdPool.length > 0) {
-      console.log(`[Dialer] DID rotation: strategy=${didPoolStrategy}, mode=${didRotationMode}, pool=${callerIdPool.length} DIDs${didLabel ? ` (label: "${didLabel}")` : ""}`);
+      const labelInfo = didPoolLabels && didPoolLabels.length > 0 ? ` (labels: ${didPoolLabels.join(", ")})` : (didLabel ? ` (label: "${didLabel}")` : "");
+      console.log(`[Dialer] DID rotation: strategy=${didPoolStrategy}, mode=${didRotationMode}, pool=${callerIdPool.length} DIDs${labelInfo}`);
     }
   }
 
@@ -1047,10 +1050,12 @@ export async function resumeCampaignAfterRestart(campaignId: number, userId: num
   if ((campaign as any).useDidRotation) {
     try {
       const didLabel = (campaign as any).didLabel || null;
+      const didPoolLabels: string[] | null = (campaign as any).didPoolLabels || null;
       const didPoolStrategy = (campaign as any).didPoolStrategy || "all";
       const didManualIds = (campaign as any).didManualIds || null;
       callerIdPool = await db.getActiveCallerIds({
         label: didPoolStrategy === "label" ? didLabel : null,
+        labels: didPoolStrategy === "label" ? didPoolLabels : null,
         strategy: didPoolStrategy,
         manualIds: didManualIds,
       });

@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download, Settings, History } from "lucide-react";
+import { Phone, Plus, Upload, Trash2, Activity, RefreshCw, ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, RotateCcw, Clock, Calendar, Route, Loader2, ArrowRight, ChevronDown, ChevronUp, Pencil, ExternalLink, Search, AlertCircle, Tag, Check, X, Filter, AlertTriangle, Download, Settings, History, CheckCircle2, XCircle } from "lucide-react";
 
 function HealthBadge({ status, autoDisabled, lastCheckAt, lastCheckResult, consecutiveFailures, failureRate, recentCallCount, flagReason, cooldownUntil }: {
   status: string;
@@ -1289,6 +1289,16 @@ export default function CallerIds() {
           <div className="flex gap-2 flex-wrap justify-end">
             {selected.size > 0 && (
               <>
+                <Button variant="outline" size="sm" className="border-green-300 text-green-700 hover:bg-green-50" onClick={() => {
+                  bulkUpdateMut.mutate({ ids: Array.from(selected), isActive: 1 });
+                }} disabled={bulkUpdateMut.isPending}>
+                  <CheckCircle2 className="h-4 w-4 mr-1" /> Enable ({selected.size})
+                </Button>
+                <Button variant="outline" size="sm" className="border-yellow-300 text-yellow-700 hover:bg-yellow-50" onClick={() => {
+                  bulkUpdateMut.mutate({ ids: Array.from(selected), isActive: 0 });
+                }} disabled={bulkUpdateMut.isPending}>
+                  <XCircle className="h-4 w-4 mr-1" /> Disable ({selected.size})
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => { setBulkEditLabelValue(""); setShowBulkEditLabel(true); }}>
                   <Tag className="h-4 w-4 mr-1" /> Edit Labels ({selected.size})
                 </Button>

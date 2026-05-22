@@ -835,7 +835,8 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
-      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
+      didLabel: z.string().max(100).optional().nullable(), // Legacy single label
+      didPoolLabels: z.array(z.string().max(100)).max(50).optional().nullable(), // Multi-label DID pool
       didPoolStrategy: z.enum(["all", "toll_free", "local", "area_code", "label", "manual"]).optional(),
       didRotationMode: z.enum(["round_robin", "random"]).optional(),
       didManualIds: z.string().max(2000).optional().nullable(), // JSON array of DID ids
@@ -924,7 +925,8 @@ export const appRouter = router({
       usePersonalizedTTS: z.number().min(0).max(1).optional(),
       ttsSpeed: z.string().max(10).optional(),
       useDidRotation: z.number().min(0).max(1).optional(),
-      didLabel: z.string().max(100).optional().nullable(), // Filter DID rotation by label
+      didLabel: z.string().max(100).optional().nullable(), // Legacy single label
+      didPoolLabels: z.array(z.string().max(100)).max(50).optional().nullable(), // Multi-label DID pool
       didPoolStrategy: z.enum(["all", "toll_free", "local", "area_code", "label", "manual"]).optional(),
       didRotationMode: z.enum(["round_robin", "random"]).optional(),
       didManualIds: z.string().max(2000).optional().nullable(), // JSON array of DID ids

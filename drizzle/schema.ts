@@ -180,7 +180,8 @@ export const campaigns = mysqlTable("campaigns", {
   usePersonalizedTTS: int("usePersonalizedTTS").default(0).notNull(),
   ttsSpeed: varchar("ttsSpeed", { length: 10 }).default("1.0"),
   useDidRotation: int("useDidRotation").default(0).notNull(),
-  didLabel: varchar("didLabel", { length: 100 }), // Filter DID rotation pool by label
+  didLabel: varchar("didLabel", { length: 100 }), // Legacy single label (deprecated, use didPoolLabels)
+  didPoolLabels: json("didPoolLabels").$type<string[]>(), // Multi-label DID pool: array of label strings
   didPoolStrategy: varchar("didPoolStrategy", { length: 20 }).default("all"), // all | toll_free | local | area_code | label | manual
   didRotationMode: varchar("didRotationMode", { length: 20 }).default("round_robin"), // round_robin | random
   didManualIds: json("didManualIds").$type<number[]>(), // manually selected DID ids

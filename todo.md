@@ -1400,3 +1400,9 @@
 - [x] VPS hardening guide: Cloudflare, PM2, firewall AMI port, UptimeRobot, call recordings on PBX only
 - [x] Carrier reputation scoring: track answer rate per DID over time, flag spam-likely DIDs with declining pickup rates, suggest rotation
 - [x] Auto-retry scheduling: schedule retry passes at specific times (e.g., "retry no-answers tomorrow at 2 PM") instead of immediately after first pass
+- [x] Multi-label DID pool strategy: change single didLabel to didPoolLabels (JSON array of strings) so campaigns can pull from multiple label groups dynamically
+- [x] Update dialer engine to resolve DIDs by multiple labels at dial time (union of all matching labels)
+- [x] Multi-label selector UI in campaign create/edit (checkbox/tag picker for labels with counts)
+- [x] Bulk DID enable/disable: select multiple DIDs and toggle active status in one action
+- [x] Bulk DID delete: select multiple DIDs and delete with confirmation (already existed)
+- [x] Bulk DID edit label: select multiple DIDs and assign/change label in one action (already existed)

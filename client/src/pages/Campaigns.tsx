@@ -95,6 +95,7 @@ type FormState = {
   usePersonalizedTTS: boolean; messageText: string; ttsSpeed: string;
   useDidRotation: boolean;
   didLabel: string;
+  didPoolLabels: string[];
   didPoolStrategy: "all" | "toll_free" | "local" | "area_code" | "label" | "manual";
   didRotationMode: "round_robin" | "random";
   didManualIds: number[];
@@ -124,7 +125,7 @@ const DEFAULT_FORM: FormState = {
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: DEFAULT_TARGET_STATES, useGeoCallerIds: false,
   usePersonalizedTTS: false, messageText: "", ttsSpeed: "1.0",
-  useDidRotation: false, didLabel: "", didPoolStrategy: "all", didRotationMode: "round_robin", didManualIds: [],
+  useDidRotation: false, didLabel: "", didPoolLabels: [], didPoolStrategy: "all", didRotationMode: "round_robin", didManualIds: [],
   scriptId: 0, callbackNumber: "", useDidCallbackNumber: false,
   pacingMode: "fixed", pacingTargetDropRate: 3, pacingMinConcurrent: 1, pacingMaxConcurrent: 75,
   predictiveAgentCount: 1, predictiveMaxAbandonRate: 3,
@@ -587,29 +588,48 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                   </p>
                 </div>
 
-                {/* Label filter (only for label strategy) */}
+                {/* Multi-label filter (only for label strategy) */}
                 {form.didPoolStrategy === "label" && (
                   <div>
                     <Label className="text-xs flex items-center gap-1.5 mb-1.5">
-                      <Tag className="h-3.5 w-3.5" /> DID Pool Label
+                      <Tag className="h-3.5 w-3.5" /> DID Pool Labels
                     </Label>
-                    <Select value={form.didLabel || "__all__"} onValueChange={v => setForm(p => ({ ...p, didLabel: v === "__all__" ? "" : v }))}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="Select a label" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__all__">All Labels</SelectItem>
-                        {(didLabels || []).map(label => {
-                          const lc = labelCounts.find(c => c.label === label);
-                          return (
-                            <SelectItem key={label} value={label}>
-                              {label}
-                              <span className="ml-2 text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                    <p className="text-xs text-muted-foreground mb-2">Select one or more labels. The campaign will use all active DIDs matching any selected label.</p>
+                    <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-1">
+                      {(didLabels || []).length === 0 && (
+                        <p className="text-xs text-muted-foreground italic">No labels found. Add labels to your DIDs on the Caller IDs page.</p>
+                      )}
+                      {(didLabels || []).map(label => {
+                        const lc = labelCounts.find(c => c.label === label);
+                        const isChecked = form.didPoolLabels.includes(label);
+                        return (
+                          <label key={label} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setForm(p => ({ ...p, didPoolLabels: [...p.didPoolLabels, label], didLabel: label }));
+                                } else {
+                                  setForm(p => {
+                                    const updated = p.didPoolLabels.filter(l => l !== label);
+                                    return { ...p, didPoolLabels: updated, didLabel: updated[0] || "" };
+                                  });
+                                }
+                              }}
+                              className="rounded border-border"
+                            />
+                            <span className="text-sm">{label}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">({lc?.count || 0} DIDs)</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    {form.didPoolLabels.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        Selected: {form.didPoolLabels.length} label(s) — {labelCounts.filter(lc => form.didPoolLabels.includes(lc.label || "")).reduce((sum, lc) => sum + lc.count, 0)} DIDs total
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1321,6 +1341,7 @@ export default function Campaigns() {
       ttsSpeed: c.ttsSpeed || "1.0",
       useDidRotation: !!c.useDidRotation,
       didLabel: (c as any).didLabel || "",
+      didPoolLabels: (c as any).didPoolLabels || [],
       didPoolStrategy: (c as any).didPoolStrategy || "all",
       didRotationMode: (c as any).didRotationMode || "round_robin",
       didManualIds: (c as any).didManualIds ? JSON.parse((c as any).didManualIds) : [],
@@ -1380,7 +1401,8 @@ export default function Campaigns() {
       messageText: editForm.usePersonalizedTTS ? editForm.messageText : undefined,
       ttsSpeed: editForm.ttsSpeed !== "1.0" ? editForm.ttsSpeed : undefined,
       useDidRotation: editForm.useDidRotation ? 1 : 0,
-      didLabel: editForm.useDidRotation && editForm.didLabel ? editForm.didLabel : null,
+      didLabel: editForm.useDidRotation && editForm.didPoolLabels.length > 0 ? editForm.didPoolLabels[0] : (editForm.useDidRotation && editForm.didLabel ? editForm.didLabel : null),
+      didPoolLabels: editForm.useDidRotation && editForm.didPoolLabels.length > 0 ? editForm.didPoolLabels : null,
       didPoolStrategy: editForm.useDidRotation ? editForm.didPoolStrategy : undefined,
       didRotationMode: editForm.useDidRotation ? editForm.didRotationMode : undefined,
       didManualIds: editForm.useDidRotation && editForm.didManualIds.length > 0 ? JSON.stringify(editForm.didManualIds) : null,
@@ -1441,7 +1463,8 @@ export default function Campaigns() {
       messageText: form.usePersonalizedTTS ? form.messageText : undefined,
       ttsSpeed: form.ttsSpeed !== "1.0" ? form.ttsSpeed : undefined,
       useDidRotation: form.useDidRotation ? 1 : 0,
-      didLabel: form.useDidRotation && form.didLabel ? form.didLabel : null,
+      didLabel: form.useDidRotation && form.didPoolLabels.length > 0 ? form.didPoolLabels[0] : (form.useDidRotation && form.didLabel ? form.didLabel : null),
+      didPoolLabels: form.useDidRotation && form.didPoolLabels.length > 0 ? form.didPoolLabels : null,
       didPoolStrategy: form.useDidRotation ? form.didPoolStrategy : undefined,
       didRotationMode: form.useDidRotation ? form.didRotationMode : undefined,
       didManualIds: form.useDidRotation && form.didManualIds.length > 0 ? JSON.stringify(form.didManualIds) : null,
@@ -1705,7 +1728,7 @@ export default function Campaigns() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
                 {(c as any).retryScheduleTime && <div className="flex justify-between"><span className="text-muted-foreground">Retry At</span><span>{(c as any).retryScheduleTime}</span></div>}
-                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didPoolStrategy && (c as any).didPoolStrategy !== "all" ? ` (${(c as any).didPoolStrategy === "toll_free" ? "Toll-Free" : (c as any).didPoolStrategy === "local" ? "Local" : (c as any).didPoolStrategy === "area_code" ? "Area Code Match" : (c as any).didPoolStrategy === "label" ? `Label: ${(c as any).didLabel}` : (c as any).didPoolStrategy === "manual" ? "Manual" : "All"})` : (c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didPoolStrategy && (c as any).didPoolStrategy !== "all" ? ` (${(c as any).didPoolStrategy === "toll_free" ? "Toll-Free" : (c as any).didPoolStrategy === "local" ? "Local" : (c as any).didPoolStrategy === "area_code" ? "Area Code Match" : (c as any).didPoolStrategy === "label" ? `Labels: ${((c as any).didPoolLabels || [(c as any).didLabel]).filter(Boolean).join(", ")}` : (c as any).didPoolStrategy === "manual" ? "Manual" : "All"})` : (c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
                 {(c as any).useDidRotation ? <div className="flex justify-between"><span className="text-muted-foreground">Rotation Mode</span><span>{(c as any).didRotationMode === "random" ? "Random" : "Round Robin"}</span></div> : null}
               </CardContent>
             </Card>

@@ -428,6 +428,13 @@
       "when": 1779452746079,
       "tag": "0060_big_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1779457451768,
+      "tag": "0061_cooing_dark_beast",
+      "breakpoints": true
     }
   ]
 }

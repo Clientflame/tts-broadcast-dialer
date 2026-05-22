@@ -928,19 +928,24 @@ const TOLL_FREE_PREFIXES = ["800", "888", "877", "866", "855", "844", "833"];
 
 export async function getActiveCallerIds(opts?: {
   label?: string | null;
+  labels?: string[] | null;
   strategy?: string | null;
   manualIds?: number[] | null;
   contactAreaCode?: string | null;
 }) {
   const db = await getDb();
   if (!db) return [];
-  const { label, strategy, manualIds, contactAreaCode } = opts || {};
+  const { label, labels, strategy, manualIds, contactAreaCode } = opts || {};
 
   // Get all active DIDs first, then filter in JS for complex strategies
   let pool;
   if (strategy === "manual" && manualIds && manualIds.length > 0) {
     pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), inArray(callerIds.id, manualIds))).orderBy(callerIds.callCount);
+  } else if (strategy === "label" && labels && labels.length > 0) {
+    // Multi-label: fetch DIDs matching ANY of the selected labels
+    pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), inArray(callerIds.label, labels))).orderBy(callerIds.callCount);
   } else if (strategy === "label" && label) {
+    // Legacy single-label fallback
     pool = await db.select().from(callerIds).where(and(eq(callerIds.isActive, 1), eq(callerIds.label, label))).orderBy(callerIds.callCount);
   } else if (label && !strategy) {
     // Legacy: filter by label when no strategy specified
