@@ -2880,10 +2880,14 @@ export const appRouter = router({
         label: input.label || null,
         manualIds: input.manualIds || null,
       });
+      const failedHealth = pool.filter(d => (d as any).healthStatus === "failed" || (d as any).healthStatus === "degraded").length;
+      const lowReputation = pool.filter(d => (d as any).reputationScore < 40).length;
+      const warningReputation = pool.filter(d => (d as any).reputationScore >= 40 && (d as any).reputationScore < 70).length;
       return {
         total: pool.length,
-        dids: pool.slice(0, 50).map(d => ({ id: d.id, phoneNumber: d.phoneNumber, label: d.label })),
+        dids: pool.slice(0, 50).map(d => ({ id: d.id, phoneNumber: d.phoneNumber, label: d.label, healthStatus: (d as any).healthStatus, reputationScore: (d as any).reputationScore })),
         hasMore: pool.length > 50,
+        health: { failedOrDegraded: failedHealth, lowReputation, warningReputation },
       };
     }),
 

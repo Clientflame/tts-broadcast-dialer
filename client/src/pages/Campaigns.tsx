@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
-  Search, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Activity, PhoneOff,
+  Search, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Activity, PhoneOff, AlertTriangle,
 } from "lucide-react";
 import { LiveCampaignDashboard } from "@/components/LiveCampaignDashboard";
 
@@ -197,12 +197,35 @@ function FormPoolPreview({ strategy, labels, label }: { strategy: string; labels
   if (isLoading) return <p className="text-xs text-muted-foreground mt-1">Loading pool preview...</p>;
   if (!preview) return null;
 
+  const hasHealthIssues = preview.health && (preview.health.failedOrDegraded > 0 || preview.health.lowReputation > 0);
+  const hasWarnings = preview.health && preview.health.warningReputation > 0;
+
   return (
-    <div className="border rounded-md p-2.5 bg-blue-50/50 dark:bg-blue-950/20 mt-1">
+    <div className={`border rounded-md p-2.5 mt-1 ${hasHealthIssues ? "bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-800" : hasWarnings ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800" : "bg-blue-50/50 dark:bg-blue-950/20"}`}>
       <div className="flex justify-between items-center">
-        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Pool Preview</span>
+        <span className={`text-xs font-medium ${hasHealthIssues ? "text-red-700 dark:text-red-300" : "text-blue-700 dark:text-blue-300"}`}>Pool Preview</span>
         <span className="text-xs font-bold text-blue-600">{preview.total} DID{preview.total !== 1 ? "s" : ""}</span>
       </div>
+      {/* Health warning badges */}
+      {preview.health && (preview.health.failedOrDegraded > 0 || preview.health.lowReputation > 0 || preview.health.warningReputation > 0) && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {preview.health.failedOrDegraded > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded px-1.5 py-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" />{preview.health.failedOrDegraded} failed health
+            </span>
+          )}
+          {preview.health.lowReputation > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded px-1.5 py-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" />{preview.health.lowReputation} low reputation (&lt;40)
+            </span>
+          )}
+          {preview.health.warningReputation > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5">
+              {preview.health.warningReputation} moderate reputation (40-69)
+            </span>
+          )}
+        </div>
+      )}
       {preview.total > 0 && (
         <button
           type="button"
@@ -215,9 +238,14 @@ function FormPoolPreview({ strategy, labels, label }: { strategy: string; labels
       {expanded && (
         <div className="mt-1.5 max-h-32 overflow-y-auto space-y-0.5">
           {preview.dids.map((d: any) => (
-            <div key={d.id} className="flex items-center justify-between text-[11px] bg-white dark:bg-gray-800 rounded px-2 py-0.5">
+            <div key={d.id} className={`flex items-center justify-between text-[11px] rounded px-2 py-0.5 ${d.healthStatus === "failed" || d.healthStatus === "degraded" ? "bg-red-50 dark:bg-red-900/20" : d.reputationScore < 40 ? "bg-red-50 dark:bg-red-900/20" : d.reputationScore < 70 ? "bg-amber-50 dark:bg-amber-900/20" : "bg-white dark:bg-gray-800"}`}>
               <span className="font-mono">{d.phoneNumber}</span>
-              {d.label && <span className="text-muted-foreground">{d.label}</span>}
+              <div className="flex items-center gap-1.5">
+                {d.healthStatus === "failed" && <span className="text-[9px] bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 rounded px-1">FAILED</span>}
+                {d.healthStatus === "degraded" && <span className="text-[9px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 rounded px-1">DEGRADED</span>}
+                {d.reputationScore != null && <span className={`text-[9px] rounded px-1 ${d.reputationScore >= 70 ? "bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200" : d.reputationScore >= 40 ? "bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200" : "bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200"}`}>{d.reputationScore}</span>}
+                {d.label && <span className="text-muted-foreground">{d.label}</span>}
+              </div>
             </div>
           ))}
           {preview.hasMore && <p className="text-[11px] text-muted-foreground text-center">+{preview.total - 50} more...</p>}
@@ -1174,12 +1202,34 @@ function DidPoolPreview({ campaign }: { campaign: any }) {
   if (isLoading) return <div className="text-xs text-muted-foreground mt-2">Loading pool...</div>;
   if (!preview) return null;
 
+  const hasHealthIssues = preview.health && (preview.health.failedOrDegraded > 0 || preview.health.lowReputation > 0);
+
   return (
     <div className="border-t pt-2 mt-2">
       <div className="flex justify-between items-center">
         <span className="text-muted-foreground">Pool Size</span>
         <span className="font-medium text-blue-600">{preview.total} DID{preview.total !== 1 ? "s" : ""}</span>
       </div>
+      {/* Health warnings */}
+      {preview.health && (preview.health.failedOrDegraded > 0 || preview.health.lowReputation > 0 || preview.health.warningReputation > 0) && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {preview.health.failedOrDegraded > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded px-1.5 py-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" />{preview.health.failedOrDegraded} failed
+            </span>
+          )}
+          {preview.health.lowReputation > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded px-1.5 py-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" />{preview.health.lowReputation} low rep
+            </span>
+          )}
+          {preview.health.warningReputation > 0 && (
+            <span className="text-[10px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded px-1.5 py-0.5">
+              {preview.health.warningReputation} moderate rep
+            </span>
+          )}
+        </div>
+      )}
       {preview.total > 0 && (
         <button
           type="button"
@@ -1192,9 +1242,14 @@ function DidPoolPreview({ campaign }: { campaign: any }) {
       {expanded && (
         <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
           {preview.dids.map((d: any) => (
-            <div key={d.id} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+            <div key={d.id} className={`flex items-center justify-between text-xs rounded px-2 py-1 ${d.healthStatus === "failed" || d.healthStatus === "degraded" ? "bg-red-100/50 dark:bg-red-900/20" : d.reputationScore < 40 ? "bg-red-100/50 dark:bg-red-900/20" : "bg-muted/50"}`}>
               <span className="font-mono">{d.phoneNumber}</span>
-              {d.label && <Badge variant="outline" className="text-[10px] h-4">{d.label}</Badge>}
+              <div className="flex items-center gap-1">
+                {d.healthStatus === "failed" && <span className="text-[9px] bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200 rounded px-1">FAIL</span>}
+                {d.healthStatus === "degraded" && <span className="text-[9px] bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-200 rounded px-1">DEG</span>}
+                {d.reputationScore != null && <span className={`text-[9px] rounded px-1 ${d.reputationScore >= 70 ? "text-green-700 bg-green-100" : d.reputationScore >= 40 ? "text-amber-700 bg-amber-100" : "text-red-700 bg-red-100"}`}>{d.reputationScore}</span>}
+                {d.label && <Badge variant="outline" className="text-[10px] h-4">{d.label}</Badge>}
+              </div>
             </div>
           ))}
           {preview.hasMore && <p className="text-xs text-muted-foreground text-center">+{preview.total - 50} more...</p>}
