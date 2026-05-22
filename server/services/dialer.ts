@@ -115,6 +115,18 @@ export async function startCampaign(campaignId: number, userId: number): Promise
   if (!campaign) throw new Error("Campaign not found");
   if (campaign.status === "running") throw new Error("Campaign is already running");
 
+  // Auto-clear stale in-flight calls before starting/resuming
+  const dbInst0 = await db.getDb();
+  if (dbInst0) {
+    const { callLogs: clTable } = await import("../../drizzle/schema");
+    const { eq, and, inArray } = await import("drizzle-orm");
+    const [staleResult] = await dbInst0.update(clTable).set({ status: "pending", startedAt: null })
+      .where(and(eq(clTable.campaignId, campaignId), inArray(clTable.status, ["dialing", "ringing", "playing_audio"])));
+    if (staleResult.affectedRows > 0) {
+      console.log(`[Dialer] Start: auto-cleared ${staleResult.affectedRows} stale in-flight call(s) for campaign ${campaignId}`);
+    }
+  }
+
   // Get audio file - store the S3 URL, PBX agent will download it
   let audioS3Url: string | null = null;
   let audioName: string | null = null;
