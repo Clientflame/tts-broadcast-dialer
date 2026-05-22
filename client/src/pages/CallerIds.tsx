@@ -543,6 +543,12 @@ function InlineEditLabel({
           autoFocus
           placeholder="Label..."
         />
+        <Button variant="ghost" size="sm" className="h-7 px-1.5" title="Use today's date" onClick={() => {
+          const n = new Date();
+          setEditValue(`${n.getMonth()+1}.${n.getDate()}.${String(n.getFullYear()).slice(2)}`);
+        }}>
+          <Calendar className="h-3.5 w-3.5 text-blue-500" />
+        </Button>
         <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleSave} disabled={isPending}>
           <Check className="h-3.5 w-3.5 text-green-600" />
         </Button>
@@ -2260,6 +2266,20 @@ export default function CallerIds() {
                   autoFocus
                   onKeyDown={(e) => { if (e.key === "Enter") handleBulkEditLabel(); }}
                 />
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => {
+                    const now = new Date();
+                    const label = `${now.getMonth() + 1}.${now.getDate()}.${String(now.getFullYear()).slice(2)}`;
+                    setBulkEditLabelValue(label);
+                  }}>
+                    <Calendar className="h-3 w-3 mr-1" /> Today ({(() => { const n = new Date(); return `${n.getMonth()+1}.${n.getDate()}.${String(n.getFullYear()).slice(2)}`; })()})
+                  </Button>
+                  {uniqueLabels.slice(0, 5).map(l => (
+                    <Button key={l} type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={() => setBulkEditLabelValue(l)}>
+                      {l}
+                    </Button>
+                  ))}
+                </div>
               </div>
               <div className="text-xs text-muted-foreground">
                 {selected.size} DID{selected.size > 1 ? "s" : ""} selected:

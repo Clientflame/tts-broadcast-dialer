@@ -15,7 +15,7 @@ import {
   Activity, Phone, PhoneCall, PhoneOff, Clock, TrendingUp, TrendingDown,
   ShieldCheck, ShieldAlert, ShieldX, ShieldQuestion, AlertTriangle,
   BarChart3, Timer, DollarSign, ArrowUpDown, ChevronDown, ChevronUp,
-  Settings, RotateCcw, Loader2, Zap, RefreshCw,
+  Settings, RotateCcw, Loader2, Zap, RefreshCw, Tag,
 } from "lucide-react";
 
 type SortField = "phoneNumber" | "totalCalls" | "answerRate" | "avgDuration" | "failureRate";
@@ -411,6 +411,82 @@ export default function DidAnalytics() {
             )}
           </CardContent>
         </Card>
+
+        {/* Label-Based Performance Breakdown */}
+        {(() => {
+          const labelStats = (() => {
+            const map = new Map<string, { label: string; totalCalls: number; answered: number; failed: number; noAnswer: number; totalDuration: number; didCount: number; avgReputation: number; reputationSum: number }>(); 
+            for (const d of summary) {
+              const lbl = d.label || "(unlabeled)";
+              const existing = map.get(lbl) || { label: lbl, totalCalls: 0, answered: 0, failed: 0, noAnswer: 0, totalDuration: 0, didCount: 0, avgReputation: 0, reputationSum: 0 };
+              existing.totalCalls += d.totalCalls;
+              existing.answered += d.answered;
+              existing.failed += d.failed;
+              existing.noAnswer += d.noAnswer;
+              existing.totalDuration += d.totalDuration;
+              existing.didCount++;
+              existing.reputationSum += (d.reputationScore ?? 0);
+              map.set(lbl, existing);
+            }
+            return Array.from(map.values())
+              .map(s => ({ ...s, answerRate: s.totalCalls > 0 ? Math.round((s.answered / s.totalCalls) * 100) : 0, avgReputation: s.didCount > 0 ? Math.round(s.reputationSum / s.didCount) : 0 }))
+              .filter(s => s.totalCalls > 0)
+              .sort((a, b) => b.totalCalls - a.totalCalls);
+          })();
+          if (labelStats.length <= 1) return null;
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Tag className="h-5 w-5" /> Performance by Label</CardTitle>
+                <CardDescription>Compare answer rates across DID label groups</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left">Label</th>
+                        <th className="p-3 text-right">DIDs</th>
+                        <th className="p-3 text-right">Total Calls</th>
+                        <th className="p-3 text-right">Answered</th>
+                        <th className="p-3 text-right">Answer Rate</th>
+                        <th className="p-3 text-right">Failed</th>
+                        <th className="p-3 text-right">No Answer</th>
+                        <th className="p-3 text-right">Avg Duration</th>
+                        <th className="p-3 text-right">Avg Reputation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {labelStats.map(ls => (
+                        <tr key={ls.label} className="border-b hover:bg-muted/30">
+                          <td className="p-3 font-medium">
+                            <Badge variant="outline" className="text-xs">{ls.label}</Badge>
+                          </td>
+                          <td className="p-3 text-right">{ls.didCount}</td>
+                          <td className="p-3 text-right font-mono">{ls.totalCalls.toLocaleString()}</td>
+                          <td className="p-3 text-right text-green-600">{ls.answered.toLocaleString()}</td>
+                          <td className="p-3 text-right">
+                            <span className={`font-medium ${ls.answerRate >= 5 ? "text-green-600" : ls.answerRate >= 2 ? "text-yellow-600" : "text-red-600"}`}>
+                              {ls.answerRate}%
+                            </span>
+                          </td>
+                          <td className="p-3 text-right text-red-500">{ls.failed.toLocaleString()}</td>
+                          <td className="p-3 text-right text-muted-foreground">{ls.noAnswer.toLocaleString()}</td>
+                          <td className="p-3 text-right">{formatDuration(ls.didCount > 0 ? Math.round(ls.totalDuration / ls.answered || 0) : 0)}</td>
+                          <td className="p-3 text-right">
+                            <span className={`font-medium ${ls.avgReputation >= 70 ? "text-green-600" : ls.avgReputation >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                              {ls.avgReputation}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Per-DID Performance Table */}
         <Card>

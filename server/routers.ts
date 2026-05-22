@@ -2852,6 +2852,26 @@ export const appRouter = router({
       return result;
     }),
 
+    // ── DID Pool Preview ──
+    poolPreview: protectedProcedure.input(z.object({
+      strategy: z.enum(["all", "toll_free", "local", "area_code", "label", "manual"]),
+      labels: z.array(z.string()).optional(),
+      label: z.string().optional(),
+      manualIds: z.array(z.number()).optional(),
+    })).query(async ({ input }) => {
+      const pool = await db.getActiveCallerIds({
+        strategy: input.strategy,
+        labels: input.labels && input.labels.length > 0 ? input.labels : null,
+        label: input.label || null,
+        manualIds: input.manualIds || null,
+      });
+      return {
+        total: pool.length,
+        dids: pool.slice(0, 50).map(d => ({ id: d.id, phoneNumber: d.phoneNumber, label: d.label })),
+        hasMore: pool.length > 50,
+      };
+    }),
+
     // ── Vitelity Sync Settings ──
     getSyncSettings: adminProcedure.query(async () => {
       const { getSyncStatus } = await import("./services/vitelity-sync");

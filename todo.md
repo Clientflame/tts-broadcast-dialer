@@ -1406,3 +1406,6 @@
 - [x] Bulk DID enable/disable: select multiple DIDs and toggle active status in one action
 - [x] Bulk DID delete: select multiple DIDs and delete with confirmation (already existed)
 - [x] Bulk DID edit label: select multiple DIDs and assign/change label in one action (already existed)
+- [x] Auto-suggest label naming: "Create Label" shortcut that pre-fills today's date (e.g., "5.22.26") for quick DID batch labeling
+- [x] DID pool preview on campaign detail: show live count of DIDs matching selected labels + expandable "View DIDs" list
+- [x] Label-based DID rotation analytics: break down answer rates by label in DID Analytics page

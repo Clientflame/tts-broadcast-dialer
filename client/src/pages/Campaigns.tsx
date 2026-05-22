@@ -20,7 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Plus, Play, Pause, StopCircle, Trash2, Megaphone, Copy, Pencil,
   Clock, Users, Volume2, Phone, BarChart3, Loader2, MapPin, Shield, Wand2, RotateCcw, XCircle, Zap, RefreshCw, Tag, PhoneCall,
-  Search, ChevronLeft, ChevronRight, Activity, PhoneOff,
+  Search, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Activity, PhoneOff,
 } from "lucide-react";
 import { LiveCampaignDashboard } from "@/components/LiveCampaignDashboard";
 
@@ -1113,6 +1113,51 @@ function RetryFailedButton({ campaignId, isPending, onRetry }: { campaignId: num
   );
 }
 
+function DidPoolPreview({ campaign }: { campaign: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const strategy = campaign.didPoolStrategy || "all";
+  const labels = campaign.didPoolLabels && campaign.didPoolLabels.length > 0 ? campaign.didPoolLabels : undefined;
+  const label = campaign.didLabel || undefined;
+  const manualIds = campaign.didManualIds || undefined;
+
+  const { data: preview, isLoading } = trpc.callerIds.poolPreview.useQuery(
+    { strategy, labels, label, manualIds },
+    { staleTime: 30000 }
+  );
+
+  if (isLoading) return <div className="text-xs text-muted-foreground mt-2">Loading pool...</div>;
+  if (!preview) return null;
+
+  return (
+    <div className="border-t pt-2 mt-2">
+      <div className="flex justify-between items-center">
+        <span className="text-muted-foreground">Pool Size</span>
+        <span className="font-medium text-blue-600">{preview.total} DID{preview.total !== 1 ? "s" : ""}</span>
+      </div>
+      {preview.total > 0 && (
+        <button
+          type="button"
+          className="text-xs text-blue-500 hover:text-blue-700 mt-1 flex items-center gap-1"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Hide" : "View"} DIDs {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+      )}
+      {expanded && (
+        <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+          {preview.dids.map((d: any) => (
+            <div key={d.id} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+              <span className="font-mono">{d.phoneNumber}</span>
+              {d.label && <Badge variant="outline" className="text-[10px] h-4">{d.label}</Badge>}
+            </div>
+          ))}
+          {preview.hasMore && <p className="text-xs text-muted-foreground text-center">+{preview.total - 50} more...</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Campaigns() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -1730,6 +1775,7 @@ export default function Campaigns() {
                 {(c as any).retryScheduleTime && <div className="flex justify-between"><span className="text-muted-foreground">Retry At</span><span>{(c as any).retryScheduleTime}</span></div>}
                 <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didPoolStrategy && (c as any).didPoolStrategy !== "all" ? ` (${(c as any).didPoolStrategy === "toll_free" ? "Toll-Free" : (c as any).didPoolStrategy === "local" ? "Local" : (c as any).didPoolStrategy === "area_code" ? "Area Code Match" : (c as any).didPoolStrategy === "label" ? `Labels: ${((c as any).didPoolLabels || [(c as any).didLabel]).filter(Boolean).join(", ")}` : (c as any).didPoolStrategy === "manual" ? "Manual" : "All"})` : (c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
                 {(c as any).useDidRotation ? <div className="flex justify-between"><span className="text-muted-foreground">Rotation Mode</span><span>{(c as any).didRotationMode === "random" ? "Random" : "Round Robin"}</span></div> : null}
+                {(c as any).useDidRotation && <DidPoolPreview campaign={c} />}
               </CardContent>
             </Card>
             <Card>
