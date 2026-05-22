@@ -87,7 +87,7 @@ const MERGE_FIELDS = [
 type FormState = {
   name: string; description: string; contactListId: number; audioFileId: number;
   voice: string; ttsProvider: "openai" | "google"; callerIdNumber: string; callerIdName: string;
-  maxConcurrentCalls: number; cpsLimit: number; retryAttempts: number; retryDelay: number;
+  maxConcurrentCalls: number; cpsLimit: number; retryAttempts: number; retryDelay: number; retryScheduleTime: string;
   timezone: string; timeWindowStart: string; timeWindowEnd: string;
   ivrEnabled: boolean; ivrOptions: { digit: string; action: string; label: string }[];
   abTestGroup: string; abTestVariant: string;
@@ -119,7 +119,7 @@ type FormState = {
 const DEFAULT_FORM: FormState = {
   name: "", description: "", contactListId: 0, audioFileId: 0,
   voice: "alloy", ttsProvider: "openai", callerIdNumber: "", callerIdName: "",
-  maxConcurrentCalls: 5, cpsLimit: 1, retryAttempts: 0, retryDelay: 300,
+  maxConcurrentCalls: 5, cpsLimit: 1, retryAttempts: 0, retryDelay: 300, retryScheduleTime: "",
   timezone: "America/New_York", timeWindowStart: "09:00", timeWindowEnd: "21:00",
   ivrEnabled: false, ivrOptions: [], abTestGroup: "", abTestVariant: "",
   targetStates: DEFAULT_TARGET_STATES, useGeoCallerIds: false,
@@ -235,6 +235,7 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
       maxConcurrentCalls: t.maxConcurrentCalls ?? p.maxConcurrentCalls,
       retryAttempts: t.retryAttempts ?? p.retryAttempts,
       retryDelay: t.retryDelay ?? p.retryDelay,
+      retryScheduleTime: t.retryScheduleTime || p.retryScheduleTime,
       timezone: t.timezone || p.timezone,
       timeWindowStart: t.timeWindowStart || p.timeWindowStart,
       timeWindowEnd: t.timeWindowEnd || p.timeWindowEnd,
@@ -886,9 +887,10 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div><Label>Retry Attempts</Label><Input type="number" min={0} max={5} value={form.retryAttempts} onChange={e => setForm(p => ({ ...p, retryAttempts: parseInt(e.target.value) || 0 }))} /></div>
-            <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /></div>
+            <div><Label>Retry Delay (seconds)</Label><Input type="number" min={60} max={3600} value={form.retryDelay} onChange={e => setForm(p => ({ ...p, retryDelay: parseInt(e.target.value) || 300 }))} /><p className="text-xs text-muted-foreground mt-1">Used if no schedule time set</p></div>
+            <div><Label>Retry Schedule Time</Label><Input type="time" value={form.retryScheduleTime} onChange={e => setForm(p => ({ ...p, retryScheduleTime: e.target.value }))} placeholder="HH:MM" /><p className="text-xs text-muted-foreground mt-1">Schedule retry at specific time (optional)</p></div>
           </div>
         </TabsContent>
 
@@ -1304,6 +1306,7 @@ export default function Campaigns() {
       cpsLimit: (c as any).cpsLimit ?? 3,
       retryAttempts: c.retryAttempts || 0,
       retryDelay: c.retryDelay || 300,
+      retryScheduleTime: (c as any).retryScheduleTime || "",
       timezone: c.timezone || "America/New_York",
       timeWindowStart: c.timeWindowStart || "09:00",
       timeWindowEnd: c.timeWindowEnd || "21:00",
@@ -1363,6 +1366,7 @@ export default function Campaigns() {
       cpsLimit: editForm.cpsLimit,
       retryAttempts: editForm.retryAttempts,
       retryDelay: editForm.retryDelay,
+      retryScheduleTime: editForm.retryScheduleTime || null,
       timezone: editForm.timezone,
       timeWindowStart: editForm.timeWindowStart,
       timeWindowEnd: editForm.timeWindowEnd,
@@ -1423,6 +1427,7 @@ export default function Campaigns() {
       maxConcurrentCalls: form.maxConcurrentCalls,
       retryAttempts: form.retryAttempts,
       retryDelay: form.retryDelay,
+      retryScheduleTime: form.retryScheduleTime || null,
       timezone: form.timezone,
       timeWindowStart: form.timeWindowStart,
       timeWindowEnd: form.timeWindowEnd,
@@ -1699,6 +1704,7 @@ export default function Campaigns() {
                 )}
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Attempts</span><span>{c.retryAttempts}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Retry Delay</span><span>{c.retryDelay}s</span></div>
+                {(c as any).retryScheduleTime && <div className="flex justify-between"><span className="text-muted-foreground">Retry At</span><span>{(c as any).retryScheduleTime}</span></div>}
                 <div className="flex justify-between"><span className="text-muted-foreground">Caller ID</span><span>{c.callerIdNumber || "DID Rotation"}{(c as any).didPoolStrategy && (c as any).didPoolStrategy !== "all" ? ` (${(c as any).didPoolStrategy === "toll_free" ? "Toll-Free" : (c as any).didPoolStrategy === "local" ? "Local" : (c as any).didPoolStrategy === "area_code" ? "Area Code Match" : (c as any).didPoolStrategy === "label" ? `Label: ${(c as any).didLabel}` : (c as any).didPoolStrategy === "manual" ? "Manual" : "All"})` : (c as any).didLabel ? ` (${(c as any).didLabel})` : ""}</span></div>
                 {(c as any).useDidRotation ? <div className="flex justify-between"><span className="text-muted-foreground">Rotation Mode</span><span>{(c as any).didRotationMode === "random" ? "Random" : "Round Robin"}</span></div> : null}
               </CardContent>

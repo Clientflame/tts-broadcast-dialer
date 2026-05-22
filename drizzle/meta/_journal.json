@@ -414,6 +414,20 @@
       "when": 1779287569276,
       "tag": "0058_fearless_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1779452496420,
+      "tag": "0059_chunky_bulldozer",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1779452746079,
+      "tag": "0060_big_quasar",
+      "breakpoints": true
     }
   ]
 }

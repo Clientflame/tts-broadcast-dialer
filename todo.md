@@ -1398,3 +1398,5 @@
 - [x] TTS audio caching: hash text+voice, reuse identical audio across campaigns instead of regenerating
 - [x] Campaign retry logic: auto-retry no-answer contacts (configurable attempts + delay)
 - [x] VPS hardening guide: Cloudflare, PM2, firewall AMI port, UptimeRobot, call recordings on PBX only
+- [x] Carrier reputation scoring: track answer rate per DID over time, flag spam-likely DIDs with declining pickup rates, suggest rotation
+- [x] Auto-retry scheduling: schedule retry passes at specific times (e.g., "retry no-answers tomorrow at 2 PM") instead of immediately after first pass

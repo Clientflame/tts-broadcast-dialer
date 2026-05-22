@@ -443,14 +443,15 @@ export default function DidAnalytics() {
                     <th className="p-3 text-right cursor-pointer hover:text-foreground" onClick={() => toggleSort("failureRate")}>
                       <span className="flex items-center gap-1 justify-end">Live Fail % <SortIcon field="failureRate" /></span>
                     </th>
+                    <th className="p-3 text-right">Reputation</th>
                     <th className="p-3 text-right">Talk Time</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
-                    <tr><td colSpan={11} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
+                    <tr><td colSpan={12} className="p-8 text-center text-muted-foreground">Loading...</td></tr>
                   ) : sorted.length === 0 ? (
-                    <tr><td colSpan={11} className="p-8 text-center text-muted-foreground">
+                    <tr><td colSpan={12} className="p-8 text-center text-muted-foreground">
                       <Phone className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       No DIDs found. Add caller IDs to start tracking performance.
                     </td></tr>
@@ -516,6 +517,13 @@ export default function DidAnalytics() {
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
+                        </td>
+                        <td className="p-3 text-right">
+                          {did.reputationScore !== undefined && did.reputationScore !== null ? (
+                            <span className={`font-medium ${did.reputationScore >= 70 ? "text-green-600" : did.reputationScore >= 40 ? "text-yellow-600" : "text-red-600"}`}>
+                              {did.reputationScore}
+                            </span>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
                         </td>
                         <td className="p-3 text-right text-muted-foreground">{formatMinutes(did.totalDuration)}</td>
                       </tr>

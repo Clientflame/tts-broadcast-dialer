@@ -827,6 +827,7 @@ export const appRouter = router({
       cpsLimit: z.number().min(1).max(20).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
+      retryScheduleTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
       scheduledAt: z.number().optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
@@ -915,6 +916,7 @@ export const appRouter = router({
       cpsLimit: z.number().min(1).max(20).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
+      retryScheduleTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
       scheduledAt: z.number().optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
@@ -1478,6 +1480,7 @@ export const appRouter = router({
         callerIdStrategy: campaign.callerIdNumber || undefined,
         retryAttempts: campaign.retryAttempts,
         retryDelay: campaign.retryDelay,
+        retryScheduleTime: campaign.retryScheduleTime,
         ivrEnabled: campaign.ivrEnabled,
         ivrConfig: campaign.ivrOptions,
         voiceAiEnabled: campaign.routingMode === "voice_ai" ? 1 : 0,
@@ -3049,6 +3052,36 @@ export const appRouter = router({
       }
       return { disabled, count: disabled.length };
     }),
+
+    /** Get reputation scores for all DIDs */
+    reputationSummary: protectedProcedure.query(async ({ ctx }) => {
+      return db.getDidReputationSummary();
+    }),
+
+    /** Get reputation history (daily stats) for a specific DID */
+    reputationHistory: protectedProcedure.input(z.object({
+      phoneNumber: z.string().min(1),
+      days: z.number().min(1).max(90).default(14),
+    })).query(async ({ ctx, input }) => {
+      return db.getDidReputationHistory(input.phoneNumber, input.days);
+    }),
+
+    /** Manually trigger daily stats snapshot and reputation score computation */
+    computeReputation: adminProcedure.mutation(async ({ ctx }) => {
+      const snapshotted = await db.snapshotDailyDidStats();
+      const scores = await db.computeDidReputationScores();
+      await db.createAuditLog({
+        userId: ctx.user.id,
+        action: "callerId.reputationComputed",
+        resource: "callerIds",
+        details: {
+          snapshotted,
+          scoresComputed: scores.length,
+          declining: scores.filter(s => s.trend === "declining").map(s => ({ phone: s.phoneNumber, score: s.score })),
+        },
+      });
+      return { snapshotted, scores };
+    }),
   }),
 
   templates: router({
@@ -3069,6 +3102,7 @@ export const appRouter = router({
       maxConcurrentCalls: z.number().min(1).max(200).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
+      retryScheduleTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),
@@ -3087,6 +3121,7 @@ export const appRouter = router({
       maxConcurrentCalls: z.number().min(1).max(200).optional(),
       retryAttempts: z.number().min(0).max(5).optional(),
       retryDelay: z.number().min(60).max(3600).optional(),
+      retryScheduleTime: z.string().regex(/^\d{2}:\d{2}$/).nullable().optional(),
       timezone: z.string().max(64).optional(),
       timeWindowStart: z.string().max(5).optional(),
       timeWindowEnd: z.string().max(5).optional(),

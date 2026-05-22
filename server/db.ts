@@ -48,6 +48,7 @@ import {
   securityEvents, InsertSecurityEvent,
   ipBlocklist, InsertIpBlocklist,
   ttsAudioCache,
+  didDailyStats, InsertDidDailyStat,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -2366,6 +2367,7 @@ export async function getDidAnalyticsSummary() {
       flaggedAt: did.flaggedAt,
       flagReason: did.flagReason,
       cooldownUntil: did.cooldownUntil,
+      reputationScore: did.reputationScore,
       // Call stats
       totalCalls: total,
       answered,
@@ -4509,8 +4511,220 @@ export async function evaluateAutoRotate(): Promise<Array<{ id: number; phoneNum
 }
 
 
-// ─── Disconnected Numbers ─────────────────────────────────────────────────────
+// ─── Carrier Reputation Scoring ───────────────────────────────────────────────
 
+/**
+ * Snapshot daily DID stats from call_logs into did_daily_stats table.
+ * Should be called once per day (e.g., via heartbeat/cron).
+ * Captures yesterday's stats for each DID that had calls.
+ */
+export async function snapshotDailyDidStats(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+
+  // Get yesterday's date in YYYY-MM-DD
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const dateStr = yesterday.toISOString().slice(0, 10);
+
+  // Check if we already have stats for yesterday
+  const existing = await db.select({ id: didDailyStats.id })
+    .from(didDailyStats)
+    .where(eq(didDailyStats.date, dateStr))
+    .limit(1);
+  if (existing.length > 0) return 0; // Already snapshotted
+
+  // Get all caller IDs
+  const dids = await db.select({ id: callerIds.id, phoneNumber: callerIds.phoneNumber }).from(callerIds);
+  const didMap = new Map(dids.map(d => [d.phoneNumber, d.id]));
+
+  // Get yesterday's call stats per DID
+  const startOfDay = new Date(dateStr + "T00:00:00Z").getTime();
+  const endOfDay = startOfDay + 24 * 60 * 60 * 1000;
+
+  const rows = await db.execute(
+    sql`SELECT callerIdUsed,
+      COUNT(*) as total,
+      SUM(CASE WHEN status IN ('answered', 'completed') THEN 1 ELSE 0 END) as answered,
+      SUM(CASE WHEN status = 'no-answer' THEN 1 ELSE 0 END) as noAnswer,
+      SUM(CASE WHEN status = 'busy' THEN 1 ELSE 0 END) as busy,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+      SUM(CASE WHEN (status IN ('answered', 'completed')) AND duration < 3 THEN 1 ELSE 0 END) as shortCalls,
+      AVG(CASE WHEN (status IN ('answered', 'completed')) AND duration > 0 THEN duration ELSE NULL END) as avgDuration
+    FROM call_logs
+    WHERE callerIdUsed IS NOT NULL
+      AND status NOT IN ('pending', 'cancelled')
+      AND createdAt >= ${new Date(startOfDay)}
+      AND createdAt < ${new Date(endOfDay)}
+    GROUP BY callerIdUsed`
+  ) as any;
+
+  const resultRows = Array.isArray(rows) ? (Array.isArray(rows[0]) ? rows[0] : rows) : [];
+  let inserted = 0;
+
+  for (const r of resultRows) {
+    const phoneNumber = String(r.callerIdUsed || "");
+    const callerIdId = didMap.get(phoneNumber);
+    if (!callerIdId || !phoneNumber) continue;
+
+    const total = Number(r.total) || 0;
+    const answered = Number(r.answered) || 0;
+    const answerRate = total > 0 ? Math.round((answered / total) * 100) : 0;
+
+    await db.insert(didDailyStats).values({
+      callerIdId,
+      phoneNumber,
+      date: dateStr,
+      totalCalls: total,
+      answered,
+      noAnswer: Number(r.noAnswer) || 0,
+      busy: Number(r.busy) || 0,
+      failed: Number(r.failed) || 0,
+      shortCalls: Number(r.shortCalls) || 0,
+      avgDuration: Math.round(Number(r.avgDuration) || 0),
+      answerRate,
+    });
+    inserted++;
+  }
+
+  return inserted;
+}
+
+/**
+ * Compute reputation score for each DID based on rolling 7-day stats.
+ * Score formula (0-100):
+ *   - Base: 50 points from answer rate (normalized: 30%+ = full marks)
+ *   - Trend: 25 points from answer rate trend (improving = bonus, declining = penalty)
+ *   - Quality: 15 points from avg call duration (longer = better, short calls = spam indicator)
+ *   - Consistency: 10 points from daily usage consistency
+ */
+export async function computeDidReputationScores(): Promise<Array<{ id: number; phoneNumber: string; score: number; trend: string }>> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const dids = await db.select({ id: callerIds.id, phoneNumber: callerIds.phoneNumber }).from(callerIds);
+  const results: Array<{ id: number; phoneNumber: string; score: number; trend: string }> = [];
+
+  // Get last 14 days of daily stats for trend calculation
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const allStats = await db.select()
+    .from(didDailyStats)
+    .where(gte(didDailyStats.date, fourteenDaysAgo));
+
+  // Group by DID
+  const statsByDid = new Map<string, typeof allStats>();
+  for (const stat of allStats) {
+    const existing = statsByDid.get(stat.phoneNumber) || [];
+    existing.push(stat);
+    statsByDid.set(stat.phoneNumber, existing);
+  }
+
+  for (const did of dids) {
+    const stats = statsByDid.get(did.phoneNumber) || [];
+    if (stats.length === 0) {
+      // No data = neutral score
+      results.push({ id: did.id, phoneNumber: did.phoneNumber, score: 75, trend: "neutral" });
+      continue;
+    }
+
+    // Sort by date
+    stats.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Split into recent 7 days and previous 7 days
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const recentStats = stats.filter(s => s.date >= sevenDaysAgo);
+    const olderStats = stats.filter(s => s.date < sevenDaysAgo);
+
+    // Calculate metrics
+    const recentTotal = recentStats.reduce((sum, s) => sum + s.totalCalls, 0);
+    const recentAnswered = recentStats.reduce((sum, s) => sum + s.answered, 0);
+    const recentShort = recentStats.reduce((sum, s) => sum + s.shortCalls, 0);
+    const recentAvgDuration = recentStats.length > 0
+      ? recentStats.reduce((sum, s) => sum + s.avgDuration, 0) / recentStats.length
+      : 0;
+    const recentAnswerRate = recentTotal > 0 ? (recentAnswered / recentTotal) * 100 : 0;
+
+    const olderTotal = olderStats.reduce((sum, s) => sum + s.totalCalls, 0);
+    const olderAnswered = olderStats.reduce((sum, s) => sum + s.answered, 0);
+    const olderAnswerRate = olderTotal > 0 ? (olderAnswered / olderTotal) * 100 : 0;
+
+    // Score components
+    // 1. Answer rate score (50 points) - 30%+ answer rate = full marks
+    const answerRateScore = Math.min(50, (recentAnswerRate / 30) * 50);
+
+    // 2. Trend score (25 points) - comparing recent vs older
+    let trendScore = 12.5; // neutral baseline
+    let trendLabel = "neutral";
+    if (olderTotal >= 10 && recentTotal >= 10) {
+      const diff = recentAnswerRate - olderAnswerRate;
+      if (diff > 5) { trendScore = 25; trendLabel = "improving"; }
+      else if (diff > 0) { trendScore = 18; trendLabel = "stable"; }
+      else if (diff > -5) { trendScore = 10; trendLabel = "stable"; }
+      else if (diff > -10) { trendScore = 5; trendLabel = "declining"; }
+      else { trendScore = 0; trendLabel = "declining"; }
+    }
+
+    // 3. Quality score (15 points) - avg duration and short call ratio
+    const shortCallRatio = recentTotal > 0 ? recentShort / recentTotal : 0;
+    const durationScore = Math.min(10, (recentAvgDuration / 15) * 10); // 15s+ = full marks
+    const shortCallPenalty = shortCallRatio > 0.5 ? 5 : shortCallRatio > 0.3 ? 3 : 0;
+    const qualityScore = Math.max(0, durationScore + 5 - shortCallPenalty);
+
+    // 4. Consistency score (10 points) - active days in last 7
+    const activeDays = recentStats.length;
+    const consistencyScore = Math.min(10, (activeDays / 5) * 10); // 5+ days = full marks
+
+    const totalScore = Math.round(answerRateScore + trendScore + qualityScore + consistencyScore);
+    const clampedScore = Math.max(0, Math.min(100, totalScore));
+
+    // Update the DID's reputation score
+    await db.update(callerIds).set({
+      reputationScore: clampedScore,
+      reputationUpdatedAt: Date.now(),
+    }).where(eq(callerIds.id, did.id));
+
+    results.push({ id: did.id, phoneNumber: did.phoneNumber, score: clampedScore, trend: trendLabel });
+  }
+
+  return results;
+}
+
+/**
+ * Get reputation history (daily stats) for a specific DID over the last N days.
+ */
+export async function getDidReputationHistory(phoneNumber: string, days: number = 14) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return db.select()
+    .from(didDailyStats)
+    .where(and(
+      eq(didDailyStats.phoneNumber, phoneNumber),
+      gte(didDailyStats.date, since)
+    ))
+    .orderBy(didDailyStats.date);
+}
+
+/**
+ * Get all DIDs with their reputation scores, sorted by score (worst first).
+ */
+export async function getDidReputationSummary() {
+  const db = await getDb();
+  if (!db) return [];
+  const dids = await db.select({
+    id: callerIds.id,
+    phoneNumber: callerIds.phoneNumber,
+    label: callerIds.label,
+    isActive: callerIds.isActive,
+    autoDisabled: callerIds.autoDisabled,
+    reputationScore: callerIds.reputationScore,
+    reputationUpdatedAt: callerIds.reputationUpdatedAt,
+    flaggedAt: callerIds.flaggedAt,
+    flagReason: callerIds.flagReason,
+  }).from(callerIds);
+  return dids;
+}
+
+// ─── Disconnected Numbers ─────────────────────────────────────────────────────
 /** Reasons that indicate a number is disconnected/invalid */
 const DISCONNECTED_REASONS = [
   "congestion",

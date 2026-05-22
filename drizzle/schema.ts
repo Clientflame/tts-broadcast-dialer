@@ -214,6 +214,7 @@ export const campaigns = mysqlTable("campaigns", {
   cpsLimit: int("cpsLimit").default(3).notNull(),  // Calls per second rate limit (1-10)
   retryAttempts: int("retryAttempts").default(0).notNull(),
   retryDelay: int("retryDelay").default(300).notNull(),
+  retryScheduleTime: varchar("retryScheduleTime", { length: 5 }),  // HH:MM format - schedule retry at specific time (e.g., "14:00")
   scheduledAt: bigint("scheduledAt", { mode: "number" }),
   timezone: varchar("timezone", { length: 64 }).default("America/New_York"),
   timeWindowStart: varchar("timeWindowStart", { length: 5 }).default("09:00"),
@@ -343,6 +344,9 @@ export const callerIds = mysqlTable("caller_ids", {
   // CNAM lookup fields
   cnamName: varchar("cnamName", { length: 255 }),
   cnamLookedUpAt: bigint("cnamLookedUpAt", { mode: "number" }),
+  // Carrier reputation score (0-100, higher = better)
+  reputationScore: int("reputationScore").default(100).notNull(),
+  reputationUpdatedAt: bigint("reputationUpdatedAt", { mode: "number" }),
   // Merchant DID flag — merchant DIDs are exempt from inbound call filtering
   isMerchant: int("isMerchant").default(0).notNull(),
 });
@@ -1542,3 +1546,23 @@ export const collectionImportJobs = mysqlTable("collection_import_jobs", {
 });
 export type CollectionImportJob = typeof collectionImportJobs.$inferSelect;
 export type InsertCollectionImportJob = typeof collectionImportJobs.$inferInsert;
+
+
+// ─── DID Daily Stats (Carrier Reputation Tracking) ─────────────────────────────
+export const didDailyStats = mysqlTable("did_daily_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  callerIdId: int("callerIdId").notNull(),
+  phoneNumber: varchar("phoneNumber", { length: 20 }).notNull(),
+  date: varchar("date", { length: 10 }).notNull(), // YYYY-MM-DD
+  totalCalls: int("totalCalls").default(0).notNull(),
+  answered: int("answered").default(0).notNull(),
+  noAnswer: int("noAnswer").default(0).notNull(),
+  busy: int("busy").default(0).notNull(),
+  failed: int("failed").default(0).notNull(),
+  shortCalls: int("shortCalls").default(0).notNull(), // calls < 3 seconds (spam indicator)
+  avgDuration: int("avgDuration").default(0).notNull(), // seconds
+  answerRate: int("answerRate").default(0).notNull(), // percentage 0-100
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type DidDailyStat = typeof didDailyStats.$inferSelect;
+export type InsertDidDailyStat = typeof didDailyStats.$inferInsert;

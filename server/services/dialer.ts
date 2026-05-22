@@ -804,9 +804,32 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
         }));
         await db.bulkCreateCallLogs(retryCallLogs);
 
-        // Schedule the retry after the configured delay
-        const retryDelayMs = (campaign.retryDelay || 300) * 1000;
-        console.log(`[Dialer] Scheduling retry for campaign ${campaignId} in ${campaign.retryDelay}s (${toRetry.length} contacts)`);
+        // Calculate retry delay: use retryScheduleTime if set, otherwise use retryDelay
+        let retryDelayMs: number;
+        let retryDescription: string;
+        const retryScheduleTime = (campaign as any).retryScheduleTime as string | null;
+        if (retryScheduleTime && /^\d{2}:\d{2}$/.test(retryScheduleTime)) {
+          // Schedule at specific time (HH:MM in campaign timezone)
+          const tz = campaign.timezone || "America/New_York";
+          const [hours, minutes] = retryScheduleTime.split(":").map(Number);
+          const now = new Date();
+          // Calculate target time using UTC offset approach
+          const formatter = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false });
+          const nowParts = formatter.formatToParts(now);
+          const nowHour = parseInt(nowParts.find(p => p.type === "hour")?.value || "0");
+          const nowMinute = parseInt(nowParts.find(p => p.type === "minute")?.value || "0");
+          const nowMinutes = nowHour * 60 + nowMinute;
+          const targetMinutes = hours * 60 + minutes;
+          let diffMinutes = targetMinutes - nowMinutes;
+          if (diffMinutes <= 0) diffMinutes += 24 * 60; // Schedule for tomorrow if time has passed
+          retryDelayMs = diffMinutes * 60 * 1000;
+          retryDescription = `at ${retryScheduleTime} ${tz} (in ${diffMinutes} minutes)`;
+          console.log(`[Dialer] Scheduling retry for campaign ${campaignId} at ${retryScheduleTime} ${tz} — ${toRetry.length} contacts, delay: ${diffMinutes}min`);
+        } else {
+          retryDelayMs = (campaign.retryDelay || 300) * 1000;
+          retryDescription = `in ${Math.round(retryDelayMs / 60000)} minutes`;
+          console.log(`[Dialer] Scheduling retry for campaign ${campaignId} in ${campaign.retryDelay}s (${toRetry.length} contacts)`);
+        }
 
         setTimeout(async () => {
           try {
@@ -852,7 +875,7 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
 
         dispatchNotification({
           title: `Campaign Pass Complete: ${campaignName}`,
-          content: `Campaign "${campaignName}" pass complete.\n\nResults:\n- Answered: ${stats.answered}\n- No Answer: ${stats.noAnswer}\n- Busy: ${stats.busy}\n\nRetry scheduled: ${toRetry.length} contacts will be retried in ${Math.round(campaign.retryDelay / 60)} minutes.`,
+          content: `Campaign "${campaignName}" pass complete.\n\nResults:\n- Answered: ${stats.answered}\n- No Answer: ${stats.noAnswer}\n- Busy: ${stats.busy}\n\nRetry scheduled: ${toRetry.length} contacts will be retried ${retryDescription}.`,
         }).catch(() => {});
 
         return; // Don't send final completion notification
