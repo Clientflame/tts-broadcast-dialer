@@ -186,6 +186,47 @@ function VoiceSelector({ value, provider, onVoiceChange, onProviderChange }: {
   );
 }
 
+function FormPoolPreview({ strategy, labels, label }: { strategy: string; labels: string[]; label: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const effectiveLabels = labels.length > 0 ? labels : label ? [label] : undefined;
+  const { data: preview, isLoading } = trpc.callerIds.poolPreview.useQuery(
+    { strategy: strategy as any, labels: effectiveLabels, label: label || undefined },
+    { staleTime: 15000, enabled: !!strategy }
+  );
+
+  if (isLoading) return <p className="text-xs text-muted-foreground mt-1">Loading pool preview...</p>;
+  if (!preview) return null;
+
+  return (
+    <div className="border rounded-md p-2.5 bg-blue-50/50 dark:bg-blue-950/20 mt-1">
+      <div className="flex justify-between items-center">
+        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Pool Preview</span>
+        <span className="text-xs font-bold text-blue-600">{preview.total} DID{preview.total !== 1 ? "s" : ""}</span>
+      </div>
+      {preview.total > 0 && (
+        <button
+          type="button"
+          className="text-[11px] text-blue-500 hover:text-blue-700 mt-1 flex items-center gap-0.5"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "Hide" : "View"} DIDs {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        </button>
+      )}
+      {expanded && (
+        <div className="mt-1.5 max-h-32 overflow-y-auto space-y-0.5">
+          {preview.dids.map((d: any) => (
+            <div key={d.id} className="flex items-center justify-between text-[11px] bg-white dark:bg-gray-800 rounded px-2 py-0.5">
+              <span className="font-mono">{d.phoneNumber}</span>
+              {d.label && <span className="text-muted-foreground">{d.label}</span>}
+            </div>
+          ))}
+          {preview.hasMore && <p className="text-[11px] text-muted-foreground text-center">+{preview.total - 50} more...</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioFiles, voicemailLibrary, templates, scripts, didLabels, labelCounts, onPreviewDayPart }: {
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
@@ -631,6 +672,11 @@ function CampaignFormTabs({ form, setForm, messageRef, contactLists, readyAudioF
                       </p>
                     )}
                   </div>
+                )}
+
+                {/* Inline DID Pool Preview in form */}
+                {form.didPoolStrategy !== "manual" && form.useDidRotation && (
+                  <FormPoolPreview strategy={form.didPoolStrategy} labels={form.didPoolLabels} label={form.didLabel} />
                 )}
 
                 {/* Manual DID selection (only for manual strategy) */}

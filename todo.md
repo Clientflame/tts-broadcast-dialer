@@ -1411,3 +1411,4 @@
 - [x] Label-based DID rotation analytics: break down answer rates by label in DID Analytics page
 - [x] Fix: stale/ghost active calls showing on paused campaigns (playing_audio not cleaned up on pause, server restart recovery now handles playing_audio, added clearStaleCalls endpoint + UI button)
 - [x] Auto-clear stale calls on campaign start/resume: automatically reset ghost dialing/ringing/playing_audio records before starting the dialer loop
+- [x] DID pool preview inline in campaign create/edit form (shows pool size + expandable DID list below strategy selector)
