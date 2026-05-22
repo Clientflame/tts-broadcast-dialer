@@ -1,6 +1,7 @@
 import { storagePut, resolveStorageUrl } from "../storage";
 import { nanoid } from "nanoid";
 import { Client as SSHClient } from "ssh2";
+import { createHash } from "crypto";
 import { getAppSetting } from "../db";
 
 /**
@@ -72,15 +73,90 @@ const VOICE_SAMPLE_SCRIPTS: Record<TTSVoice, string> = {
   shimmer: "Hello. Thank you for being a valued member. I'm calling to let you know about an update to your coverage that may benefit you. We want to ensure you have all the information you need to make the best decision. Please call us back when you have a moment.",
 };
 
+/**
+ * Look up TTS audio in the database cache by text+voice+speed hash.
+ * Returns the cached S3 URL if found, null otherwise.
+ */
+async function lookupTtsCache(textHash: string): Promise<{ s3Url: string; s3Key: string } | null> {
+  try {
+    const { getDb } = await import("../db");
+    const db = await getDb();
+    if (!db) return null;
+    const { ttsAudioCache } = await import("../../drizzle/schema");
+    const { eq, sql } = await import("drizzle-orm");
+    const rows = await db.select().from(ttsAudioCache).where(eq(ttsAudioCache.textHash, textHash)).limit(1);
+    if (rows.length > 0) {
+      await db.update(ttsAudioCache)
+        .set({ hitCount: sql`${ttsAudioCache.hitCount} + 1`, lastUsedAt: new Date() })
+        .where(eq(ttsAudioCache.id, rows[0].id));
+      console.log(`[TTS-Cache] HIT for hash ${textHash.slice(0, 8)}... (hits: ${rows[0].hitCount + 1})`);
+      return { s3Url: rows[0].s3Url, s3Key: rows[0].s3Key };
+    }
+    return null;
+  } catch (err) {
+    console.warn("[TTS-Cache] Lookup failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Store a TTS audio entry in the database cache for future reuse.
+ */
+async function storeTtsCache(params: {
+  textHash: string;
+  text: string;
+  voice: string;
+  provider: string;
+  speed: string;
+  s3Key: string;
+  s3Url: string;
+}): Promise<void> {
+  try {
+    const { getDb } = await import("../db");
+    const db = await getDb();
+    if (!db) return;
+    const { ttsAudioCache } = await import("../../drizzle/schema");
+    await db.insert(ttsAudioCache).values({
+      textHash: params.textHash,
+      renderedText: params.text.substring(0, 5000),
+      voice: params.voice,
+      provider: params.provider,
+      speed: params.speed,
+      s3Key: params.s3Key,
+      s3Url: params.s3Url,
+      hitCount: 0,
+    });
+    console.log(`[TTS-Cache] STORED hash ${params.textHash.slice(0, 8)}... (voice: ${params.voice}, provider: ${params.provider})`);
+  } catch (err: any) {
+    if (!err.message?.includes("Duplicate")) {
+      console.warn("[TTS-Cache] Store failed:", err.message);
+    }
+  }
+}
+
+/**
+ * Compute a cache hash for TTS parameters (text + voice + speed + provider).
+ */
+export function computeTtsCacheHash(text: string, voice: string, speed: number, provider: string): string {
+  return createHash("md5").update(`${text}|${voice}|${speed}|${provider}`).digest("hex");
+}
+
 export async function generateTTS(params: {
   text: string;
   voice: TTSVoice;
   name: string;
   speed?: number;
-}): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
-  const apiKey = await getOpenAIApiKey();
-
+}): Promise<{ s3Url: string; s3Key: string; fileSize: number; cached?: boolean }> {
   const speed = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
+
+  // Check cache first — same text+voice+speed = same audio
+  const cacheHash = computeTtsCacheHash(params.text, params.voice, speed, "openai");
+  const cached = await lookupTtsCache(cacheHash);
+  if (cached) {
+    return { s3Url: cached.s3Url, s3Key: cached.s3Key, fileSize: 0, cached: true };
+  }
+
+  const apiKey = await getOpenAIApiKey();
 
   const response = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -107,10 +183,22 @@ export async function generateTTS(params: {
 
   const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
 
+  // Store in cache for future reuse
+  await storeTtsCache({
+    textHash: cacheHash,
+    text: params.text,
+    voice: params.voice,
+    provider: "openai",
+    speed: String(speed),
+    s3Key: key,
+    s3Url: url,
+  });
+
   return {
     s3Url: url,
     s3Key: key,
     fileSize: audioBuffer.length,
+    cached: false,
   };
 }
 
@@ -260,10 +348,17 @@ export async function generateGoogleTTS(params: {
   voice: GoogleTTSVoice;
   name: string;
   speed?: number;
-}): Promise<{ s3Url: string; s3Key: string; fileSize: number }> {
-  const apiKey = await getGoogleTTSApiKey();
-
+}): Promise<{ s3Url: string; s3Key: string; fileSize: number; cached?: boolean }> {
   const speakingRate = Math.max(0.25, Math.min(4.0, params.speed || 1.0));
+
+  // Check cache first — same text+voice+speed = same audio
+  const cacheHash = computeTtsCacheHash(params.text, params.voice, speakingRate, "google");
+  const cached = await lookupTtsCache(cacheHash);
+  if (cached) {
+    return { s3Url: cached.s3Url, s3Key: cached.s3Key, fileSize: 0, cached: true };
+  }
+
+  const apiKey = await getGoogleTTSApiKey();
 
   const response = await fetch(
     `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
@@ -288,7 +383,18 @@ export async function generateGoogleTTS(params: {
   const fileKey = `tts-audio/${nanoid()}-${params.name.replace(/[^a-zA-Z0-9]/g, "_")}.mp3`;
   const { url, key } = await storagePut(fileKey, audioBuffer, "audio/mpeg");
 
-  return { s3Url: url, s3Key: key, fileSize: audioBuffer.length };
+  // Store in cache for future reuse
+  await storeTtsCache({
+    textHash: cacheHash,
+    text: params.text,
+    voice: params.voice,
+    provider: "google",
+    speed: String(speakingRate),
+    s3Key: key,
+    s3Url: url,
+  });
+
+  return { s3Url: url, s3Key: key, fileSize: audioBuffer.length, cached: false };
 }
 
 // Generate Google TTS voice sample for preview

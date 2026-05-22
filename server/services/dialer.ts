@@ -749,6 +749,118 @@ async function enqueueContact(callLog: CallLog, active: ActiveCampaign, userId: 
 async function completeCampaign(campaignId: number, userId: number): Promise<void> {
   stopCampaignInternal(campaignId);
   const stats = await db.getCampaignStats(campaignId);
+  const campaign = await db.getCampaign(campaignId);
+  const campaignName = campaign?.name || `Campaign #${campaignId}`;
+
+  // ─── Automatic Retry Pass ─────────────────────────────────────────────────
+  // If retryAttempts > 0, check if there are no-answer/busy contacts that haven't
+  // exceeded the retry limit. Re-queue them for another pass.
+  if (campaign && campaign.retryAttempts > 0) {
+    const dbInst = await db.getDb();
+    if (dbInst) {
+      const { callLogs: clTable } = await import("../../drizzle/schema");
+      const { eq, and, inArray, sql } = await import("drizzle-orm");
+
+      // Find contacts with no-answer/busy that haven't been answered and haven't exceeded max attempts
+      const retriableRows = await dbInst.select({
+        contactId: clTable.contactId,
+        phoneNumber: clTable.phoneNumber,
+        contactName: clTable.contactName,
+        maxAttempt: sql<number>`MAX(${clTable.attempt})`,
+      })
+        .from(clTable)
+        .where(and(
+          eq(clTable.campaignId, campaignId),
+          inArray(clTable.status, ["no-answer", "busy"]),
+        ))
+        .groupBy(clTable.contactId, clTable.phoneNumber, clTable.contactName);
+
+      // Exclude contacts that were answered in this campaign
+      const answeredRows = await dbInst.selectDistinct({ contactId: clTable.contactId })
+        .from(clTable)
+        .where(and(
+          eq(clTable.campaignId, campaignId),
+          inArray(clTable.status, ["answered", "completed"]),
+        ));
+      const answeredIds = new Set(answeredRows.map(r => r.contactId));
+
+      // Filter to contacts under the retry limit
+      const toRetry = retriableRows.filter(r =>
+        !answeredIds.has(r.contactId) && r.maxAttempt < (campaign.retryAttempts + 1)
+      );
+
+      if (toRetry.length > 0) {
+        console.log(`[Dialer] Retry pass: ${toRetry.length} contacts eligible for retry (max attempts: ${campaign.retryAttempts + 1}, delay: ${campaign.retryDelay}s)`);
+
+        // Create new call_logs for retry with incremented attempt number
+        const retryCallLogs = toRetry.map(r => ({
+          campaignId,
+          contactId: r.contactId,
+          userId,
+          phoneNumber: r.phoneNumber,
+          contactName: r.contactName || undefined,
+          status: "pending" as const,
+          attempt: r.maxAttempt + 1,
+        }));
+        await db.bulkCreateCallLogs(retryCallLogs);
+
+        // Schedule the retry after the configured delay
+        const retryDelayMs = (campaign.retryDelay || 300) * 1000;
+        console.log(`[Dialer] Scheduling retry for campaign ${campaignId} in ${campaign.retryDelay}s (${toRetry.length} contacts)`);
+
+        setTimeout(async () => {
+          try {
+            const currentCampaign = await db.getCampaign(campaignId);
+            // Only auto-restart if campaign is still in "completed" state (user hasn't manually changed it)
+            if (currentCampaign && currentCampaign.status === "completed") {
+              console.log(`[Dialer] Auto-starting retry pass for campaign ${campaignId} (${toRetry.length} contacts, attempt ${toRetry[0].maxAttempt + 1})`);
+              await db.updateCampaign(campaignId, { status: "paused" }); // Reset to paused so startCampaign works
+              // Notify about retry
+              db.isNotificationEnabled("notify_campaign_complete").then(enabled => {
+                if (enabled) {
+                  dispatchNotification({
+                    title: `Campaign Retry: ${campaignName}`,
+                    content: `Campaign "${campaignName}" is starting retry pass (attempt ${toRetry[0].maxAttempt + 1}/${campaign.retryAttempts + 1}).\n\n${toRetry.length} contacts being retried (no-answer/busy from previous pass).`,
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
+              await startCampaign(campaignId, userId);
+            } else {
+              console.log(`[Dialer] Retry cancelled for campaign ${campaignId} — status changed to ${currentCampaign?.status}`);
+            }
+          } catch (err) {
+            console.error(`[Dialer] Retry auto-start failed for campaign ${campaignId}:`, err);
+          }
+        }, retryDelayMs);
+
+        // Mark as completed with retry pending (don't send final notification yet)
+        await db.updateCampaign(campaignId, {
+          status: "completed",
+          completedAt: Date.now(),
+          completedCalls: stats.completed,
+          answeredCalls: stats.answered,
+          failedCalls: stats.failed + stats.busy + stats.noAnswer,
+        });
+
+        await db.createAuditLog({
+          userId,
+          action: "campaign.completed_with_retry",
+          resource: "campaign",
+          resourceId: campaignId,
+          details: { ...stats, retryScheduled: toRetry.length, retryAttempt: toRetry[0].maxAttempt + 1, retryDelaySeconds: campaign.retryDelay },
+        });
+
+        dispatchNotification({
+          title: `Campaign Pass Complete: ${campaignName}`,
+          content: `Campaign "${campaignName}" pass complete.\n\nResults:\n- Answered: ${stats.answered}\n- No Answer: ${stats.noAnswer}\n- Busy: ${stats.busy}\n\nRetry scheduled: ${toRetry.length} contacts will be retried in ${Math.round(campaign.retryDelay / 60)} minutes.`,
+        }).catch(() => {});
+
+        return; // Don't send final completion notification
+      }
+    }
+  }
+  // ─── End Retry Pass ────────────────────────────────────────────────────────
+
   await db.updateCampaign(campaignId, {
     status: "completed",
     completedAt: Date.now(),
@@ -766,8 +878,6 @@ async function completeCampaign(campaignId: number, userId: number): Promise<voi
   });
 
   // Notify owner
-  const campaignInfo = await db.getCampaign(campaignId);
-  const campaignName = campaignInfo?.name || `Campaign #${campaignId}`;
   db.isNotificationEnabled("notify_campaign_complete").then(enabled => {
     if (enabled) {
       dispatchNotification({

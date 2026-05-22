@@ -1395,3 +1395,6 @@
 - [x] Admin API: REST endpoints at /api/v1/* with API-key auth for full tRPC-equivalent access (campaigns CRUD, scripts, settings, contacts, audio, caller IDs, DNC)
 - [x] Fix pacingMaxConcurrent mismatch: auto-sync to maxConcurrentCalls when pacing mode is "fixed" (on create and update)
 - [x] Fix TypeError: recentAdjustments[0].includes is not a function - recentAdjustments changed from string[] to object[] with {timestamp, from, to, reason}
+- [x] TTS audio caching: hash text+voice, reuse identical audio across campaigns instead of regenerating
+- [x] Campaign retry logic: auto-retry no-answer contacts (configurable attempts + delay)
+- [x] VPS hardening guide: Cloudflare, PM2, firewall AMI port, UptimeRobot, call recordings on PBX only
